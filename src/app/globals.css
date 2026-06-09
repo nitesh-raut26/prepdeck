@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* ──────────────────────────────────────────────────────────
+   PrepDeck — dark study-wiki design system
+   ────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+
+  /* Brand — indigo → violet */
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-violet-500: #8b5cf6;
+
+  /* Surfaces & ink (dark) */
+  --color-bg: #090c14;
+  --color-surface-1: #0d111b;
+  --color-surface-2: #141a26;
+  --color-surface-3: #1c2433;
+  --color-ink: #e8ecf4;
+  --color-subtle: #aab3c5;
+  --color-faint: #6b7689;
+  --color-line: #222b3b;
+  --color-line-strong: #324056;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  --shadow-glow: 0 12px 40px -16px rgba(99, 102, 241, 0.55);
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-brand-600);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Prose tuning for the dark study theme ───────────────────── */
+.prose-invert {
+  --tw-prose-invert-body: var(--color-subtle);
+  --tw-prose-invert-headings: var(--color-ink);
+  --tw-prose-invert-bold: var(--color-ink);
+  --tw-prose-invert-links: var(--color-brand-300);
+  --tw-prose-invert-bullets: var(--color-faint);
+  --tw-prose-invert-counters: var(--color-faint);
+  --tw-prose-invert-hr: var(--color-line);
+  --tw-prose-invert-quotes: var(--color-subtle);
+  --tw-prose-invert-quote-borders: var(--color-brand-600);
+  --tw-prose-invert-th-borders: var(--color-line);
+  --tw-prose-invert-td-borders: var(--color-line);
+  --tw-prose-invert-code: var(--color-ink);
+  --tw-prose-invert-pre-bg: var(--color-surface-2);
+}
+
+/* Anchored headings (rehype-autolink behavior: "wrap") shouldn't look like links */
+.prose :where(h1, h2, h3, h4) > a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: inherit;
+}
+.prose :where(h1, h2, h3, h4) {
+  scroll-margin-top: 5rem;
+}
+
+/* Code blocks: let the highlight.js theme paint tokens, our surface paints the box */
+.prose :where(pre) {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-xl);
+  font-size: 0.825rem;
+  line-height: 1.6;
+}
+.prose :where(pre) code {
+  background: transparent;
+  padding: 0;
+  font-weight: 400;
+}
+.hljs {
+  background: transparent;
+  color: var(--color-ink);
+}
+
+/* Inline code: subtle pill, no backtick pseudo-elements */
+.prose :where(code):not(pre code) {
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.825em;
+  font-weight: 500;
+}
+.prose :where(code):not(pre code)::before,
+.prose :where(code):not(pre code)::after {
+  content: none;
+}
+
+.prose :where(table) {
+  font-size: 0.875rem;
+}
