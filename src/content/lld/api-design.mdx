@@ -1,0 +1,78 @@
+---
+title: "API Design"
+summary: "REST resource modeling, which verbs are idempotent and why it matters, status codes, cursor vs offset pagination, versioning, and idempotency keys for safe retries."
+order: 4
+tags: ["API", "REST", "idempotency", "pagination"]
+---
+
+## Model resources, not actions
+
+URLs are nouns; verbs are HTTP methods. `POST /trades`, `GET /portfolios/{id}`,
+`DELETE /watchlist/{symbol}` — not `/createTrade` or `/getPortfolio`.
+
+| Method | Use | Idempotent? | Safe? |
+|---|---|---|---|
+| GET | read | ✅ | ✅ |
+| POST | create / non-idempotent action | ❌ | ❌ |
+| PUT | replace (full) | ✅ | ❌ |
+| PATCH | partial update | usually ❌ | ❌ |
+| DELETE | remove | ✅ | ❌ |
+
+**Idempotent** = doing it twice == doing it once. It matters because networks
+retry: a client that times out on `PUT` or `DELETE` can safely resend. `POST`
+isn't idempotent — which is why creating money-moving resources needs an
+idempotency key.
+
+## Status codes that signal correctly
+
+- `200/201/204` success (201 create, 204 no body).
+- `400` bad input · `401` unauthenticated · `403` authenticated-but-forbidden ·
+  `404` missing · `409` conflict · `422` validation · `429` rate-limited.
+- `500` us · `503` down/overloaded.
+
+Return a **consistent error body** (`code`, `message`, maybe `details`) so
+clients can branch on `code`, not parse prose.
+
+## Pagination
+
+- **Offset/limit** (`?page=3&size=20`): simple, but slow deep in the list and
+  **skips/dupes** rows when data shifts under you.
+- **Cursor/keyset** (`?after=<opaque>`): pass the last seen sort key; stable and
+  fast at any depth. Prefer cursors for feeds and large/changing lists.
+
+## Versioning & idempotency keys
+
+- **Versioning:** `/.../v1/...` (or a header). Version when you make a breaking
+  change; add fields additively otherwise.
+- **Idempotency key:** client sends a unique `Idempotency-Key` on a `POST`; the
+  server records the result for that key and returns the same response on retry —
+  so a retried "place trade" or "charge card" doesn't double-execute. (Razorpay
+  webhooks in StockVision are verified + deduped for the same reason.)
+
+<Callout type="tip" title="Design the failure path, not just the happy path">
+Seniors are judged on the unhappy path: what's the error contract, how does a
+client retry safely (idempotency), what's the rate-limit response (429 +
+Retry-After), and how does the API evolve without breaking old clients
+(additive changes + versioning)?
+</Callout>
+
+<QA q="A client POSTs to place a trade, times out, and retries. How do you avoid a double trade?">
+
+POST isn't idempotent, so I make it idempotent explicitly: the client sends an
+`Idempotency-Key` header (a UUID it generates for that logical trade). The server
+stores the key with the resulting trade; if the same key arrives again it returns
+the original result instead of creating a second trade. Combined with the atomic
+balance update, a retry is safe — at most one trade per key.
+
+</QA>
+
+<QA q="Offset vs cursor pagination — when does offset break?">
+
+Offset breaks on large, changing datasets. Deep offsets are slow (the DB still
+scans and discards the skipped rows), and if rows are inserted/deleted between
+requests, items shift across page boundaries so users miss or see duplicates.
+Cursor (keyset) pagination passes the last item's sort key and queries `WHERE key
+> cursor`, which is index-friendly at any depth and stable under concurrent
+writes. Offset is fine for small, static lists.
+
+</QA>

@@ -1,0 +1,100 @@
+---
+title: "Design a Parking Lot"
+summary: "The classic object-modeling round. How to scope it, the entities and their relationships, where Strategy fits for spot assignment, and the extensibility follow-ups."
+order: 11
+difficulty: "Classic"
+tags: ["LLD", "OOD", "class-design"]
+---
+
+## How to run an OOD question
+
+It's not about UML perfection — it's about clean responsibilities and
+extensibility. Steps: **clarify scope → identify entities (nouns) → assign
+responsibilities (verbs) → relationships → call out where behavior varies
+(Strategy) → walk a scenario.**
+
+**Clarify first:** multiple levels? vehicle sizes (motorcycle/car/bus)? pricing?
+payment? Pin scope: *"single lot, multiple levels, three spot sizes, hourly
+pricing, ignore payments — OK?"*
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class ParkingLot {
+    +parkVehicle(v) Ticket
+    +unpark(ticket) Fee
+  }
+  class Level {
+    +findSpot(v) Spot
+  }
+  class ParkingSpot {
+    +isFree bool
+    +canFit(v) bool
+  }
+  class Vehicle {
+    +size VehicleSize
+  }
+  class Ticket {
+    +entryTime
+    +spot
+  }
+  ParkingLot "1" --> "*" Level
+  Level "1" --> "*" ParkingSpot
+  ParkingSpot --> Vehicle : holds
+  ParkingLot --> Ticket : issues
+  Vehicle <|-- Car
+  Vehicle <|-- Motorcycle
+  Vehicle <|-- Bus`} />
+
+- **`ParkingLot`** is the facade: `parkVehicle` / `unpark`. It owns levels and
+  issues tickets.
+- **`Level`** owns spots and answers `findSpot(vehicle)`.
+- **`ParkingSpot`** has a size and `canFit(vehicle)`; subclasses or a `size` enum
+  (prefer the enum + `canFit` over a deep spot hierarchy).
+- **`Vehicle`** hierarchy (Car/Motorcycle/Bus) carries size.
+- **`Ticket`** records spot + entry time for fee calculation.
+
+## Where the patterns live
+
+- **Strategy — spot assignment.** "nearest", "first-available", "fit smallest
+  spot" are interchangeable `SpotAssignmentStrategy` implementations injected into
+  `Level`. New policy = new class, no edits (Open/Closed).
+- **Strategy — pricing.** `FeeStrategy` (flat, hourly, tiered) computed from the
+  ticket.
+- **Singleton (maybe).** One `ParkingLot` instance — but inject it rather than
+  reaching for a global.
+
+<Callout type="tip" title="Prefer an enum + capability over a class explosion">
+Modeling every spot/vehicle combination as a subclass blows up fast. A `size`
+enum plus `spot.canFit(vehicle)` keeps it small and handles "a car can use a
+large spot if no compact is free" without new types.
+</Callout>
+
+## Walk a scenario + concurrency
+
+"A car arrives": `ParkingLot.parkVehicle(car)` → ask each `Level` for a spot via
+its assignment strategy → mark spot occupied → issue `Ticket`. **Concurrency
+follow-up:** two cars racing for the last spot is the same race as a balance
+double-spend — guard spot acquisition atomically (compare-and-set on the spot's
+state, or a lock per level) so a spot is never double-assigned.
+
+<QA q="How do you keep the parking lot design extensible to new vehicle or spot types?">
+
+Don't hardcode the matching logic with `if (vehicle instanceof Car)`. Give spots
+a size and a `canFit(vehicle)` capability, and put spot selection behind a
+Strategy interface. Adding a new vehicle type means defining its size and how it
+fits; adding a new assignment policy means a new strategy class. Both extend the
+system without editing existing classes — Open/Closed in practice.
+
+</QA>
+
+<QA q="Two cars try to take the last spot simultaneously. What happens?">
+
+Without protection, both can read the spot as free and both get assigned — the
+same race as a double-spend. I make spot acquisition atomic: a compare-and-set on
+the spot's state (free → occupied) that only one car wins, or a short lock per
+level around find-and-reserve. The loser is told the spot's gone and retries. The
+invariant "a spot holds at most one vehicle" must be enforced at the point of
+mutation, not by a check-then-act.
+
+</QA>

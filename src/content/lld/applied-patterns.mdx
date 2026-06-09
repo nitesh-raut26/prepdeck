@@ -1,0 +1,101 @@
+---
+title: "Patterns In My Codebases"
+summary: "The 'did you use design patterns?' question, answered with real examples — the source registry, the middleware chain, the alert worker, the pricing engine, and graceful-degradation strategies."
+order: 3
+tags: ["design-patterns", "applied", "projects"]
+---
+
+## Why this page exists
+
+"Have you used design patterns?" goes badly when you recite GoF. It goes well
+when you point at code: *"the ingestion layer is Strategy + Registry, the API
+middleware is Chain of Responsibility, the alert worker is Observer."* Here are
+the real ones.
+
+## LandAI — source registry & compliance gate
+
+Each external source is an adapter behind a common interface (**Strategy**),
+looked up by a **Registry**, and fronted by a **Guard / Proxy** (`RobotsGate`)
+that can refuse to run a non-permitted source.
+
+```ts
+interface SourceAdapter { id: string; permitted: boolean; fetch(q: Query): Promise<Raw>; }
+
+const SOURCE_REGISTRY: Record<string, SourceAdapter> = {
+  osm_overpass: overpassAdapter,   // permitted (ODbL)
+  listing_portal: portalAdapter,   // permitted = false → RobotsGate blocks
+};
+
+function ingest(sourceId: string, q: Query) {
+  const src = SOURCE_REGISTRY[sourceId];
+  if (!src?.permitted) throw new ComplianceError(sourceId); // the gate
+  return src.fetch(q);
+}
+```
+
+- **Graceful degradation = Strategy with a fallback chain:** FAISS → NumPy,
+  PostGIS → in-memory, XGBoost → scikit-learn. Same interface, swap the
+  implementation by availability.
+- **Provenance envelope = a Decorator/wrapper** that attaches
+  `source · license · confidence · freshness` to every value.
+
+## StockVision — middleware & engines
+
+- **Chain of Responsibility / Decorator:** the request passes through auth →
+  rate-limit → CSP → B2B-gateway middleware, each free to short-circuit. Adding a
+  concern = adding a link, not editing the others.
+- **Strategy + Composite:** the conviction score combines 40+ weighted factors;
+  each factor is a small strategy, the composite aggregates them.
+- **Observer + Scheduler:** the APScheduler alert worker observes price changes
+  and notifies subscribers out of band.
+- **Policy / Strategy:** subscription plan-gating selects behavior by tier,
+  enforced server-side.
+
+## StockStump — pricing & trading
+
+- **Strategy:** `PriceEngineService` (performance-based jumps) vs
+  `PlayerPriceService` (random tick) are interchangeable price-move strategies.
+- **State:** a player is `TRADING` or `FROZEN` (lock active); the trade endpoint's
+  behavior depends on that state object rather than scattered booleans.
+- **Adapter:** cricket-API responses are mapped into internal DTOs, isolating the
+  domain from a third-party schema.
+
+<Callout type="tip" title="Tie the pattern to a force and a payoff">
+For each, say the force and the win: "sources vary and some are illegal → Strategy
++ a Registry + a Gate → I can add a licensed feed without touching callers and the
+illegal one can't run." That's a senior-sounding answer.
+</Callout>
+
+<QA q="Tell me about a design pattern you used and why.">
+
+In LandAI's ingestion layer I used Strategy + Registry + a Guard. Each data
+source implements a common `SourceAdapter` interface (Strategy); a registry maps
+an id to the adapter; and a `RobotsGate` checks a `permitted` flag before
+running, so sources whose ToS forbids automation literally can't execute. The
+payoff: adding a new licensed feed is a new registered adapter with zero changes
+to callers, and compliance is structural rather than a convention someone might
+forget.
+
+</QA>
+
+<QA q="Where did you use the Observer pattern in production code?">
+
+StockVision's alerts. The APScheduler worker evaluates price conditions and
+notifies subscribers (email/push) when an alert fires — subjects (prices) and
+observers (alerts/notifications) are decoupled, and it runs off the request path
+so a slow notification never blocks an API call. It also makes alert types
+extensible: new notification channels subscribe without changing the price
+logic.
+
+</QA>
+
+<QA q="How did patterns help you handle missing dependencies gracefully?">
+
+Graceful degradation is Strategy with a fallback: the similarity search exposes
+one interface with two implementations, FAISS for scale and NumPy as a fallback
+that returns identical results; spatial queries fall back from PostGIS to
+in-memory; the price model falls back from XGBoost to scikit-learn. Because each
+pair shares an interface, the caller is oblivious and the app still runs (and
+demos) when the heavy dependency isn't installed.
+
+</QA>

@@ -1,0 +1,92 @@
+---
+title: "OOP & SOLID"
+summary: "The four OOP pillars and the five SOLID principles, each with the one-sentence test an interviewer is listening for and a concrete code smell it fixes."
+order: 1
+tags: ["OOP", "SOLID", "design-principles"]
+---
+
+## The four pillars
+
+- **Encapsulation** — hide internal state; expose behavior. Invariants are
+  protected because state only changes through methods.
+- **Abstraction** — model the essentials, hide the mechanism. Callers depend on
+  *what*, not *how*.
+- **Inheritance** — share/extend behavior via an "is-a" relationship. Powerful
+  but over-used; **prefer composition** ("has-a") for flexibility.
+- **Polymorphism** — one interface, many implementations; the caller doesn't
+  branch on type.
+
+## SOLID
+
+| | Principle | The test |
+|---|---|---|
+| **S** | Single Responsibility | "One reason to change." A class does one job. |
+| **O** | Open/Closed | Open to extension, closed to modification — add a class, don't edit a switch. |
+| **L** | Liskov Substitution | A subtype must be usable anywhere its base is, without surprises. |
+| **I** | Interface Segregation | Many small interfaces beat one fat one; don't force unused methods. |
+| **D** | Dependency Inversion | Depend on abstractions, not concretions. |
+
+### Dependency Inversion in one example
+
+```ts
+// ❌ High-level policy welded to a concrete detail
+class OrderService {
+  private email = new SmtpEmailSender(); // can't swap, can't test
+  confirm(o: Order) { this.email.send(o.userEmail, "Confirmed"); }
+}
+
+// ✅ Depend on an abstraction; inject the detail
+interface Notifier { send(to: string, msg: string): void; }
+
+class OrderService {
+  constructor(private notifier: Notifier) {}      // inverted
+  confirm(o: Order) { this.notifier.send(o.userEmail, "Confirmed"); }
+}
+// Now SMTP, SMS, or a fake for tests all satisfy Notifier — Open/Closed too.
+```
+
+<Callout type="tip" title="SOLID is a means, not a religion">
+The goal is code that's easy to change and test. Quote the principle, then show
+the *smell it removes* (a giant switch, an untestable `new`, a subtype that
+throws on a base method). Interviewers want the judgment, not the acronym.
+</Callout>
+
+## Composition over inheritance
+
+Deep inheritance trees are rigid (a change high up ripples down) and force a
+single axis of variation. Composition lets you assemble behavior from small
+parts and swap them at runtime — it's why Strategy, Decorator and Dependency
+Injection all favor "has-a".
+
+<QA q="What does the Single Responsibility Principle actually mean — give a smell.">
+
+A class should have one reason to change. The smell: a `User` class that holds
+profile data **and** formats it to JSON **and** saves it to the DB **and** sends
+emails. A schema change, a serialization change, and an SMTP change all force
+edits to the same class, and they collide. Splitting into `User`, a serializer,
+a repository, and a notifier means each changes for one reason and can be tested
+in isolation.
+
+</QA>
+
+<QA q="Give a real Liskov Substitution violation.">
+
+The classic: `Square extends Rectangle`. Rectangle has independent `setWidth`
+and `setHeight`; Square must keep them equal, so calling `setWidth(5)` on a
+Square-as-Rectangle also changes the height, breaking code written against
+Rectangle's contract. The subtype isn't safely substitutable. The fix is to not
+model it as inheritance — they don't share a behavioral contract even though a
+square "is a" rectangle geometrically.
+
+</QA>
+
+<QA q="Why 'prefer composition over inheritance'?">
+
+Inheritance couples you to a base class's implementation along a single
+hierarchy, and changes high in the tree ripple everywhere. Composition assembles
+behavior from interchangeable parts you can swap at runtime and test
+independently — more flexible and less fragile. Inheritance is right for a true
+"is-a" with a stable contract; reach for composition for "has-a" and for
+varying behavior (Strategy, Decorator).
+
+</QA>

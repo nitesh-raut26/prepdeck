@@ -1,0 +1,99 @@
+---
+title: "Design Patterns That Actually Come Up"
+summary: "The creational/structural/behavioral patterns worth knowing cold, each with its one-line intent and the situation that calls for it — plus Strategy and Observer in code."
+order: 2
+tags: ["design-patterns", "GoF", "behavioral"]
+---
+
+## The shortlist
+
+| Category | Pattern | Intent (one line) |
+|---|---|---|
+| Creational | **Factory Method** | create objects without naming the concrete class |
+| Creational | **Builder** | construct a complex object step by step |
+| Creational | **Singleton** | one shared instance (use sparingly) |
+| Structural | **Adapter** | make an incompatible interface fit |
+| Structural | **Decorator** | add behavior by wrapping, not subclassing |
+| Structural | **Facade** | one simple entry point over a messy subsystem |
+| Behavioral | **Strategy** | swap an algorithm at runtime behind an interface |
+| Behavioral | **Observer** | notify many subscribers when state changes |
+| Behavioral | **State** | behavior changes with an internal state object |
+
+## Strategy — the most useful one
+
+Encapsulate interchangeable algorithms behind a common interface and inject the
+one you want. Kills `if/else`-on-type and satisfies Open/Closed.
+
+```ts
+interface PricingStrategy { price(base: number): number; }
+
+const regular: PricingStrategy = { price: (b) => b };
+const member:  PricingStrategy = { price: (b) => b * 0.9 };
+
+class Checkout {
+  constructor(private strategy: PricingStrategy) {}
+  total(base: number) { return this.strategy.price(base); }
+}
+// Add a BlackFridayStrategy later without touching Checkout.
+```
+
+## Observer — events & notifications
+
+```ts
+type Listener<T> = (event: T) => void;
+
+class Subject<T> {
+  private listeners = new Set<Listener<T>>();
+  subscribe(l: Listener<T>) { this.listeners.add(l); return () => this.listeners.delete(l); }
+  emit(event: T) { for (const l of this.listeners) l(event); }
+}
+// priceFeed.subscribe(updateChart); priceFeed.subscribe(checkAlerts);
+```
+
+<Callout type="warn" title="Don't pattern-match for its own sake">
+Naming a pattern is worthless if it doesn't fit. The signal is recognizing the
+*forces* — "the algorithm varies → Strategy", "many things react to a change →
+Observer", "objects behave differently per mode → State" — and knowing the cost
+(Singleton hides global state and wrecks testability; Decorator adds wrapper
+layers). Reach for the simplest thing that removes the duplication.
+</Callout>
+
+## Singleton — handle with care
+
+It guarantees one instance, but it's global mutable state in disguise: it hides
+dependencies, complicates tests, and is a footgun under concurrency (use
+lazy-init with proper locking or eager init). Often dependency injection of a
+single shared instance is the better answer.
+
+<QA q="When do you use Strategy vs just an if/else?">
+
+Use Strategy when the *algorithm* varies and you expect to add more variants:
+encapsulate each behind a common interface and inject the chosen one. That
+removes the growing `if/else`/`switch` on type, satisfies Open/Closed (add a new
+strategy class, don't edit existing code), and makes each algorithm unit-testable
+in isolation. For a single, fixed two-way branch that won't grow, a plain
+`if/else` is fine — don't over-engineer.
+
+</QA>
+
+<QA q="Why is Singleton considered an anti-pattern by many?">
+
+Because it's global mutable state wearing a pattern's clothes. It hides
+dependencies (callers reach in via `getInstance()` instead of receiving it), so
+code is harder to reason about and test (you can't easily substitute a fake), and
+it invites concurrency bugs if lazily initialized without care. When you truly
+need one instance, prefer creating it once and injecting it (DI container) so the
+dependency is explicit and swappable.
+
+</QA>
+
+<QA q="Decorator vs inheritance for adding behavior?">
+
+Decorator wraps an object and adds behavior at runtime, so you can compose
+features in any combination (e.g. a buffered, compressed, encrypted stream)
+without a class explosion. Inheritance fixes the combination at compile time and
+forces a single hierarchy — adding N optional features via subclasses needs 2^N
+classes. Decorator keeps each feature a small wrapper that conforms to the same
+interface.
+
+</QA>

@@ -1,0 +1,117 @@
+---
+title: "Design an LRU Cache"
+summary: "The canonical LLD coding question: O(1) get and put with a hash map + doubly linked list. Full implementation, the why, and the follow-ups (thread-safety, TTL, LFU)."
+order: 10
+difficulty: "Classic"
+tags: ["LLD", "data-structures", "cache"]
+---
+
+## The ask
+
+A fixed-capacity cache with **O(1)** `get(key)` and `put(key, value)`; when full,
+evict the **least-recently-used** entry.
+
+## The insight
+
+You need two things in O(1): **lookup by key** and **"move this to most-recent"
+/ "find the least-recent"**. No single structure gives both, so combine:
+
+- a **hash map** `key → node` for O(1) lookup, and
+- a **doubly linked list** in recency order (head = most recent, tail = least),
+  so moving a node or evicting the tail is O(1).
+
+<Mermaid chart={`flowchart LR
+  MAP[HashMap<br/>key → node] --> N2
+  HEAD[head/MRU] --> N1[node A] --> N2[node B] --> N3[node C] --> TAIL[tail/LRU]`} />
+
+## Implementation
+
+```ts
+class Node {
+  constructor(
+    public key: number,
+    public val: number,
+    public prev: Node | null = null,
+    public next: Node | null = null,
+  ) {}
+}
+
+class LRUCache {
+  private map = new Map<number, Node>();
+  private head = new Node(0, 0); // sentinel MRU side
+  private tail = new Node(0, 0); // sentinel LRU side
+
+  constructor(private capacity: number) {
+    this.head.next = this.tail;
+    this.tail.prev = this.head;
+  }
+
+  private remove(n: Node) {
+    n.prev!.next = n.next;
+    n.next!.prev = n.prev;
+  }
+  private addFront(n: Node) {
+    n.next = this.head.next;
+    n.prev = this.head;
+    this.head.next!.prev = n;
+    this.head.next = n;
+  }
+
+  get(key: number): number {
+    const n = this.map.get(key);
+    if (!n) return -1;
+    this.remove(n);
+    this.addFront(n); // mark most-recently-used
+    return n.val;
+  }
+
+  put(key: number, val: number): void {
+    const existing = this.map.get(key);
+    if (existing) { existing.val = val; this.remove(existing); this.addFront(existing); return; }
+    if (this.map.size === this.capacity) {
+      const lru = this.tail.prev!;       // evict least-recently-used
+      this.remove(lru);
+      this.map.delete(lru.key);
+    }
+    const n = new Node(key, val);
+    this.addFront(n);
+    this.map.set(key, n);
+  }
+}
+```
+
+<Callout type="tip" title="Sentinel nodes remove the edge cases">
+The dummy `head`/`tail` nodes mean `remove`/`addFront` never check for null
+neighbors — no special-casing the empty list or single element. Mention this; it
+shows you write clean pointer code.
+</Callout>
+
+## Complexity & follow-ups
+
+- **Time:** O(1) for both `get` and `put`. **Space:** O(capacity).
+- **Thread-safety:** wrap operations in a lock, or use a concurrent structure;
+  note the lock is the contention point at scale (shard the cache to reduce it).
+- **TTL:** store an expiry per node and treat expired as a miss (lazy) + a sweeper.
+- **LFU instead of LRU:** evict least-*frequently*-used — needs frequency
+  buckets; more complex, better for skewed access.
+
+<QA q="Why a doubly (not singly) linked list for LRU?">
+
+Because eviction and promotion need O(1) removal of an arbitrary node. To unlink
+a node in O(1) you must splice its neighbors, which requires the *previous*
+pointer — a singly linked list would need an O(n) scan to find it. The doubly
+linked list plus the hash map (which hands you the node directly) is what makes
+both operations O(1).
+
+</QA>
+
+<QA q="How would you make this cache thread-safe and still fast?">
+
+The simplest correct version guards `get`/`put` with a single lock, but that lock
+serializes all access and becomes the bottleneck under load. To keep it fast I'd
+**shard** the cache into N independent segments keyed by `hash(key) % N`, each
+with its own lock, so unrelated keys don't contend (this is how concurrent caches
+like Caffeine/striped maps work). For read-heavy workloads, finer-grained or
+lock-free techniques help, but sharded locks usually get you most of the win.
+
+</QA>
