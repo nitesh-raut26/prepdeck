@@ -1,0 +1,74 @@
+---
+title: "Backtracking"
+summary: "The choose → explore → un-choose template behind subsets, permutations, combinations and constraint puzzles — plus how pruning turns exponential into tractable."
+order: 8
+difficulty: "Core pattern"
+tags: ["backtracking", "recursion", "combinatorics"]
+---
+
+## The template
+
+Build a candidate incrementally; at each step **choose** an option, **explore**
+deeper, then **un-choose** (undo) to try the next. It's DFS over the space of
+partial solutions.
+
+```python
+def subsets(nums):
+    res, path = [], []
+    def backtrack(start):
+        res.append(path[:])              # every node is a valid subset
+        for i in range(start, len(nums)):
+            path.append(nums[i])         # choose
+            backtrack(i + 1)             # explore (i+1 ⇒ no reuse, no dupes)
+            path.pop()                   # un-choose
+    backtrack(0)
+    return res
+```
+
+The `start` index is what prevents duplicate subsets; for **permutations** you'd
+instead track a `used[]` set and iterate all indices.
+
+## Knowing the shape
+
+| Problem | Branch on | Avoid dupes via |
+|---|---|---|
+| Subsets | include/skip each item | `start` index |
+| Combinations (k of n) | pick next ≥ start | `start` index |
+| Permutations | any unused item | `used[]` flags |
+| Partition / N-Queens / Sudoku | each valid placement | constraint check |
+
+## Pruning is the whole point
+
+Naive enumeration is O(2ⁿ) or O(n!). **Pruning** — cutting branches that can't
+lead to a valid/better solution — is what makes it pass. Sort to enable early
+termination, skip equal siblings to dedupe, and check constraints *before*
+recursing (e.g. N-Queens: don't place a queen on an attacked square).
+
+<Callout type="tip" title="Backtracking is viable when n is tiny">
+If the constraints say n ≤ ~12–15, exponential backtracking is expected — the
+interviewer wants a clean recursion with correct pruning, not a polynomial trick.
+The input size is the hint (see the DSA study plan).
+</Callout>
+
+<QA q="What's the difference in code between generating subsets and permutations?">
+
+Both are backtracking, but the branching differs. Subsets/combinations pass a
+`start` index and only consider items from `start` onward, so each item is
+considered once in order — that prevents reordered duplicates. Permutations
+consider *every* index each level but skip ones already in the current path
+(a `used[]` boolean array), because order matters and each element appears once
+per permutation. So: `start` index for subsets/combinations, `used[]` set for
+permutations.
+
+</QA>
+
+<QA q="How do you stop backtracking from being hopelessly slow?">
+
+Prune: don't explore branches that can't yield a valid or improving solution.
+Concretely — check constraints before recursing (place a queen only on a safe
+square), sort the input so you can break early once a bound is exceeded, and skip
+duplicate siblings (`if i > start and nums[i] == nums[i-1]: continue`) to avoid
+generating the same candidate twice. Good pruning often turns an intractable
+search into one that finishes instantly on the given constraints.
+
+</QA>

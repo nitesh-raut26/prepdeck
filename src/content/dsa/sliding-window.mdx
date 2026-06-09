@@ -1,0 +1,83 @@
+---
+title: "Sliding Window"
+summary: "Turn an O(n·k) recompute-from-scratch loop into O(n) by maintaining a moving range and updating it incrementally."
+order: 2
+difficulty: "Core pattern"
+tags: ["arrays", "strings", "two-pointers"]
+---
+
+## When to reach for it
+
+You have a **contiguous** subarray/substring problem and a brute force that
+recomputes some aggregate (sum, count, max, distinct-count) for every window.
+The window's answer for position `i+1` is *almost* the same as for `i` — so
+instead of recomputing, you **slide**: add the entering element, remove the
+leaving one.
+
+**Signal phrases:** "longest/shortest substring/subarray", "at most K", "exactly
+K", "maximum sum of size k", "contains all characters of…".
+
+## Two flavours
+
+- **Fixed-size window** — window width is given (`k`). Slide one step at a time.
+- **Variable-size window** — grow `right` greedily; shrink `left` while a
+  constraint is violated. The answer is usually the max/min window seen.
+
+```python
+# Variable window: longest substring with at most K distinct characters
+from collections import defaultdict
+
+def longest_k_distinct(s: str, k: int) -> int:
+    count = defaultdict(int)
+    left = best = 0
+    for right, ch in enumerate(s):
+        count[ch] += 1
+        while len(count) > k:           # constraint violated → shrink
+            count[s[left]] -= 1
+            if count[s[left]] == 0:
+                del count[s[left]]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+```
+
+<Callout type="tip" title="The invariant is everything">
+State the loop invariant out loud in the interview: *"the window `[left, right]`
+is always valid after the inner while-loop."* Each index enters once and leaves
+once, so the two pointers move a total of `2n` steps → **O(n)** even with the
+nested loop.
+</Callout>
+
+## Complexity
+
+| | Brute force | Sliding window |
+|---|---|---|
+| Time | O(n·k) / O(n²) | **O(n)** |
+| Space | O(1) | O(k) for the window's bookkeeping |
+
+## Practice set
+
+- Maximum sum subarray of size K — *fixed window*
+- Longest substring without repeating characters — *variable, shrink on dupe*
+- Minimum window substring — *variable, need-map + formed counter*
+- Fruit into baskets — *at most 2 distinct*
+- Permutation in string / find all anagrams — *fixed window + frequency match*
+
+<QA q="How do you know to shrink from the left rather than restart the window?">
+
+Because the aggregate is **monotonic with respect to adding/removing one
+element**: removing the leftmost element strictly relaxes the constraint, so
+there's no need to throw the window away. If a problem's constraint *isn't*
+monotonic (e.g. "sum is even"), sliding window doesn't apply directly and you
+fall back to prefix sums / hashing.
+
+</QA>
+
+<QA q="Fixed vs variable window — how do you decide in 10 seconds?">
+
+If the window **size is given** (`k`), it's fixed: maintain the aggregate and
+slide one step. If the problem asks for the **longest/shortest** window
+satisfying a condition, it's variable: expand `right`, and shrink `left` while
+the condition is violated (longest) or satisfied (shortest).
+
+</QA>

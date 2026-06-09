@@ -1,0 +1,109 @@
+---
+title: "Algorithms In My Projects"
+summary: "The real algorithms inside LandAI, StockVision and StockStump — the DSA primitive under each, its complexity, and how to explain it when an interviewer drills into your project."
+order: 30
+tags: ["applied", "complexity", "projects"]
+---
+
+## Why this matters
+
+When an interviewer says "you mentioned similarity search — how does that
+work?", they're testing whether you understand the algorithm under your own
+project. Each item below is: the idea → the DSA primitive → complexity → the
+one-paragraph answer.
+
+## Cosine-similarity twin matching (LandAI)
+
+Each city is a feature vector; the "twin" is the **nearest neighbour by cosine
+similarity** = dot product of L2-normalized vectors. Brute force is a matrix
+multiply; **FAISS** (IVF/HNSW index) makes it sub-linear at scale.
+
+- **Primitive:** kNN / vector dot product; top-k via `argpartition` (quickselect).
+- **Complexity:** O(n·d) brute per query; ~O(log n) or better with an index.
+
+## Gradient-boosted trees + TreeSHAP (LandAI)
+
+XGBoost is an **additive ensemble**: each tree corrects the previous trees'
+residuals (gradient boosting). Inference walks each tree root→leaf. **TreeSHAP**
+computes each feature's signed contribution to a prediction (game-theoretic
+Shapley values, computed efficiently for trees).
+
+- **Primitive:** binary tree traversal; greedy split selection at train time.
+- **Complexity:** inference O(#trees · depth) per prediction.
+
+## TF-IDF infrastructure signals (LandAI)
+
+Turn documents into **sparse weighted vectors**: term frequency × inverse
+document frequency down-weights common words. Ranking relevant announcements is
+then cosine similarity over sparse vectors.
+
+- **Primitive:** hash maps (term → count/weight), sparse dot product.
+- **Complexity:** O(total tokens) to build; O(nnz) per similarity.
+
+## Morphology over urban rasters (LandAI)
+
+`scipy.ndimage` runs **connected-components** + dilation/erosion over per-year
+footprint grids to measure compactness, fragmentation and growth direction — the
+same flood-fill/BFS idea as "number of islands", on an image grid.
+
+- **Primitive:** grid BFS/DFS (connected components); convolution-style passes.
+- **Complexity:** O(pixels).
+
+## Technical indicators & DCF (StockVision)
+
+A moving average / EMA over a price series is a **sliding-window** aggregate —
+O(n) with incremental update rather than recomputing each window. A DCF is a
+**discounted sum**: each future cash flow divided by `(1+r)^t`, summed.
+
+- **Primitive:** sliding window; prefix/rolling aggregate.
+- **Complexity:** O(n) for indicators over n bars.
+
+## Live price tick & leaderboard (StockStump)
+
+Each price update is **O(1)** (read price, apply delta, write to Redis). The
+leaderboard is a **sorted set (Redis ZSET)** — a skip-list/heap-backed structure
+giving O(log n) updates and O(log n + k) range reads, instead of re-sorting all
+users on every change.
+
+- **Primitive:** hash map (O(1) price), ordered set / skip list (leaderboard).
+- **Complexity:** O(1) tick; O(log n) rank update.
+
+<Callout type="tip" title="Always close with complexity + a scaling note">
+"Twin matching is cosine kNN — O(n·d) brute force, fine at 116 cities; I'd move to
+a FAISS HNSW index for sub-linear queries at a million." That single sentence
+shows you know the primitive, the cost, and the upgrade path.
+</Callout>
+
+<QA q="You used 'similarity search' in LandAI. What algorithm is that, and what's its complexity?">
+
+It's k-nearest-neighbours by cosine similarity: I L2-normalize each city's
+feature vector so a dot product equals cosine similarity, compute similarities to
+the target, and take the top-k (an `argpartition`/quickselect, O(n) average, not
+a full sort). Brute force is O(n·d) per query — trivial at 116 cities. To scale to
+millions I'd build a FAISS index (IVF or HNSW) that makes queries roughly
+logarithmic, trading a one-time index build and a little recall for speed; the
+NumPy and FAISS paths return identical results.
+
+</QA>
+
+<QA q="Your leaderboard updates as users trade. How do you keep it fast?">
+
+I don't re-sort all users on every trade. A leaderboard is a sorted-set problem,
+so I use a Redis ZSET (backed by a skip list): updating a user's score is
+O(log n), and reading the top-k or a user's rank is O(log n + k). That turns an
+O(n log n) re-sort per update into O(log n), which is what makes a live
+leaderboard viable under constant score changes.
+
+</QA>
+
+<QA q="Explain how XGBoost makes a prediction and how you explain that prediction.">
+
+XGBoost is gradient boosting over decision trees: it builds trees sequentially,
+each fitting the residual errors of the ensemble so far, and a prediction is the
+sum of every tree's leaf value for that input — inference is O(#trees · depth).
+To explain a single prediction I compute TreeSHAP values, which assign each
+feature a signed, additive contribution (Shapley values, computed efficiently for
+tree models) so the forecast comes with its top positive/negative drivers rather
+than being a black box.
+
+</QA>

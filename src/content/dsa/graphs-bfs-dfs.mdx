@@ -1,0 +1,91 @@
+---
+title: "Graphs — BFS, DFS & Topological Sort"
+summary: "Adjacency-list traversal, when BFS beats DFS (and vice-versa), shortest path on unweighted graphs, cycle detection, and Kahn's topological sort."
+order: 5
+difficulty: "Core pattern"
+tags: ["graphs", "BFS", "DFS", "topological-sort"]
+---
+
+## Represent it, then traverse
+
+Default to an **adjacency list** (`Map<node, neighbors[]>`) — O(V+E) space, and
+traversals are O(V+E). Use a matrix only for dense graphs or O(1) edge lookups.
+
+## BFS — shortest path on an *unweighted* graph
+
+Explore level by level with a queue. The first time you reach a node, you've
+reached it by the fewest edges.
+
+```python
+from collections import deque
+
+def bfs_shortest(adj, src, dst):
+    q = deque([(src, 0)])
+    seen = {src}
+    while q:
+        node, d = q.popleft()
+        if node == dst: return d
+        for nb in adj[node]:
+            if nb not in seen:
+                seen.add(nb)          # mark on ENQUEUE, not dequeue
+                q.append((nb, d + 1))
+    return -1
+```
+
+## DFS — connectivity, paths, cycles
+
+Recursion (or an explicit stack). Great for "does a path exist", counting
+connected components, and cycle detection (track the recursion stack for directed
+graphs; a parent pointer for undirected).
+
+| Use | Pick |
+|---|---|
+| Shortest path, unweighted | **BFS** |
+| Levels / "minimum steps" | **BFS** |
+| All paths / detect cycle / components | **DFS** |
+| Shortest path, weighted ≥ 0 | **Dijkstra** (BFS + heap) |
+| Topological order (DAG) | **Kahn's BFS** or DFS post-order |
+
+<Callout type="warn" title="The #1 BFS bug">
+Mark a node as visited **when you enqueue it**, not when you dequeue it.
+Otherwise the same node gets queued multiple times before it's processed, which
+blows up the queue and can break the shortest-path guarantee.
+</Callout>
+
+## Topological sort (Kahn's algorithm)
+
+Order a DAG so every edge points "forward" (build order, task scheduling,
+dependency resolution). Repeatedly remove a node with in-degree 0.
+
+```python
+def topo(adj, indeg):
+    q = deque([n for n in adj if indeg[n] == 0])
+    order = []
+    while q:
+        n = q.popleft(); order.append(n)
+        for nb in adj[n]:
+            indeg[nb] -= 1
+            if indeg[nb] == 0: q.append(nb)
+    return order if len(order) == len(adj) else []   # empty ⇒ a cycle exists
+```
+
+<QA q="When do you use BFS vs DFS?">
+
+BFS explores in order of distance from the source, so it's the tool for shortest
+path / fewest steps on an *unweighted* graph and for anything level-based. DFS
+goes deep first, which suits path existence, enumerating all paths, detecting
+cycles, and counting connected components, and it's lighter to write recursively.
+For weighted shortest paths you upgrade BFS to Dijkstra (a priority queue instead
+of a plain queue).
+
+</QA>
+
+<QA q="How do you detect a cycle, and how does it differ for directed vs undirected graphs?">
+
+Undirected: run DFS and if you reach an already-visited node that isn't the one
+you came from (the parent), there's a cycle. Directed: track nodes currently on
+the recursion stack ("in progress"); an edge back to an in-progress node is a
+back edge → cycle. Equivalently, run Kahn's topological sort and if you can't
+order all nodes (some never reach in-degree 0), the graph has a cycle.
+
+</QA>

@@ -1,0 +1,70 @@
+---
+title: "Two Pointers"
+summary: "Opposite-end, fast/slow, and partition variants — replace nested loops on sorted/linked data with a single O(n) pass."
+order: 3
+difficulty: "Core pattern"
+tags: ["arrays", "linked-list", "two-pointers"]
+---
+
+## Three variants
+
+- **Opposite ends** — start at both ends of a *sorted* array, move inward based on
+  a comparison (pair-sum, container-with-most-water, valid palindrome).
+- **Fast & slow** — two pointers at different speeds (cycle detection, find the
+  middle, kth-from-end in a linked list).
+- **Partition / same-direction** — a write pointer trails a read pointer
+  (remove-in-place, Dutch national flag, dedupe sorted).
+
+```python
+# Opposite ends: does a SORTED array contain two numbers summing to target?
+def two_sum_sorted(a, target):
+    lo, hi = 0, len(a) - 1
+    while lo < hi:
+        s = a[lo] + a[hi]
+        if s == target: return (lo, hi)
+        if s < target:  lo += 1     # need bigger → move left pointer up
+        else:           hi -= 1     # need smaller → move right pointer down
+    return None
+```
+
+Why it's O(n): each pointer only moves one direction, so together they take ≤ n
+steps. The "sorted" precondition is what lets a single comparison decide which
+pointer to advance.
+
+## Fast & slow — cycle detection (Floyd's)
+
+```python
+def has_cycle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next          # +1
+        fast = fast.next.next     # +2
+        if slow is fast: return True   # they meet ⇒ cycle
+    return False
+```
+
+<Callout type="tip" title="Two pointers vs hashing">
+A hash set also finds a pair-sum in O(n) time but O(n) space. Two pointers is
+O(1) space *if the array is already sorted*. If it isn't, sorting first is O(n
+log n) — then a hash-set pass at O(n) may win. State the trade-off out loud.
+</Callout>
+
+<QA q="Two pointers vs a hash set for the two-sum problem — which and when?">
+
+If the array is already sorted, two pointers solves it in O(n) time and O(1)
+space — strictly better on memory. If it's unsorted, a hash set finds the
+complement in O(n) time but O(n) space without sorting, whereas two pointers
+needs an O(n log n) sort first. So: sorted (or sorting is free/needed anyway) →
+two pointers; unsorted and you want to avoid the sort → hash set.
+
+</QA>
+
+<QA q="How does Floyd's cycle detection work and why is it O(1) space?">
+
+A slow pointer moves one step, a fast pointer two. If there's a cycle the fast
+pointer laps the slow one and they meet inside the loop; if `fast` reaches null
+there's no cycle. It uses two pointers and no extra structure, so it's O(1)
+space versus O(n) for a visited-set approach. To find the cycle's start, reset
+one pointer to the head and advance both at the same speed until they meet again.
+
+</QA>

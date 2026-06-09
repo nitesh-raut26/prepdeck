@@ -1,0 +1,78 @@
+---
+title: "Binary Search (incl. on the answer)"
+summary: "A template that never has off-by-one bugs, plus the SDE2-level skill: binary-searching the answer space for 'minimum X that works' problems."
+order: 4
+difficulty: "Core pattern"
+tags: ["binary-search", "search-space", "monotonic"]
+---
+
+## A template you won't get wrong
+
+Use a half-open `[lo, hi)` and converge on the **first index that satisfies a
+predicate**. This one template handles "find x", "lower bound", "first true".
+
+```python
+def lower_bound(a, target):
+    lo, hi = 0, len(a)          # half-open [lo, hi)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if a[mid] < target:     # predicate: "too small"
+            lo = mid + 1
+        else:
+            hi = mid            # mid might be the answer → keep it in range
+    return lo                   # first index with a[i] >= target
+```
+
+The invariant: everything `< lo` fails the predicate, everything `>= hi`
+satisfies it. The loop shrinks the unknown region until `lo == hi`.
+
+## The real SDE2 skill: binary search on the answer
+
+When the answer is a number and "does value `x` work?" is **monotonic** (if `x`
+works, so does every larger/smaller `x`), binary-search the *answer*, not an
+array.
+
+```python
+# Min ship capacity to deliver all packages in <= D days.
+def min_capacity(weights, D):
+    def feasible(cap):
+        days, cur = 1, 0
+        for w in weights:
+            if cur + w > cap: days, cur = days + 1, 0
+            cur += w
+        return days <= D
+    lo, hi = max(weights), sum(weights)   # capacity search space
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if feasible(mid): hi = mid        # works → try smaller
+        else:             lo = mid + 1    # doesn't → go bigger
+    return lo
+```
+
+<Callout type="tip" title="Spot it by the question shape">
+"Minimum/maximum X such that a condition holds", "smallest capacity / largest
+minimum / fastest speed" + a monotonic feasibility check ⇒ binary search on the
+answer. Complexity is O(n log(range)) — the log of the *value* range, not the
+array length.
+</Callout>
+
+<QA q="How do you avoid off-by-one and infinite loops in binary search?">
+
+Fix one convention and keep its invariant. I use a half-open interval `[lo, hi)`
+with `while lo < hi`, set `lo = mid + 1` when the predicate fails and `hi = mid`
+when it holds (never `mid ± 1` on the side that could be the answer). Because
+`mid` rounds down and `lo` always advances when we go right, the range strictly
+shrinks, so it terminates and `lo` lands on the first element satisfying the
+predicate.
+
+</QA>
+
+<QA q="When can you binary-search something that isn't a sorted array?">
+
+When the answer is numeric and the feasibility predicate is monotonic — "if x
+works, everything above (or below) x also works." Then the candidate answers form
+a sorted true/false boundary you can binary-search, even though there's no array.
+Classic cases: minimum capacity/speed/size to satisfy a constraint, or
+maximizing a minimum. Complexity is O(check · log(value range)).
+
+</QA>

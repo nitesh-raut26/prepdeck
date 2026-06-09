@@ -1,0 +1,82 @@
+---
+title: "Dynamic Programming"
+summary: "How to recognize DP, the five-step recipe (state, transition, base, order, answer), memoization vs tabulation, and the classic problem families."
+order: 6
+difficulty: "Core pattern"
+tags: ["DP", "memoization", "recursion"]
+---
+
+## When it's DP
+
+Two signals together: **optimal substructure** (the answer is built from answers
+to subproblems) and **overlapping subproblems** (the same subproblem recurs). If
+subproblems *don't* overlap, it's divide-and-conquer, not DP. Phrasings:
+"number of ways", "min/max cost/length", "can you reach", "longest …".
+
+## The five-step recipe
+
+1. **State** — what parameters identify a subproblem? (`dp[i]`, `dp[i][j]`…)
+2. **Transition** — how does a state combine smaller states?
+3. **Base case(s)** — the trivial smallest states.
+4. **Order** — memoized recursion (top-down) or fill a table (bottom-up).
+5. **Answer** — which state holds it.
+
+## Memoization vs tabulation
+
+- **Top-down (memoize):** write the recursion, cache results. Easiest to derive —
+  start here in an interview.
+- **Bottom-up (tabulate):** fill an array in dependency order. No recursion
+  overhead; enables **space optimization** (keep only the last row/few cells).
+
+```python
+# Coin change: fewest coins to make `amount` (unbounded coins).
+def coin_change(coins, amount):
+    INF = amount + 1
+    dp = [0] + [INF] * amount          # dp[x] = fewest coins to make x
+    for x in range(1, amount + 1):
+        for c in coins:
+            if c <= x:
+                dp[x] = min(dp[x], dp[x - c] + 1)
+    return dp[amount] if dp[amount] < INF else -1
+# Time O(amount · coins), Space O(amount)
+```
+
+## Classic families (recognize the skeleton)
+
+| Family | Examples | State shape |
+|---|---|---|
+| 1-D sequence | climbing stairs, house robber, LIS | `dp[i]` |
+| Knapsack | 0/1 knapsack, partition equal subset, coin change | `dp[i][capacity]` |
+| Two strings | edit distance, LCS | `dp[i][j]` |
+| Grid | unique paths, min path sum | `dp[r][c]` |
+| Intervals | matrix-chain, burst balloons | `dp[i][j]` over ranges |
+
+<Callout type="tip" title="Derive top-down first, then convert">
+Get the recurrence right with memoization (it mirrors the brute-force you already
+described), then convert to bottom-up if you need to optimize space. Trying to
+write the table directly is where people make indexing errors.
+</Callout>
+
+<QA q="How do you recognize a problem is DP rather than greedy?">
+
+DP applies when you have optimal substructure **and** overlapping subproblems,
+and when a locally-optimal choice doesn't guarantee a global optimum (so you must
+explore combinations, caching repeated states). Greedy works only when the
+greedy-choice property holds — taking the best local option always leads to the
+global best (e.g. interval scheduling). If a greedy counterexample exists but
+subproblems repeat, it's DP. A quick test: does brute-force recursion revisit the
+same arguments? Then memoize it.
+
+</QA>
+
+<QA q="Memoization vs tabulation — trade-offs?">
+
+Top-down memoization is easier to write (it's the natural recursion plus a cache)
+and only computes states you actually reach, but it carries recursion/stack
+overhead and risks stack overflow on deep inputs. Bottom-up tabulation computes
+in dependency order with no recursion, is usually a bit faster, and lets you
+shrink memory by keeping only the rows/cells still needed (e.g. O(amount) instead
+of O(n·amount)). I derive top-down, then convert to bottom-up when space or depth
+matters.
+
+</QA>

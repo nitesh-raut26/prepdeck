@@ -1,0 +1,88 @@
+---
+title: "Heaps & Intervals"
+summary: "Two patterns that show up constantly: a heap for top-K / streaming / merging, and sort-then-sweep for interval problems."
+order: 7
+difficulty: "Core pattern"
+tags: ["heap", "priority-queue", "intervals", "sorting"]
+---
+
+## Heap = priority queue
+
+A binary heap gives **O(log n)** push/pop and **O(1)** peek of the min (or max).
+Reach for it whenever you repeatedly need the current extreme of a changing set.
+
+### Top-K with a size-K heap
+
+To find the K largest, keep a **min-heap of size K**: push each element, and if
+the heap exceeds K, pop the smallest. What remains is the top K.
+
+```python
+import heapq
+
+def k_largest(nums, k):
+    h = []
+    for x in nums:
+        heapq.heappush(h, x)
+        if len(h) > k:
+            heapq.heappop(h)     # drop the smallest so far
+    return h                      # the k largest (unordered)
+# Time O(n log k), Space O(k) — beats sorting's O(n log n) when k << n
+```
+
+### Other heap classics
+
+- **Merge K sorted lists** — push the head of each list; pop the min, push its
+  successor. O(N log K).
+- **Streaming median** — a max-heap of the lower half + a min-heap of the upper
+  half, kept balanced; median is the top(s). O(log n) per insert.
+
+<Callout type="tip" title="Top-K: heap vs sort vs quickselect">
+Sorting is O(n log n). A size-K heap is O(n log k) — better when k is small.
+**Quickselect** finds the kth element in O(n) average (O(n²) worst) and partitions
+around it. Mention all three and pick by constraints; the heap also handles
+*streaming* input, which sort/quickselect can't.
+</Callout>
+
+## Intervals = sort first, then sweep
+
+Almost every interval problem starts by **sorting by start (or end)**, then making
+one pass.
+
+```python
+# Merge overlapping intervals.
+def merge(intervals):
+    intervals.sort(key=lambda iv: iv[0])
+    out = [intervals[0]]
+    for s, e in intervals[1:]:
+        if s <= out[-1][1]:           # overlaps the last merged interval
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+# Time O(n log n) for the sort, then O(n)
+```
+
+For "max concurrent intervals" (meeting rooms), sweep the sorted start/end events
+or use a min-heap of end times. Sort by **end** time for greedy
+"max non-overlapping intervals".
+
+<QA q="Find the K largest in a huge stream — heap, sort, or quickselect?">
+
+For a stream you can't sort or quickselect (they need the whole array), so use a
+**min-heap of size K**: push each element, pop the smallest when size exceeds K.
+That's O(n log k) time and O(k) memory regardless of stream length. For a static
+array where k is large, sorting (O(n log n)) or quickselect (O(n) average) can be
+better, but the heap is the only one that works online.
+
+</QA>
+
+<QA q="What's the first move on almost any interval problem, and why?">
+
+Sort the intervals — usually by start time, sometimes by end. Sorting turns a
+problem about arbitrary overlaps into a single left-to-right sweep where you only
+compare each interval to the running state (last merged interval, or a heap of
+active end times). That's why merge-intervals, meeting-rooms, and
+max-non-overlapping all reduce to O(n log n) sort + O(n) scan. Choose the sort
+key by the question: by end for greedy max-non-overlapping, by start for merging.
+
+</QA>

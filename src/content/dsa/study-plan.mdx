@@ -1,0 +1,86 @@
+---
+title: "DSA Study Plan & Complexity"
+summary: "What an SDE2 DSA round actually tests, the Big-O cheat sheet, the 'input size → expected complexity' trick, and a pattern-recognition table to map a problem to a technique fast."
+order: 1
+tags: ["complexity", "big-o", "patterns", "interview"]
+---
+
+## What SDE2 DSA actually tests
+
+Not "do you know the trick" — it's: can you **recognize the pattern**, **state
+the complexity**, **write clean code**, **handle edge cases**, and **communicate**
+while doing it. Talk through the brute force, name the bottleneck, then optimize.
+A working O(n log n) you can explain beats a buggy O(n) you can't.
+
+## Big-O you must recognize on sight
+
+| Complexity | Name | Typical source |
+|---|---|---|
+| O(1) | constant | hash lookup, array index |
+| O(log n) | logarithmic | binary search, balanced tree, heap push/pop |
+| O(n) | linear | single pass, two pointers |
+| O(n log n) | linearithmic | sorting, heap-based, divide & conquer |
+| O(n²) | quadratic | nested loops, naive pair comparison |
+| O(2ⁿ) | exponential | subsets, naive recursion without memo |
+| O(n!) | factorial | permutations |
+
+## The input-size → complexity trick
+
+The constraint tells you the target complexity before you've solved anything:
+
+| n up to | Likely target |
+|---|---|
+| ≤ 10–12 | O(n!) / O(2ⁿ) — backtracking/brute force is fine |
+| ≤ 20–25 | O(2ⁿ) bitmask DP |
+| ≤ 500 | O(n³) |
+| ≤ 5,000 | O(n²) |
+| ≤ 10⁶ | O(n) or O(n log n) |
+| ≥ 10⁸ | O(log n) or O(1) |
+
+<Callout type="tip" title="Use the constraints out loud">
+"n is up to 10⁵, so an O(n²) ~10¹⁰ won't pass — I need O(n log n) or better."
+Saying this signals maturity and narrows your options immediately.
+</Callout>
+
+## Pattern recognition — signal → technique
+
+| If you see… | Reach for |
+|---|---|
+| contiguous subarray/substring, "longest/at most K" | **Sliding window** |
+| sorted array, pair/triplet summing to target | **Two pointers** |
+| "search space", "minimum X that works", monotonic | **Binary search (on answer)** |
+| grid/graph, shortest path (unweighted), levels | **BFS** |
+| connectivity, all paths, cycles, components | **DFS / Union-Find** |
+| "number of ways", "min/max cost", overlapping subproblems | **DP** |
+| top/smallest K, streaming median, merge K lists | **Heap** |
+| all combinations/permutations/subsets | **Backtracking** |
+| next greater/smaller, matching brackets | **Monotonic stack** |
+| prefix aggregates, range sum | **Prefix sums** |
+
+## How to communicate while coding
+
+1. Restate the problem + ask about edge cases (empty, duplicates, negatives,
+   overflow).
+2. State brute force + its complexity.
+3. Name the bottleneck and the pattern that removes it.
+4. Code, narrating invariants.
+5. Dry-run a small example; then state final time/space.
+
+<QA q="The array has n ≤ 100,000 and the time limit is 1 second. What complexity should you aim for?">
+
+Roughly O(n log n) or better. A rule of thumb is ~10⁸ simple operations per
+second; n log n at n = 10⁵ is about 1.7 × 10⁶ ops — comfortable — while O(n²) is
+10¹⁰, far too slow. So I'd immediately rule out the nested-loop brute force and
+look for a sort-based, two-pointer, or hashing approach that gets to n log n / n.
+
+</QA>
+
+<QA q="You can't find the optimal solution in time. What do you do?">
+
+Ship the brute force, but communicate: state it, give its complexity, and say
+exactly where the inefficiency is and what pattern would remove it ("recomputing
+this sum each iteration — a sliding window makes it O(n)"). A correct,
+clearly-explained suboptimal solution plus an articulate optimization plan scores
+far better than a half-finished clever attempt that doesn't run.
+
+</QA>

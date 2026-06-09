@@ -1,0 +1,214 @@
+---
+title: "Problem Bank (Flashcards)"
+summary: "A curated set of high-frequency problems grouped by pattern. Each is a flashcard: read the prompt, decide your approach, then reveal the optimal idea and complexity."
+order: 20
+tags: ["problem-bank", "leetcode", "drills"]
+---
+
+## How to use this
+
+For each card: **say your approach and its Big-O out loud before revealing.**
+Then mark "Knew it" or "Revise again". The goal is instant pattern recognition,
+not memorizing code.
+
+## Arrays, strings & hashing
+
+<QA q="Two Sum — return indices of two numbers adding to a target (unsorted).">
+
+One pass with a hash map of `value → index`. For each `x`, check if
+`target - x` is already in the map; if so return both indices, else store `x`.
+**O(n) time, O(n) space.** (If the array were sorted, two pointers gives O(1)
+space.)
+
+</QA>
+
+<QA q="Longest substring without repeating characters.">
+
+Variable sliding window + a set/last-seen map. Expand `right`; when a duplicate
+enters, shrink `left` past its previous index. Track the max window length.
+**O(n) time, O(min(n, charset)) space.**
+
+</QA>
+
+<QA q="Group anagrams.">
+
+Hash each word by a canonical key — its sorted letters, or a 26-length count
+tuple — and bucket words sharing a key. **O(n·k log k)** (sort key) or **O(n·k)**
+(count key), where k is word length.
+
+</QA>
+
+<QA q="Product of array except self, without division.">
+
+Two passes building prefix and suffix products into the output array: first pass
+fills prefix products, second pass multiplies by running suffix. **O(n) time,
+O(1) extra** (output aside).
+
+</QA>
+
+## Binary search
+
+<QA q="Search in a rotated sorted array.">
+
+Modified binary search: each half of the array is still sorted, so at each `mid`
+determine which half is sorted, check whether the target lies within that half's
+range, and discard the other half. **O(log n).**
+
+</QA>
+
+<QA q="Koko eating bananas / minimum eating speed in H hours.">
+
+Binary search on the *answer* (speed). `feasible(speed)` sums `ceil(pile/speed)`
+hours and checks `≤ H`; it's monotonic, so binary-search speed in `[1, max pile]`.
+**O(n log(max pile)).**
+
+</QA>
+
+## Stacks & linked lists
+
+<QA q="Valid parentheses.">
+
+Push opening brackets; on a closing bracket, the stack top must be its match,
+else invalid. Valid iff the stack is empty at the end. **O(n) time, O(n) space.**
+
+</QA>
+
+<QA q="Daily temperatures / next greater element.">
+
+Monotonic decreasing stack of indices. Pop while the current value exceeds the
+value at the stack top (those indices found their next-greater = current).
+**O(n)** — each index pushed/popped once.
+
+</QA>
+
+<QA q="Reverse a linked list.">
+
+Iterate with three pointers (`prev`, `cur`, `next`), flipping `cur.next = prev`
+each step. **O(n) time, O(1) space.** (Recursive is O(n) stack.)
+
+</QA>
+
+<QA q="Detect and find the start of a cycle in a linked list.">
+
+Floyd's: slow/fast pointers meet inside the cycle. Then reset one pointer to the
+head and advance both one step at a time; they meet at the cycle's start.
+**O(n) time, O(1) space.**
+
+</QA>
+
+## Trees
+
+<QA q="Validate a binary search tree.">
+
+In-order traversal must be strictly increasing — track the previous value — or
+recurse passing down a (low, high) allowed range for each node. **O(n).**
+
+</QA>
+
+<QA q="Lowest common ancestor in a binary tree.">
+
+Recurse; a node is the LCA if the two targets are found in different subtrees (or
+the node itself is one of them). Return non-null finds upward. **O(n).**
+
+</QA>
+
+<QA q="Level-order traversal / right side view.">
+
+BFS by level using a queue, recording the size of each level; the last node
+dequeued per level is the right-side view. **O(n) time, O(width) space.**
+
+</QA>
+
+## Graphs
+
+<QA q="Number of islands.">
+
+Scan the grid; on each unvisited land cell, flood-fill (BFS/DFS) marking the whole
+island visited, incrementing a counter. **O(rows·cols).**
+
+</QA>
+
+<QA q="Course schedule — can all courses be finished given prerequisites?">
+
+Cycle detection in a directed graph. Run Kahn's topological sort; if you can
+order all nodes (all reach in-degree 0) there's no cycle → feasible. **O(V+E).**
+
+</QA>
+
+<QA q="Rotting oranges / shortest time to fill a grid.">
+
+Multi-source BFS: enqueue all initially-rotten cells at time 0 and expand level
+by level; the last level processed is the answer (or -1 if any fresh cell is
+unreachable). **O(rows·cols).**
+
+</QA>
+
+## Heaps & intervals
+
+<QA q="Kth largest element in an array (or a stream).">
+
+Maintain a min-heap of size K. **O(n log k)** time, **O(k)** space — and it
+handles streaming. For a static array, quickselect averages **O(n).**
+
+</QA>
+
+<QA q="Merge K sorted lists.">
+
+Min-heap of the current head of each list; pop the smallest, push its successor.
+**O(N log K)** where N is total elements, K is list count.
+
+</QA>
+
+<QA q="Meeting rooms II — minimum rooms needed.">
+
+Sort starts and ends; sweep, or use a min-heap of end times: for each meeting (by
+start), pop ended meetings, then push its end. Heap size peak = rooms.
+**O(n log n).**
+
+</QA>
+
+## DP
+
+<QA q="Coin change — fewest coins to make an amount.">
+
+Bottom-up DP: `dp[x] = min(dp[x - c] + 1)` over coins `c ≤ x`, base `dp[0]=0`.
+**O(amount · #coins) time, O(amount) space.** Return -1 if unreachable.
+
+</QA>
+
+<QA q="Longest increasing subsequence.">
+
+O(n²) DP (`dp[i] = 1 + max(dp[j])` for `j<i`, `a[j]<a[i]`), or **O(n log n)** with
+patience sorting: binary-search each element into a `tails` array.
+
+</QA>
+
+<QA q="Edit distance between two strings.">
+
+2-D DP `dp[i][j]` = edits to convert prefix i → prefix j; transition is min of
+insert/delete/replace (+1) or match (carry diagonal). **O(m·n).**
+
+</QA>
+
+<QA q="House robber — max sum with no two adjacent.">
+
+`dp[i] = max(dp[i-1], dp[i-2] + a[i])`. Track two rolling variables → **O(n)
+time, O(1) space.**
+
+</QA>
+
+## Backtracking & greedy
+
+<QA q="Generate all permutations of a list.">
+
+Backtracking: at each level pick any unused element (track `used[]`), recurse,
+then un-mark. **O(n · n!)** to build all permutations.
+
+</QA>
+
+<QA q="Jump game — can you reach the last index?">
+
+Greedy: track the farthest reachable index; if the current index ever exceeds it,
+return false; if reach ≥ last index, true. **O(n).**
+
+</QA>
