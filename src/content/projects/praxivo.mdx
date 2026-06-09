@@ -1,0 +1,114 @@
+---
+title: "Praxivo — SEO-First Marketing Site"
+summary: "The Next.js 16 venture-studio site (App Router, React 19 RSC, Tailwind v4) that ties the products together. Your frontend/performance/SEO case study: SSG on a CDN, the metadata API, JSON-LD, and a data-driven content registry."
+order: 4
+tags: ["Next.js 16", "RSC", "SSG", "SEO", "Core Web Vitals", "Tailwind v4"]
+---
+
+## One-liner
+
+> Praxivo is the **premium, SEO-first marketing site** for the studio behind
+> StockVision, LandAI and StockStump — built static-by-default so it ships as
+> prebuilt HTML on a CDN, with structured data and zero layout shift.
+
+## Why it's worth talking about
+
+It's small, but it's your clean **frontend + performance + SEO** story, and it
+shows you understand the modern Next.js rendering model (Server Components, SSG,
+the edge) rather than defaulting everything to a client-side SPA.
+
+## Architecture
+
+<Mermaid chart={`flowchart LR
+  V[Visitor] --> EDGE[Vercel Edge CDN]
+  EDGE --> HTML[Prebuilt static HTML<br/>Next.js 16 · RSC · SSG]
+  REG[Typed content registry<br/>products.ts · services.ts] --> HTML
+  REG --> SM[sitemap.xml]
+  REG --> LD[JSON-LD structured data]`} />
+
+## Tech stack
+
+| Concern | Choice |
+|---|---|
+| Framework | **Next.js 16** — App Router, **React 19 Server Components** |
+| Styling | Tailwind CSS v4 (`@theme` tokens), `motion` for animation |
+| Fonts | `next/font` self-hosting Geist + Instrument Serif (no CLS) |
+| Rendering | **Static Site Generation** → HTML served from Vercel's CDN |
+| SEO | Metadata API, canonicals, JSON-LD, `sitemap.xml`, `robots.txt`, OG image |
+
+## The data-driven content pattern
+
+The interesting idea: content lives in **typed registries** (`products.ts`,
+`services.ts`). Adding one entry automatically produces a card, a statically
+generated detail page, a `sitemap.xml` entry, and JSON-LD — no component changes.
+
+```ts
+// Add an entry → page + sitemap + structured data are generated for it.
+export const products: Product[] = [
+  { slug: "stockvision", name: "StockVision", status: "Beta", /* … */ },
+];
+
+// app/products/[slug]/page.tsx
+export function generateStaticParams() {
+  return products.map((p) => ({ slug: p.slug }));
+}
+```
+
+<Callout type="tip" title="Same pattern powers this site">
+PrepDeck reuses exactly this idea: dropping an `.mdx` file in a content folder
+auto-generates its route, sidebar entry, search record and prev/next links —
+data-driven routing instead of hand-wired pages.
+</Callout>
+
+## SEO & performance decisions
+
+- **SSG + CDN.** Pages are prebuilt to static HTML and served from the edge —
+  near-zero TTFB and trivially scalable; no server per request.
+- **RSC by default.** Server Components ship **no JS** for static content;
+  interactivity is opted into with small client islands. Smaller bundles, faster
+  hydration.
+- **JSON-LD structured data** (Organization / WebSite / SoftwareApplication /
+  Service / Breadcrumb) so search engines render rich results.
+- **Self-hosted fonts via `next/font`** to eliminate the render-blocking request
+  and the layout shift (CLS) that hurts Core Web Vitals.
+
+## Challenges & what I'd improve
+
+- **Next.js 16 is a moving target** — App Router conventions and async APIs
+  (e.g. `params` is now a Promise) differ from older tutorials, so I read the
+  bundled docs before writing.
+- Wire the contact form to a real backend (Resend/Formspree) instead of
+  `mailto:`, and add analytics + Core Web Vitals monitoring.
+
+## Likely interview questions
+
+<QA q="Server Components vs Client Components — when do you use each?">
+
+Server Components are the default: they render on the server, can fetch data
+directly, and ship **zero JavaScript** to the browser — ideal for static
+content and SEO. You opt into a Client Component (`"use client"`) only where you
+need state, effects, or browser APIs (a search box, a toggle). The win is
+smaller bundles and faster hydration because interactivity is isolated to small
+islands instead of shipping the whole page as JS.
+
+</QA>
+
+<QA q="Why static generation here instead of server-side rendering on each request?">
+
+The content changes rarely, so prerendering to static HTML at build time and
+serving it from a CDN gives the best latency (near-zero TTFB), the lowest cost
+(no server per request), and effortless scale. SSR per request only earns its
+keep when content is per-user or highly dynamic — which a marketing site isn't.
+ISR is the middle ground if content updates without a redeploy.
+
+</QA>
+
+<QA q="What concretely did you do for SEO and Core Web Vitals?">
+
+Per-page metadata + canonical URLs via the Metadata API; JSON-LD structured data
+for rich results; a generated `sitemap.xml` and `robots.txt`; a branded OG
+image. For Core Web Vitals: SSG keeps LCP fast, self-hosted fonts via `next/font`
+remove a render-blocking request and prevent layout shift (CLS), and RSC keeps
+JS (and thus INP) small.
+
+</QA>

@@ -1,0 +1,187 @@
+---
+title: "LandAI — Urban Growth Prediction"
+summary: "A full-stack ML platform that predicts where India's land value will rise by matching emerging Tier-3 cities to their historically-similar Tier-2 'twins'. FastAPI + React, four analytical engines, transparency-first."
+order: 1
+tags: ["FastAPI", "ML", "XGBoost", "FAISS", "PostGIS", "React"]
+---
+
+## One-liner
+
+> LandAI predicts **where India's land value will rise** before prices move. It
+> finds an emerging Tier-3 city's more-developed **"twin"**, time-shifts that
+> twin's real trajectory onto the target, and forecasts which zones develop over
+> the next 5–10 years — with every number carrying its provenance.
+
+## Problem & motivation
+
+Indian land investing is dominated by anecdote and broker incentives. There's
+plenty of *historical* price data but no honest, explainable view of *future*
+direction for the long tail of Tier-3 cities. LandAI's bet: a city's growth
+rhymes with a structurally-similar city that developed earlier, so
+**similarity + that twin's observed history** is a more defensible forecast than
+a black-box regressor alone.
+
+The hard constraint I set: **never present curated data as live, a heuristic as
+a forecast, or rule-based NLP as an LLM.** That honesty requirement shaped the
+whole architecture.
+
+## Architecture
+
+<Mermaid chart={`flowchart TD
+  FE[React + Vite SPA<br/>map, analysis, compare] --> API[FastAPI]
+  API --> ML[ML engine<br/>XGBoost + TreeSHAP]
+  API --> NLP[NLP engine<br/>TF-IDF + rule IE]
+  API --> CV[CV engine<br/>scipy.ndimage raster]
+  API --> GEO[Geo engine<br/>shapely / PostGIS]
+  API --> TWIN[Twin matching<br/>cosine / FAISS]
+  API --> ING[Ingestion<br/>Overpass + Nominatim]
+  ING --> GATE[RobotsGate + Source Registry]
+  API --> DATA[(Curated 116-city DB<br/>+ Postgres/PostGIS)]
+  API --> TRUST[Data Trust Layer<br/>provenance envelope]`} />
+
+A **React + Vite** SPA talks to a **FastAPI** backend whose route modules fan
+out to independent engines (`ml`, `nlp`, `cv`, `geo`, `ingestion`, `services`).
+Persistence is a curated 116-city dataset backed by Postgres/PostGIS, with an
+in-memory fallback so the app still runs without a database.
+
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Frontend | React, Vite, interactive map, client-side watchlist (localStorage) |
+| API | FastAPI, Pydantic, Alembic migrations |
+| ML | XGBoost gradient-boosted regressor + **TreeSHAP** attribution (scikit-learn fallback) |
+| NLP | TF-IDF + rule-based information extraction |
+| CV | `scipy.ndimage` morphology over urban-footprint rasters |
+| Spatial | `shapely` geometry, **PostGIS** via GeoAlchemy2 (in-memory fallback) |
+| Similarity | cosine similarity, **FAISS-accelerated** at scale (NumPy fallback) |
+| Ingestion | OpenStreetMap Overpass + Nominatim (both ODbL) |
+
+## The four engines
+
+- **Price model (ML).** A trained XGBoost regressor predicts land-price CAGR
+  from infrastructure + demographic features, and emits **per-prediction
+  TreeSHAP attributions** so each forecast comes with "why" drivers.
+- **Infrastructure signals (NLP).** TF-IDF + rule-based extraction turns
+  announcements (highways, airports, metros, industrial corridors) into scored
+  *leading indicators* with an impact score and a lead time.
+- **Urban-growth raster (CV).** Morphology over per-year footprint rasters
+  yields compactness, fragmentation and a dominant growth direction.
+- **Spatial (Geo).** `shapely` growth-ring geometry served as GeoJSON;
+  PostGIS-ready for real spatial queries at scale.
+
+## Notable algorithm — "City DNA" twin matching
+
+Each city is a feature vector (infrastructure, demographics, price history).
+Finding a twin is a **nearest-neighbour by cosine similarity** problem; at small
+scale it's a NumPy matmul, and FAISS takes over when the catalogue grows.
+
+```python
+import numpy as np
+
+def most_similar(target: np.ndarray, catalogue: np.ndarray, k: int = 1):
+    # L2-normalise rows so dot product == cosine similarity
+    t = target / np.linalg.norm(target)
+    C = catalogue / np.linalg.norm(catalogue, axis=1, keepdims=True)
+    sims = C @ t                      # O(n·d)
+    idx = np.argpartition(-sims, k)[:k]
+    return idx[np.argsort(-sims[idx])]
+```
+
+- **Brute force:** O(n·d) per query — fine for 116 cities.
+- **FAISS:** builds an index once (e.g. IVF/HNSW) so queries become
+  sub-linear — the upgrade path when the catalogue is 100k+ vectors. The NumPy
+  and FAISS paths return identical results, which made FAISS a safe,
+  test-backed optimization rather than a rewrite.
+
+<Callout type="tip" title="Why this reads well in an interview">
+It's a clean story arc: a real product need (find a twin) → the right CS
+primitive (kNN / cosine) → a measured scaling decision (FAISS) → a correctness
+guarantee (identical results, NumPy fallback). That's exactly the
+problem→primitive→trade-off→validation shape interviewers want.
+</Callout>
+
+## Engineering decisions & trade-offs
+
+- **Provenance envelope.** Every live datapoint is wrapped with
+  `source · license · fetched_at · confidence · freshness_score`. If a source
+  is down, the API returns an explicit `available: false` envelope instead of a
+  fabricated number. This is a deliberate trade of "always show something" for
+  "never lie".
+- **Compliance gating.** Listing portals prohibit scraping in their ToS, so a
+  `RobotsGate` + a `SOURCE_REGISTRY` make that adapter **refuse to run by
+  design** — a licensed feed plugs in as a new permitted source.
+- **Graceful degradation everywhere.** FAISS→NumPy, PostGIS→in-memory,
+  XGBoost→scikit-learn. The app demos and runs even when the heavy dependency
+  is missing.
+- **Production-grade ingestion plumbing.** Per-host rate limiting,
+  retry/backoff honoring `Retry-After`, endpoint failover and on-disk TTL
+  caching.
+
+## Challenges & how I solved them
+
+- **Honest forecasting.** Black-box CAGR felt untrustworthy, so I anchored
+  forecasts to a real twin's observed trajectory and bounded growth by
+  development phase (logistic S-curve ceiling) rather than letting a regressor
+  extrapolate to the moon.
+- **Explainability.** Interviewers (and users) ask "why this score?" — TreeSHAP
+  attributions and transparent, documented score formulas answer it.
+- **Running without infra.** The in-memory + fallback layers mean a reviewer
+  can `pip install` and run without Postgres/FAISS/XGBoost.
+
+## Scaling & what I'd improve
+
+- Move similarity to a **persistent FAISS index** (or pgvector) and precompute
+  twins offline.
+- Replace TTL file cache with **Redis**; move ingestion to a **queue + workers**
+  with a scheduler.
+- Add a proper **feature store** so the ML and twin engines share one
+  versioned feature definition.
+
+## Likely interview questions
+
+<QA q="Walk me through LandAI end to end.">
+
+A React/Vite SPA calls a FastAPI backend. The backend has independent engines:
+an XGBoost price model with TreeSHAP explanations, a TF-IDF/rule NLP signal
+parser, a scipy CV raster analyzer, a shapely/PostGIS spatial engine, and a
+cosine/FAISS "twin matching" engine. Data is a curated 116-city dataset in
+Postgres/PostGIS with in-memory fallback, plus a live ingestion layer pulling
+provenance-wrapped OSM data. The product thesis is twin matching: find an
+emerging city's more-developed structural twin and time-shift its real
+trajectory to forecast the target.
+
+</QA>
+
+<QA q="How does twin matching actually work, and how would it scale to a million cities?">
+
+Each city is a normalized feature vector; similarity is cosine (a dot product of
+L2-normalized vectors). At 116 cities it's a brute-force NumPy matmul — O(n·d).
+To scale I build a FAISS index (IVF or HNSW) once so queries go sub-linear, and
+precompute twins in a batch job. The NumPy and FAISS paths return identical
+results, so it's a safe optimization. pgvector is an alternative if I want the
+index next to the data.
+
+</QA>
+
+<QA q="You're pulling external data — how do you stay legal and trustworthy?">
+
+A source registry marks each source's license and legality. Permitted sources
+(OSM Overpass + Nominatim, both ODbL) are fetched with per-host rate limiting,
+backoff and caching. A `RobotsGate` makes ToS-protected listing portals refuse
+to run by design. Every datapoint carries a provenance envelope
+(source/license/fetched_at/confidence/freshness); if a source is down the API
+returns `available: false` rather than a fabricated value.
+
+</QA>
+
+<QA q="Why XGBoost, and how do you explain a prediction?">
+
+Tabular features with non-linear interactions and modest data are exactly where
+gradient-boosted trees shine — they beat linear models without needing the data
+volume a neural net wants. For explainability I emit **TreeSHAP** values per
+prediction, which give signed, additive feature contributions, so each forecast
+ships with its top drivers. If XGBoost isn't installed, it falls back to a
+scikit-learn estimator.
+
+</QA>

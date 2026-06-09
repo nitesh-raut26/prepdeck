@@ -1,0 +1,175 @@
+---
+title: "StockStump — Fantasy Player Trading"
+summary: "A reactive Spring Boot (WebFlux/R2DBC) + React platform where users trade virtual shares of cricketers whose prices move with live match performance. Strong stories on concurrency, real-time pricing, and latency arbitrage."
+order: 3
+tags: ["Spring Boot", "WebFlux", "R2DBC", "Redis", "concurrency", "real-time"]
+---
+
+## One-liner
+
+> StockStump is a fantasy market where fans **buy and sell virtual shares of
+> cricketers** and prices move in real time with on-field performance — a live
+> trading engine on top of a reactive Java backend.
+
+## Problem & motivation
+
+Fantasy cricket is huge in India, but most products are "pick a team, wait for
+points". StockStump makes it a **continuous market**: a player's price ticks
+while they bat or bowl, so users trade in-play. That design choice creates two
+genuinely hard engineering problems — **concurrency** (many users trading the
+same player) and **fairness** (information asymmetry against a live feed) — which
+is exactly why it's good interview material.
+
+## Architecture
+
+<Mermaid chart={`flowchart TD
+  FE[React + Vite SPA<br/>Recharts] --> API[Spring WebFlux<br/>controllers]
+  API --> SEC[Spring Security + JWT]
+  API --> TRADE[TradeService<br/>reactive]
+  TRADE --> PG[(PostgreSQL<br/>R2DBC)]
+  TRADE --> RD[(Redis<br/>price cache · trade locks)]
+  SCHED[LiveScoreScheduler<br/>poll 60s] --> PRICE[PriceEngineService]
+  TICK[PlayerPriceService<br/>±1.5% every 3s] --> RD
+  PRICE --> RD`} />
+
+The backend is **non-blocking end to end**: Spring **WebFlux** controllers
+returning `Mono`/`Flux`, **R2DBC** for reactive Postgres access, and Redis for
+the hot price cache. A scheduler polls match events; a price engine applies
+performance-based jumps; a ticker applies small random moves between events.
+
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Frontend | React, Vite, React Router, Recharts, custom dark design system |
+| API | **Spring Boot 3 (Java 17)**, **Spring WebFlux** (reactive) |
+| Data | PostgreSQL via **Spring Data R2DBC**, Redis cache |
+| Auth | Spring Security + **JWT** (stateless) |
+| Domain | controllers/services/models/dtos/repositories, contests, battles, predictions, card marketplace |
+
+## The pricing engine
+
+Three cooperating components keep prices alive:
+
+- **`LiveScoreScheduler`** — polls the cricket feed every **60s**.
+- **`PriceEngineService`** — applies **performance-based jumps** (a wicket,
+  a boundary) when a match event arrives.
+- **`PlayerPriceService`** — applies a small **±1.5% random tick every 3s** so
+  the market feels alive between events.
+
+## Hard problem #1 — latency arbitrage
+
+The cricket API lags real life by **15–40s**. A user *at the stadium* sees a
+wicket fall, opens the app, and sells before the API — and therefore the
+price — knows. That's the same **latency arbitrage** HFT firms exploit by
+co-locating near exchanges.
+
+<Callout type="tip" title="This is a standout system-design answer">
+It maps a real product bug onto a famous market-microstructure problem and has a
+ladder of solutions with clear trade-offs — exactly the kind of "show me how you
+think" question interviewers love.
+</Callout>
+
+Solution ladder (simplest → most robust):
+
+1. **Player-level trade lock.** On any match event, set a Redis flag
+   `player_trade_lock:{id}` with a 60s TTL; the trade endpoint checks it
+   atomically and rejects trades on locked players. ~O(1) Redis GET per trade,
+   closes the window immediately.
+2. **Delayed execution queue.** Orders execute 30s later at the price *then*, not
+   at submit time — how Dream11/MPL handle live events.
+3. **Sealed batch settlement.** Collect orders in a rolling window, settle all at
+   the median price — nobody profits from being 2s faster.
+4. **Behavioral anomaly detection.** Flag accounts that repeatedly sell within
+   seconds of a wicket.
+
+## Hard problem #2 — the double-spend race
+
+The original `TradeService` did a **non-atomic read-modify-write** on balance:
+
+```java
+// BUGGY: two concurrent buys both read balance = 1000 and both succeed
+userRepository.findById(userId)            // READ  balance = 1000
+  .flatMap(user -> {
+    user.setBalance(user.getBalance().subtract(cost));  // MODIFY in memory
+    return userRepository.save(user);                   // WRITE balance = 600
+  });
+```
+
+Two requests interleave between READ and WRITE → the same ₹1000 is spent twice.
+Fixes, in order of preference:
+
+- **Atomic conditional update** in one statement:
+  `UPDATE users SET balance = balance - :cost WHERE id = :id AND balance >= :cost`
+  — succeeds only if funds exist; "rows affected = 0" means reject.
+- **Optimistic locking** with a `@Version` column (retry on conflict).
+- **Pessimistic `SELECT … FOR UPDATE`** if contention is high (serialises the row).
+
+<Callout type="warn" title="Reactive ≠ thread-safe domain logic">
+WebFlux gives you non-blocking I/O, not atomic business invariants. The balance
+check must be enforced by the database (a conditional write or a version), never
+by reading-then-writing in application memory.
+</Callout>
+
+## Challenges & how I solved them
+
+- **Fairness vs UX.** A trade lock is the least intrusive fix, so I'd ship that
+  first and layer anomaly detection on top — the delayed-queue is the gold
+  standard if/when stakes rise.
+- **Correctness under concurrency.** Push the invariant into the DB with a
+  conditional update rather than trusting app-level checks.
+- **Reactive discipline.** Any blocking call inside a `Mono`/`Flux` stalls the
+  event-loop threads, so the DB and cache access stay reactive (R2DBC, reactive
+  Redis).
+
+## Scaling & what I'd improve
+
+- Broadcast price ticks over **WebSocket/SSE** from Redis pub/sub instead of
+  client polling.
+- Move settlement to an **order book + matching engine** for true in-play
+  markets.
+- Idempotency keys on the trade endpoint to make retries safe.
+
+## Likely interview questions
+
+<QA q="Walk me through a buy trade and where it can go wrong.">
+
+The request hits a WebFlux controller → `TradeService`. The danger is the
+balance check: a naive read-modify-write lets two concurrent buys both read the
+old balance and both succeed (double-spend). I fix it with a single atomic
+conditional update — `UPDATE … SET balance = balance - cost WHERE id = ? AND
+balance >= cost` — and treat "0 rows updated" as insufficient funds. Optimistic
+locking with a version column is the alternative.
+
+</QA>
+
+<QA q="Users at the stadium can front-run your price feed. How do you stop it?">
+
+That's latency arbitrage — the API lags real life by 15–40s. Cheapest effective
+fix: on every match event, set a Redis trade-lock on that player with a 60s TTL;
+the trade endpoint rejects locked players, so nobody trades during the
+uncertainty window. The robust version is a delayed execution queue (orders fill
+30s later at the price then) or sealed batch settlement at a median price, plus
+anomaly detection to catch repeat abusers.
+
+</QA>
+
+<QA q="Why reactive (WebFlux/R2DBC) instead of a normal Spring MVC stack?">
+
+A trading app is I/O-bound with many concurrent connections holding open
+WebSocket/price streams. The reactive stack handles high concurrency on a small
+thread pool by never blocking on I/O, which suits live price fan-out. The cost
+is harder debugging and the rule that *nothing* in the chain may block — one
+blocking JDBC call would starve the event loop, which is why I use R2DBC, not
+JDBC.
+
+</QA>
+
+<QA q="How would you push live prices to thousands of clients?">
+
+Not by polling. The price engine writes to Redis once; I publish ticks on Redis
+pub/sub and fan them out to clients over WebSocket/SSE from any API node. That
+decouples the number of clients from the upstream feed and lets me scale the
+gateway horizontally.
+
+</QA>

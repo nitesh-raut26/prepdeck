@@ -1,0 +1,89 @@
+---
+title: "Concurrency — Threads, Races & Deadlock"
+summary: "Processes vs threads, what creates a race condition, the four deadlock conditions and how to break them, and optimistic vs pessimistic locking — grounded in the StockStump double-spend."
+order: 2
+tags: ["concurrency", "threads", "deadlock", "locking"]
+---
+
+## Process vs thread
+
+- **Process:** isolated memory space; safer, heavier; IPC to communicate.
+- **Thread:** shares the process's memory; cheap to create/switch, but shared
+  mutable state is where bugs live.
+
+Concurrency (making progress on many tasks by interleaving) isn't the same as
+parallelism (literally running at once on multiple cores) — an async server is
+highly concurrent on a few threads.
+
+## Race conditions
+
+A race is when correctness depends on the **timing** of interleaved operations on
+shared state. The canonical example is the **check-then-act** /
+read-modify-write — exactly the StockStump bug:
+
+```text
+T1 read balance = 1000
+T2 read balance = 1000      ← both saw 1000
+T1 write 1000 - 700 = 300
+T2 write 1000 - 700 = 300   ← ₹700 spent twice; one write lost
+```
+
+Fix: make the operation **atomic** — a DB conditional update
+(`SET balance = balance - cost WHERE balance >= cost`), a lock around the
+critical section, or an atomic CAS instruction.
+
+## Locks & deadlock
+
+A **mutex** serializes access to a critical section. But locks introduce
+**deadlock** — four conditions must *all* hold (Coffman):
+
+1. **Mutual exclusion** — a resource is held exclusively.
+2. **Hold and wait** — hold one, wait for another.
+3. **No preemption** — can't force a release.
+4. **Circular wait** — a cycle of waiting.
+
+Break any one to prevent deadlock — most practically, impose a **global lock
+ordering** (always acquire A before B) to kill circular wait, or use timeouts.
+
+<Callout type="tip" title="Optimistic vs pessimistic locking">
+**Pessimistic** (`SELECT … FOR UPDATE`, mutex): lock first, assume conflict —
+best under high contention. **Optimistic** (a `version` column; on write, check
+the version is unchanged, else retry): assume no conflict, validate at commit —
+best under low contention, no lock held. StockStump's balance is low-contention
+per user → optimistic (or a single atomic update) fits.
+</Callout>
+
+<QA q="Walk me through a race condition you've actually had to fix.">
+
+In StockStump the buy path read a user's balance, subtracted the cost in memory,
+then saved — a read-modify-write. Two concurrent buys could both read the old
+balance, both pass the affordability check, and both commit, spending the same
+money twice and losing one write. I fixed it by making the decrement atomic in the
+database: `UPDATE users SET balance = balance - :cost WHERE id = :id AND balance
+>= :cost`, treating "0 rows affected" as insufficient funds. The invariant now
+lives at the single point of mutation, not in application memory.
+
+</QA>
+
+<QA q="What causes deadlock and how do you prevent it?">
+
+Deadlock needs all four Coffman conditions: mutual exclusion, hold-and-wait, no
+preemption, and circular wait. Break any one. The most practical is eliminating
+circular wait by acquiring locks in a consistent global order everywhere, so no
+cycle can form. Others: take all locks at once (no hold-and-wait), use lock
+timeouts / try-lock with backoff (allow preemption), or reduce shared locking
+altogether.
+
+</QA>
+
+<QA q="Optimistic vs pessimistic locking — how do you choose?">
+
+By contention. Pessimistic locking (row locks / `FOR UPDATE`) serializes access
+up front — good when conflicts are frequent, since retries would thrash.
+Optimistic locking uses a version/timestamp and only fails at commit if someone
+else changed the row, retrying then — good when conflicts are rare, because it
+holds no lock and scales better. For a per-user balance (rarely two simultaneous
+trades by the same user) optimistic or a single atomic conditional update is
+ideal.
+
+</QA>

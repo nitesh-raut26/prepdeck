@@ -1,0 +1,150 @@
+---
+title: "StockVision — Retail Investing Terminal"
+summary: "A large FastAPI + React 19 fintech app: 30+ route modules, async SQLAlchemy, JWT on httpOnly cookies + refresh, Fernet field-encryption, rate limiting, a WebSocket market feed, an alert worker, and a B2B API gateway."
+order: 2
+tags: ["FastAPI", "React 19", "async", "security", "WebSocket", "Redis"]
+---
+
+## One-liner
+
+> StockVision is a **"Bloomberg Terminal for India's retail investor"** —
+> explainable AI research, multi-broker portfolio analytics, a DCF builder and a
+> screener — built compliance-first with a B2B API engine that funds the
+> consumer product.
+
+## Problem & motivation
+
+India added more demat accounts in four years than in the prior twenty, but the
+tooling is either a thin broker app built to maximise trades or a screener that
+dumps data without a view. **Nobody owns the layer between the data and the
+decision.** StockVision builds that layer — and because it handles PAN numbers
+and broker tokens, **security and correctness are the product**, not a feature.
+
+## Architecture
+
+<Mermaid chart={`flowchart TD
+  FE[React 19 SPA<br/>Zustand + TanStack Query] --> MW[FastAPI middleware<br/>JWT cookies · rate limit · CSP · B2B gateway]
+  MW --> ENG[Engines<br/>conviction · DCF · screener · indicators · tax]
+  MW --> WS[market_ws<br/>WebSocket quotes]
+  ENG --> PG[(Postgres<br/>async SQLAlchemy)]
+  ENG --> RD[(Redis<br/>cache · rate limit)]
+  WORKER[APScheduler<br/>alert worker] --> PG
+  MW --> PAY[Razorpay<br/>webhooks]
+  ENG --> EXT[Market data feeds]`} />
+
+The frontend is a code-split React 19 SPA. Every request passes through a
+middleware stack — auth, rate limiting, security headers/CSP, and a B2B
+API-gateway — before reaching ~30 route modules that delegate to pure-ish
+**engines**. A separate **APScheduler** worker evaluates price alerts out of
+band.
+
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Frontend | React 19, Vite, TypeScript, Tailwind v4, **Zustand** (persisted, PII-minimised), **TanStack Query v5**, recharts + lightweight-charts |
+| API | FastAPI, **SQLAlchemy 2 async** (asyncpg), Alembic, Pydantic |
+| Auth | PyJWT on **httpOnly cookies + refresh tokens**, bcrypt |
+| Secrets | **Fernet field-encryption** for PAN / broker tokens |
+| Infra | Redis (cache + rate limit), slowapi, APScheduler, Sentry |
+| Payments | Razorpay (+ webhook verification) |
+
+## Surface area
+
+~30 route modules — `auth, stocks, screener, dcf, financials, indicators,
+portfolio, transactions, watchlist, alerts, market_data, market_ws, options,
+ipo, mutual_funds, backtest, research, leaderboard, family, ca_portal, broker,
+subscriptions, referrals, developer, b2b, compliance, ai, webhooks,
+notifications` — backed by engines like `conviction_score`, `dcf_calculator`,
+`screener_engine`, `indicators_engine`, `tax_calculator`, `portfolio_service`.
+
+<Callout type="warn" title="Breadth is a story you must control">
+A 30-module app invites "it's a prototype searching for scope." Reframe it: the
+breadth proves you can structure a large codebase (middleware, engines, route
+modules), and the *next dollar of effort buys trust and depth, not more pages.*
+Pick 2–3 modules to discuss deeply rather than listing all 30.
+</Callout>
+
+## Security decisions (the part interviewers dig into)
+
+- **JWT in httpOnly cookies, not localStorage.** localStorage is readable by any
+  script on the page, so one XSS = stolen tokens. httpOnly cookies aren't
+  reachable from JS; pair them with `SameSite` + a CSRF strategy.
+- **Refresh tokens** keep access tokens short-lived (minimise blast radius) while
+  preserving a good session UX; refresh rotation lets you revoke.
+- **Fernet field-encryption at rest** for PAN and broker tokens — a DB dump alone
+  doesn't leak PII because the sensitive columns are ciphertext (authenticated
+  encryption), with the key held outside the DB.
+- **Server-side entitlement enforcement.** Subscription gating is enforced on the
+  API, never trusted from the client — the frontend plan-gate is UX, the server
+  check is the security boundary.
+
+## Notable subsystems
+
+- **Real-time quotes (`market_ws`).** A WebSocket pushes live prices so the
+  client doesn't poll; fan-out + a Redis cache decouple the upstream feed from
+  connected clients.
+- **Alert worker.** APScheduler evaluates user price alerts on a cadence and
+  fires notifications — classic producer/worker separation from the request path.
+- **B2B API gateway.** API keys with metering + rate limiting turn the same
+  engines into a billable product (CAs / RIAs), funding the consumer side.
+
+## Challenges & how I solved them
+
+- **Async correctness.** Mixing sync libraries into an async FastAPI app blocks
+  the event loop; I kept the hot path fully async (asyncpg, async SQLAlchemy)
+  and pushed blocking work to the worker.
+- **Graceful degradation.** Premium areas fall back to mock data when a backend
+  is unavailable, and a `SystemStatus` widget polls `/health` so the UI never
+  shows a dead value as if it were live.
+- **Trust over breadth.** I treated "real Postgres + migrations, live keys,
+  delivery, observability" as the actual roadmap — features were already broad.
+
+## Scaling & what I'd improve
+
+- Split the alert worker into a **queue + workers** (Celery/RQ) for horizontal
+  scale and retries.
+- Add **read replicas** + caching for hot market data; move WebSocket fan-out
+  behind a pub/sub (Redis streams) so it scales past one process.
+- Real broker OAuth + a provider with an SLA (yfinance isn't productionable).
+
+## Likely interview questions
+
+<QA q="Why store JWTs in httpOnly cookies instead of localStorage?">
+
+localStorage is readable by any JavaScript running on the page, so a single XSS
+vulnerability leaks every token. httpOnly cookies can't be read by JS, shrinking
+the XSS blast radius. The trade-off is CSRF exposure, which I handle with
+`SameSite=Lax/Strict` cookies plus a CSRF token on state-changing requests.
+Short-lived access tokens + rotating refresh tokens limit damage if one leaks.
+
+</QA>
+
+<QA q="You store PAN numbers and broker tokens. How do you protect them at rest?">
+
+Sensitive columns are encrypted with **Fernet** (authenticated symmetric
+encryption) before they're written, with the key managed outside the database
+(env/secret manager). So a database dump or backup leak yields ciphertext, not
+PII. It also gives integrity — tampered ciphertext fails to decrypt. The
+trade-off is you can't query/index those columns directly; you encrypt on write
+and decrypt on read in the app layer.
+
+</QA>
+
+<QA q="How do live prices reach the client without hammering the server?">
+
+A WebSocket (`market_ws`) pushes updates instead of the client polling. The
+upstream feed updates a Redis cache once; connected clients are fanned out from
+that cache, so N clients don't mean N upstream calls. To scale past a single
+process I'd put the fan-out behind Redis pub/sub so any API node can broadcast.
+
+</QA>
+
+<QA q="A user on the free plan calls a premium endpoint directly. What happens?">
+
+Nothing — entitlement is enforced **server-side** on the API. The client-side
+plan-gate only improves UX (hiding buttons); the authoritative check is in the
+request path, reading the user's subscription state. Never trust the client for
+authorization.
+
+</QA>

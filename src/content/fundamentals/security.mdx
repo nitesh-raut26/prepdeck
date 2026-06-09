@@ -1,0 +1,87 @@
+---
+title: "Security — Auth, Hashing & OWASP"
+summary: "Authentication vs authorization, sessions vs JWT, hashing vs encryption (bcrypt vs Fernet), and the OWASP bugs (XSS, CSRF, SQLi) with their mitigations — grounded in StockVision."
+order: 4
+tags: ["security", "auth", "OWASP", "encryption"]
+---
+
+## Authentication vs authorization
+
+- **Authentication (authn):** who are you? (login)
+- **Authorization (authz):** what may you do? (permissions/entitlements)
+
+Keep authz **server-side** — StockVision enforces subscription tiers on the API;
+the client-side gate is only UX.
+
+## Sessions vs JWT
+
+| | Session (server state) | JWT (stateless) |
+|---|---|---|
+| Where state lives | server (Redis/DB) | the signed token itself |
+| Revocation | easy (delete session) | hard (need a denylist / short TTL) |
+| Scale | shared session store | no lookup, scales freely |
+
+StockVision uses JWTs in **httpOnly cookies + short-lived access tokens +
+rotating refresh tokens** — stateless scale with a revocation story via refresh
+rotation.
+
+## Hashing vs encryption (they're not the same)
+
+- **Hashing (passwords):** one-way. Use **bcrypt/argon2** — deliberately slow,
+  salted per-user, so leaked hashes resist brute force. Never reversible.
+- **Encryption (PII you must read back):** two-way. StockVision uses **Fernet**
+  (authenticated symmetric encryption) for PAN/broker tokens so a DB dump yields
+  ciphertext; the key lives outside the DB.
+
+<Callout type="warn" title="Passwords are hashed, not encrypted">
+If you can decrypt your users' passwords, you've already lost. Store a slow,
+salted hash (bcrypt) and compare hashes. Encryption is for data you need to
+recover (a PAN, an API token), not for passwords.
+</Callout>
+
+## OWASP bugs & fixes
+
+| Vuln | What | Mitigation |
+|---|---|---|
+| **XSS** | injected script runs in the victim's page | escape/encode output, CSP, httpOnly cookies |
+| **CSRF** | a site rides the user's cookie to act as them | `SameSite` cookies, CSRF tokens |
+| **SQL injection** | input becomes SQL | **parameterized queries** / ORM, never string-concat |
+| Broken authz | accessing others' data | enforce ownership checks server-side |
+| Secrets in code | keys in the repo | env/secret manager, rotate |
+
+The httpOnly-cookie choice is a direct XSS mitigation (script can't read the
+token); pair it with `SameSite` + CSRF tokens to cover CSRF, and a CSP to reduce
+XSS impact. StockVision ships security headers + CSP middleware for this reason.
+
+<QA q="How do you store passwords, and why not encryption?">
+
+Hash them with a slow, salted algorithm like bcrypt or argon2 — never plaintext,
+never reversible encryption. Each password gets a unique salt so identical
+passwords don't share a hash and precomputed rainbow tables don't work, and the
+deliberate slowness caps brute-force attempts. Encryption is the wrong tool
+because it's reversible: if the key leaks (or an insider has it), every password
+is exposed. With hashing, even a full DB leak doesn't reveal the passwords.
+
+</QA>
+
+<QA q="Why httpOnly cookies and SameSite — what attack does each stop?">
+
+httpOnly stops XSS from stealing the token: JavaScript can't read an httpOnly
+cookie, so an injected script can't exfiltrate the session. But cookies are sent
+automatically, which enables CSRF — a malicious site triggering an authenticated
+request. `SameSite=Lax/Strict` stops the browser from attaching the cookie on
+cross-site requests, and a CSRF token adds defense in depth. So httpOnly handles
+XSS-theft, SameSite/CSRF tokens handle CSRF; you need both.
+
+</QA>
+
+<QA q="How do you prevent SQL injection?">
+
+Never build SQL by string concatenation with user input. Use parameterized
+queries / prepared statements (or an ORM that does), so input is sent as data
+bound to placeholders, never parsed as SQL. Add least-privilege DB accounts and
+input validation as defense in depth, but parameterization is the actual fix —
+it makes the injection structurally impossible because the query structure is
+fixed before the data is bound.
+
+</QA>

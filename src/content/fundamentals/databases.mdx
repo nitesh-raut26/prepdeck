@@ -1,0 +1,93 @@
+---
+title: "DBMS — Transactions, Isolation & Indexes"
+summary: "ACID, the isolation levels and the anomalies they prevent, how B-tree indexes really work (and when they hurt), and normalization vs denormalization."
+order: 1
+tags: ["DBMS", "transactions", "isolation", "indexes"]
+---
+
+## ACID
+
+- **Atomicity** — all-or-nothing; a partial transaction rolls back.
+- **Consistency** — a transaction moves the DB from one valid state to another
+  (constraints hold).
+- **Isolation** — concurrent transactions don't see each other's partial work.
+- **Durability** — once committed, it survives a crash (write-ahead log).
+
+StockStump's balance decrement needs all four — which is why the fix for the
+double-spend was a single atomic, isolated `UPDATE`.
+
+## Isolation levels & the anomalies they stop
+
+| Level | Dirty read | Non-repeatable read | Phantom |
+|---|---|---|---|
+| Read Uncommitted | ✅ possible | ✅ | ✅ |
+| Read Committed | ❌ | ✅ | ✅ |
+| Repeatable Read | ❌ | ❌ | ✅ (varies) |
+| Serializable | ❌ | ❌ | ❌ |
+
+- **Dirty read:** you read another transaction's uncommitted change.
+- **Non-repeatable read:** you read a row twice and get different values (someone
+  committed an update between).
+- **Phantom:** you re-run a range query and new rows appear.
+
+Higher isolation = more correctness, less concurrency. **Read Committed** is the
+common default; bump to Serializable only for the operations that need it.
+
+## Indexes
+
+An index is usually a **B-tree**: ordered, balanced, **O(log n)** lookups, and
+great for range scans and `ORDER BY`. It speeds reads but **slows writes** (every
+insert/update maintains the tree) and costs space.
+
+- **Composite index** follows the **leftmost-prefix** rule: an index on
+  `(a, b)` helps queries filtering on `a` or `a,b` — not on `b` alone.
+- **Covering index:** if the index contains every column a query needs, the DB
+  answers from the index without touching the row ("index-only scan").
+- A hash index is O(1) for equality but useless for ranges.
+
+<Callout type="warn" title="Indexes aren't free">
+Over-indexing slows writes and wastes space; an index on a low-cardinality column
+(e.g. a boolean) barely helps because it can't narrow the scan. Index the columns
+you actually filter/sort/join on, and measure with `EXPLAIN`.
+</Callout>
+
+## Normalization vs denormalization
+
+**Normalize** to remove redundancy and update anomalies (3NF: every non-key
+column depends on the key, the whole key, and nothing but the key). **Denormalize**
+(duplicate data) to avoid expensive joins on read-heavy paths — trading write
+complexity for read speed. OLTP leans normalized; analytics/read models lean
+denormalized.
+
+<QA q="What isolation level would you use for transferring money, and why?">
+
+At least Repeatable Read, ideally Serializable for the critical section, because a
+transfer must not see another transaction's partial state (no dirty reads) and the
+balances it reads must not change underneath it (no non-repeatable reads) before
+it commits. In practice I'd enforce the invariant with an atomic conditional
+update or `SELECT … FOR UPDATE` so two transfers can't both pass the balance
+check — correctness here is worth the reduced concurrency.
+
+</QA>
+
+<QA q="You added an index but the query is still slow. What could be wrong?">
+
+Common causes: the query doesn't match the index's leftmost prefix (index on
+`(a,b)` but you filter only on `b`); a function or implicit cast on the column
+makes it non-sargable (`WHERE lower(email)=…` without a matching expression
+index); low selectivity so the planner prefers a full scan; or the index isn't
+covering so the row lookups dominate. I'd run `EXPLAIN`/`EXPLAIN ANALYZE` to see
+whether the index is actually used and where the cost is.
+
+</QA>
+
+<QA q="When would you denormalize?">
+
+When a read-heavy path pays a high join cost repeatedly and the data changes
+rarely enough that keeping duplicates in sync is cheap. Example: storing a
+denormalized counter or a precomputed view so the hot read is a single-row fetch
+instead of an aggregate over many tables. The trade-off is write complexity and
+the risk of drift, so I denormalize deliberately for specific access patterns,
+not by default.
+
+</QA>

@@ -1,0 +1,83 @@
+---
+title: "Networking — HTTP, TCP, TLS & WebSockets"
+summary: "TCP vs UDP, what a TLS handshake buys you, how DNS resolves, and when to use WebSockets vs SSE vs polling for real-time."
+order: 3
+tags: ["networking", "TCP", "TLS", "websocket"]
+---
+
+## TCP vs UDP
+
+- **TCP** — connection-oriented, reliable, ordered, congestion-controlled. The
+  default for web traffic; pays a handshake + retransmission cost.
+- **UDP** — connectionless, no delivery/order guarantees, low overhead. For
+  real-time where late data is useless (live video/audio, games, DNS).
+
+## What happens when you load a URL
+
+1. **DNS** resolves the hostname → IP (recursive resolver → root → TLD →
+   authoritative, cached at each layer with a TTL).
+2. **TCP** handshake (SYN/SYN-ACK/ACK) opens a connection.
+3. **TLS** handshake negotiates keys and authenticates the server's certificate
+   (asymmetric crypto to exchange a symmetric session key) → everything after is
+   encrypted + integrity-protected.
+4. **HTTP** request/response over that secure channel.
+
+## HTTP versions (one line each)
+
+- **HTTP/1.1** — one request at a time per connection (head-of-line blocking;
+  browsers open several connections).
+- **HTTP/2** — multiplexed streams over one TCP connection, header compression.
+- **HTTP/3** — over QUIC (UDP), removing TCP head-of-line blocking.
+
+## Real-time: polling vs SSE vs WebSocket
+
+| Approach | Direction | Use |
+|---|---|---|
+| Short polling | client pulls repeatedly | simple, wasteful, laggy |
+| Long polling | server holds the request | okay fallback |
+| **SSE** | server → client (one-way) | live feeds, notifications |
+| **WebSocket** | full-duplex | chat, live trading, collaborative |
+
+StockVision/StockStump push live prices over **WebSocket** rather than polling —
+the client doesn't hammer the server, and updates arrive the instant the price
+moves.
+
+<Callout type="tip" title="Pick the lightest tool that meets the need">
+If updates are one-way (a price ticker, a feed), **SSE** is simpler than
+WebSocket (plain HTTP, auto-reconnect). Reach for WebSocket when you need
+**bidirectional** low-latency messaging. Polling is fine for infrequent updates
+and is the most robust fallback.
+</Callout>
+
+<QA q="When would you choose UDP over TCP?">
+
+When timeliness matters more than reliability and you can tolerate (or handle)
+loss: live voice/video, online games, and DNS queries. TCP's retransmission and
+in-order delivery add latency, and for real-time media a packet that arrives late
+is useless anyway — better to drop it and move on. If you need some reliability
+on UDP you build just the pieces you want (as QUIC/HTTP3 does), rather than paying
+for all of TCP.
+
+</QA>
+
+<QA q="WebSocket vs SSE vs long polling for a live price feed?">
+
+A price feed is server→client, so SSE is the simplest fit: it runs over plain
+HTTP, auto-reconnects, and streams events one way. WebSocket is the choice if I
+also need the client to send frequent messages on the same channel (full-duplex),
+e.g. interactive trading actions. Long/short polling is the fallback when the
+infrastructure can't hold open connections, at the cost of latency and wasted
+requests. I'd default to SSE for a pure ticker, WebSocket for interactive.
+
+</QA>
+
+<QA q="What does TLS actually give you, and roughly how does the handshake work?">
+
+TLS gives confidentiality (encryption), integrity (tamper detection), and server
+authentication (the certificate proves you're talking to the real host). The
+handshake uses asymmetric crypto to authenticate the server and agree on a shared
+symmetric key, then switches to fast symmetric encryption for the actual data. So
+asymmetric is used briefly to bootstrap trust and a session key; symmetric does
+the bulk work.
+
+</QA>
