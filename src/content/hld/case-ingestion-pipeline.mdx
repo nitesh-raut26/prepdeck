@@ -1,0 +1,102 @@
+---
+title: "Case Study — Provenance-Aware Ingestion"
+summary: "A full HLD walkthrough using LandAI: pull data from third-party sources legally and reliably, wrap every record in provenance, and never present a guess as a fact."
+order: 11
+tags: ["case-study", "data-pipeline", "compliance", "reliability"]
+---
+
+## Prompt
+
+> Design a pipeline that ingests data from external sources (some with legal
+> restrictions), enriches it, and serves it — such that consumers always know how
+> fresh and trustworthy each value is, and the system never fabricates data.
+
+## 1. Requirements
+
+**Functional:** fetch from registered sources → normalize → enrich (derive
+scores) → store → serve; expose freshness/health.
+**Non-functional:** **legal compliance** (respect ToS/robots), **reliability**
+(rate limits, retries, failover), and **honesty** (explicit "unavailable"
+instead of fake values).
+
+## 2. High-level design
+
+<Mermaid chart={`flowchart TD
+  REG[Source registry<br/>license · legality] --> GATE[RobotsGate]
+  GATE --> FETCH[Fetchers<br/>rate limit · backoff · failover]
+  FETCH --> NORM[Normalizers]
+  NORM --> ENR[Enrichers<br/>derived scores]
+  ENR --> ENV[Provenance envelope]
+  ENV --> CACHE[(TTL cache)]
+  ENV --> STORE[(DB)]
+  STORE --> API[Read API + health]`} />
+
+## 3. Deep dives
+
+**Compliance gate.** A `SOURCE_REGISTRY` records each source's license and
+legality; a `RobotsGate` makes prohibited sources (scraping-banned listing
+portals) **refuse to run by design**. A licensed feed plugs in as a new
+permitted source — compliance is structural, not a code comment.
+
+**Reliable fetching.** Per-host **rate limiting**, **retry with backoff** that
+honors `Retry-After`, endpoint **failover**, and an on-disk **TTL cache** so a
+flaky upstream doesn't take you down and you don't hammer it.
+
+**The provenance envelope.** Every record carries
+`source · license · fetched_at · confidence · freshness_score`. If a source is
+down, the API returns `available: false` — never a fabricated number.
+
+<Callout type="tip" title="The principle that sells this design">
+"Never show a dead value as if it were live." Each datapoint is labeled Real /
+Curated / Heuristic / Simulated, so the UI can show a freshness/confidence badge.
+Designing for *honesty under failure* is a rare and strong signal.
+</Callout>
+
+## 4. Scaling it up
+
+- Replace the per-process TTL file cache with **Redis**; add a CDN for read API
+  responses.
+- Move fetching to a **queue + scheduled workers** (one job per source), with a
+  DLQ for sources that keep failing.
+- Make enrichment **idempotent** and keyed by `(source, entity, fetched_at)` so
+  reruns don't double-count.
+- Add observability: per-source success rate, freshness SLOs, alert when a
+  source goes stale.
+
+## 5. Trade-offs
+
+Honesty over coverage (we'd rather say "unavailable" than guess); compliance
+over completeness (we won't scrape banned sources even if it'd add data); caching
+freshness vs. load (TTL tuned per source volatility).
+
+<QA q="How do you ingest third-party data without crossing legal lines?">
+
+A source registry encodes each source's license and whether its ToS permits
+automated access. A gate (RobotsGate) refuses to run disallowed sources by
+design, so compliance is enforced in code, not left to discipline. Permitted
+sources (e.g. OSM Overpass/Nominatim under ODbL) are fetched politely — per-host
+rate limits, backoff honoring Retry-After. A new licensed feed is added as a
+registered permitted source rather than a one-off scraper.
+
+</QA>
+
+<QA q="A data source is down. What does your API return, and why does it matter?">
+
+An explicit `available: false` provenance envelope — never a fabricated or stale
+value dressed up as live. Each record normally carries source, license,
+fetched_at, confidence and a freshness score, and the UI renders a badge from
+that. Surfacing failure honestly prevents users (and downstream models) from
+trusting a number that isn't real, which in a forecasting product is a
+correctness and trust issue, not a cosmetic one.
+
+</QA>
+
+<QA q="How would you make the enrichment step safe to re-run?">
+
+Make it idempotent: key each derived record by (source, entity, fetched_at) and
+upsert, so reprocessing the same input overwrites rather than duplicates. Combined
+with at-least-once workers and a DLQ, that means I can retry failed jobs or replay
+a window without double-counting — the same idempotency principle that protects a
+trade or a payment from duplicate processing.
+
+</QA>

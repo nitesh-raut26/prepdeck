@@ -1,0 +1,81 @@
+---
+title: "Rate Limiting"
+summary: "The five algorithms (fixed window, sliding log, sliding counter, token bucket, leaky bucket), how to make them work across many servers with Redis, and the trade-offs."
+order: 7
+tags: ["rate-limiting", "redis", "api-gateway"]
+---
+
+## Why & where
+
+Rate limiting protects you from abuse, accidental floods, and cost blowups, and
+enforces fair use / billing tiers. Put it at the **edge / API gateway** so bad
+traffic dies before it touches your services. StockVision uses `slowapi` for
+this and meters its B2B API keys; StockStump's per-player trade lock is a
+specialized one-token limiter.
+
+## The algorithms
+
+| Algorithm | Idea | Trade-off |
+|---|---|---|
+| Fixed window | count per clock window (per minute) | cheap; **burst at the boundary** (2× at the edges) |
+| Sliding log | store every request timestamp | exact; memory-heavy |
+| Sliding window counter | weighted blend of current + previous window | great accuracy/cost balance |
+| **Token bucket** | tokens refill at rate R, each request takes one | **allows controlled bursts**; the usual default |
+| Leaky bucket | queue drains at fixed rate | smooths output to a constant rate |
+
+**Token bucket** is the most common answer: it permits short bursts (up to the
+bucket size) while bounding the long-run rate.
+
+```python
+import time
+
+class TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate, self.capacity = rate, capacity
+        self.tokens = capacity
+        self.ts = time.monotonic()
+
+    def allow(self, cost=1):
+        now = time.monotonic()
+        self.tokens = min(self.capacity, self.tokens + (now - self.ts) * self.rate)
+        self.ts = now
+        if self.tokens >= cost:
+            self.tokens -= cost
+            return True
+        return False
+```
+
+## Distributed rate limiting
+
+With many app servers, an in-memory counter per server multiplies the real
+limit by the server count. So keep the counter in a **shared store (Redis)** and
+mutate it atomically — a Lua script or `INCR` + `EXPIRE` makes the
+read-modify-write a single atomic op, avoiding the same race that bites naive
+balance checks.
+
+<Callout type="tip" title="Always return the right signal">
+On limit, respond **429 Too Many Requests** with a `Retry-After` header so good
+clients back off correctly. (LandAI's ingestion respects upstream `Retry-After`
+for the same reason — be a polite client and expect politeness back.)
+</Callout>
+
+<QA q="Which rate-limiting algorithm would you pick and why?">
+
+Token bucket as the default: it bounds the average rate while allowing short,
+controlled bursts, which matches real traffic better than a hard cap. If I need
+a perfectly smooth output rate (e.g. protecting a fragile downstream), leaky
+bucket. Fixed-window is the simplest but suffers boundary bursts (a client can
+send 2× the limit across the window edge); sliding-window counter fixes that
+cheaply.
+
+</QA>
+
+<QA q="How do you rate-limit across 10 app servers without each enforcing its own count?">
+
+Move the counter to a shared store like Redis and update it atomically — `INCR`
+with an `EXPIRE`, or a Lua script for token-bucket math — so all servers see one
+global count. Doing the increment atomically avoids the read-modify-write race
+where concurrent requests both read an under-limit value and both pass. The
+gateway then enforces one true limit regardless of how many app nodes there are.
+
+</QA>

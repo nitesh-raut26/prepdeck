@@ -1,0 +1,87 @@
+---
+title: "Scaling, Load Balancing & Statelessness"
+summary: "Vertical vs horizontal scaling, why stateless services are the unlock, load-balancer types and algorithms, and how to handle sessions when any server can take any request."
+order: 3
+tags: ["scalability", "load-balancing", "availability"]
+---
+
+## Two ways to scale
+
+- **Vertical (scale up):** a bigger box (more CPU/RAM). Simple, no app changes —
+  but there's a hard ceiling and it's a single point of failure.
+- **Horizontal (scale out):** more boxes behind a load balancer. Near-unlimited
+  and fault-tolerant, but requires your services to be **stateless** and your
+  data layer to handle concurrency.
+
+Real systems do both: scale up until it's uneconomical, then scale out.
+
+## Statelessness is the unlock
+
+If a server stores session state in memory, request #2 must hit the *same*
+server (sticky sessions) — which breaks load balancing and fails when that box
+dies. Fix: keep app servers **stateless** and push state to a shared store.
+
+<Mermaid chart={`flowchart LR
+  LB[Load balancer] --> A1[App server 1]
+  LB --> A2[App server 2]
+  LB --> A3[App server 3]
+  A1 --> R[(Redis: sessions)]
+  A2 --> R
+  A3 --> R`} />
+
+Now any server can serve any request; you add/remove servers freely, and a crash
+loses no session. This is exactly why StockVision puts JWT/session data in
+cookies + Redis rather than server memory — it can run behind N identical nodes.
+
+## Load balancers
+
+- **L4 (transport):** routes by IP/port; fast, protocol-agnostic, no payload
+  awareness.
+- **L7 (application):** routes by URL/header/cookie; enables path-based routing,
+  TLS termination, and smarter health checks. Most web stacks use L7.
+
+**Algorithms:** round-robin, least-connections, weighted, and **consistent
+hashing** (route the same key to the same node — vital for cache affinity).
+Always pair with **health checks** so dead nodes are pulled out.
+
+<Callout type="warn" title="The LB itself can be a SPOF">
+A single load balancer is a single point of failure. Run it in an
+active-passive (or active-active) pair with a floating IP / DNS failover, or use
+a managed LB that's redundant by design.
+</Callout>
+
+## Don't forget the data tier
+
+Scaling app servers is easy; the database is usually the real bottleneck. The
+standard ladder: **cache** reads → **read replicas** for read scale → **shard**
+when writes or storage exceed one box (covered in *Databases at scale*).
+
+<QA q="What does it mean for a service to be 'stateless', and why does it matter?">
+
+Stateless means a server keeps no client-specific data between requests — every
+request carries (or looks up) what it needs, so any instance can handle any
+request. It matters because it's the precondition for horizontal scaling and
+fault tolerance: you can put N identical servers behind a load balancer, add or
+remove them freely, and a crash doesn't lose a user's session. State lives in a
+shared store (Redis/DB) or in the token (JWT), not in process memory.
+
+</QA>
+
+<QA q="L4 vs L7 load balancing — when do you care?">
+
+L4 balances on IP/port without inspecting the payload — it's fast and works for
+any TCP/UDP protocol. L7 understands HTTP, so it can route by path or header,
+terminate TLS, do cookie-based affinity, and run richer health checks. You reach
+for L7 when you need application-aware routing (e.g. send `/api/*` to one
+service, `/` to another); L4 when you want raw throughput or non-HTTP traffic.
+
+</QA>
+
+<QA q="Sticky sessions — are they ever OK?">
+
+They work but they're a smell: they pin a user to one server, which weakens load
+balancing and means a crash drops that user's session. They're a quick fix for
+legacy in-memory state. The durable answer is to externalize session state
+(Redis) or go stateless with tokens, so stickiness isn't needed.
+
+</QA>

@@ -1,0 +1,112 @@
+---
+title: "Case Study — Real-Time Pricing Engine"
+summary: "A full HLD walkthrough using StockStump: design a system where asset prices move with live events and thousands of users trade in-play — covering fan-out, the concurrency invariant, and latency-arbitrage fairness."
+order: 10
+tags: ["case-study", "real-time", "websocket", "concurrency"]
+---
+
+## Prompt
+
+> Design a system where virtual player prices update from a live sports feed and
+> users buy/sell in real time. Thousands of concurrent users; prices must feel
+> live; trades must be correct and fair.
+
+## 1. Requirements
+
+**Functional:** ingest live match events → update prices; stream prices to
+clients; execute buy/sell against a balance; portfolio + leaderboard.
+**Non-functional:** low-latency price push (sub-second feel), **correctness**
+(no double-spend), **fairness** (no front-running the feed), high read fan-out.
+
+## 2. Estimation (shapes the design)
+
+Say 50k concurrent users during a match, each watching ~10 players → a price
+tick must fan out to many sockets, but the *source* of truth updates only a few
+times/sec. Read:write on prices is enormous → **compute once, broadcast many**.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  FEED[Live match feed] --> SCHED[Scheduler / poller]
+  SCHED --> PE[Price engine]
+  PE --> RD[(Redis: prices + locks)]
+  RD --> PS[Pub/sub]
+  PS --> GW[WS gateways]
+  GW --> U[Clients]
+  U -->|trade| API[Trade service]
+  API --> RD
+  API --> DB[(Postgres: balances, holdings)]`} />
+
+- **Price engine** applies performance jumps on events + small ticks between
+  them, writing the current price to **Redis once**.
+- **Fan-out:** publish ticks on Redis **pub/sub**; stateless **WebSocket
+  gateways** push to clients. N clients ≠ N feed calls, and gateways scale
+  horizontally.
+- **Trade service** validates and settles against Postgres.
+
+## 4. Deep dive — the two hard parts
+
+**Correctness (no double-spend).** The balance check must be atomic, not a
+read-modify-write in app memory. One statement:
+
+```sql
+UPDATE users SET balance = balance - :cost
+WHERE id = :id AND balance >= :cost;   -- 0 rows ⇒ insufficient funds, reject
+```
+
+Alternatively optimistic locking (`@Version`) with retry, or `SELECT … FOR
+UPDATE` under high contention.
+
+**Fairness (latency arbitrage).** The feed lags real life 15–40s, so someone at
+the venue can front-run it. Mitigations, cheapest first:
+
+1. **Trade lock:** on any event, set `player_trade_lock:{id}` in Redis (60s TTL);
+   the trade endpoint rejects locked players — closes the window with one O(1)
+   check.
+2. **Delayed execution queue:** orders fill 30s later at the price then.
+3. **Sealed batch settlement** at a window's median price.
+
+<Callout type="tip" title="This is the moment to show judgment">
+Don't just list fixes — recommend one and justify it: "ship the trade lock first
+(2 hours, closes the exploit), add anomaly detection, and move to a delayed queue
+only if stakes rise." Sequencing by cost/impact is the signal.
+</Callout>
+
+## 5. Bottlenecks & scale
+
+- WS gateway memory/conns → shard by player or user; add gateways behind an LB.
+- Redis hot key for a star player → replicas / local read cache on gateways.
+- Settlement throughput → a queue + idempotent workers (idempotency key per
+  order so retries don't double-execute).
+
+<QA q="How do you push a price update to 50,000 connected users efficiently?">
+
+Compute the price once in the price engine and write it to Redis, then publish
+the tick on Redis pub/sub. Stateless WebSocket gateways subscribe and push to
+their connected clients. This decouples fan-out (many clients) from the source
+(a few updates/sec) and lets me scale gateways horizontally behind a load
+balancer. Clients never poll; the server pushes.
+
+</QA>
+
+<QA q="Two users buy the last affordable share at the same instant. How do you guarantee correctness?">
+
+Make the balance decrement atomic in the database rather than checking in app
+memory. A single conditional `UPDATE … SET balance = balance - cost WHERE id = ?
+AND balance >= cost` succeeds for only one of them; the other affects 0 rows and
+is rejected as insufficient funds. Optimistic locking with a version column (and
+retry) is the alternative. Reactive/async I/O does not provide this — the DB
+does.
+
+</QA>
+
+<QA q="What's your fairness strategy against users who see events before your feed?">
+
+That's latency arbitrage. The pragmatic first move is a per-player trade lock in
+Redis triggered on each match event with a short TTL, so nobody trades during the
+uncertain window — one cheap atomic check per trade. If the product needs more,
+move to a delayed execution queue (fill at the future price) or sealed batch
+settlement at a median price, and run anomaly detection to catch repeat
+front-runners.
+
+</QA>

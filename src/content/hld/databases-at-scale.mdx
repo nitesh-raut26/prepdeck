@@ -1,0 +1,98 @@
+---
+title: "Databases at Scale"
+summary: "SQL vs NoSQL with a real reason, leader-follower replication, the four sharding strategies, and the hotspot/rebalancing traps that consistent hashing solves."
+order: 5
+tags: ["databases", "sharding", "replication", "consistent-hashing"]
+---
+
+## SQL vs NoSQL — pick with a reason
+
+- **Relational (Postgres/MySQL):** strong schema, ACID transactions, joins, rich
+  queries. Default when you have **relationships and invariants** (users,
+  orders, balances). All three of my backends use Postgres.
+- **NoSQL:** document (Mongo), key-value (Redis/DynamoDB), wide-column
+  (Cassandra), graph. Choose for a **specific access pattern at scale** —
+  massive write throughput, flexible schema, or simple key lookups — accepting
+  weaker guarantees.
+
+<Callout type="tip" title="The honest answer">
+"SQL unless I have a reason." Most apps are well served by Postgres until a
+clear pressure (write volume, scale-out, schema-flexibility, or a key-value
+access pattern) justifies a specialized store. Saying that signals maturity.
+</Callout>
+
+## Replication — scale reads, survive failures
+
+Leader-follower: writes go to the **leader**, which streams its log to
+**followers** that serve reads.
+
+<Mermaid chart={`flowchart LR
+  APP[App] -->|writes| L[(Leader)]
+  L -->|replication log| F1[(Follower)]
+  L -->|replication log| F2[(Follower)]
+  APP -->|reads| F1
+  APP -->|reads| F2`} />
+
+Wins: read scale + availability (promote a follower if the leader dies). Catch:
+**replication lag** → a follower read can be stale (a read-your-writes problem).
+Fixes: route a user's own reads to the leader briefly, or read from the leader
+for must-be-fresh queries.
+
+## Sharding — when one box can't hold the writes/data
+
+Partition data across nodes by a **shard key**:
+
+| Strategy | How | Watch out for |
+|---|---|---|
+| Range | by key ranges (A–M, N–Z) | hotspots on sequential keys (timestamps!) |
+| Hash | `hash(key) % N` | resharding moves almost everything when N changes |
+| Consistent hashing | keys + nodes on a ring | the standard; minimal movement on resize |
+| Directory | a lookup service maps key→shard | flexible, but the directory is a SPOF |
+
+**Consistent hashing** is the one to know: adding/removing a node only remaps the
+keys between adjacent points on the ring (≈ 1/N of keys), not the whole dataset —
+and **virtual nodes** smooth out skew.
+
+<Callout type="warn" title="Choosing the shard key is the whole game">
+A bad key creates hotspots (one shard gets all the traffic) and cross-shard
+queries/joins (slow, hard to make transactional). Pick a key with high
+cardinality and even access — and design so most queries hit a single shard.
+</Callout>
+
+## Indexing & denormalization (one line each)
+
+An **index** turns an O(n) scan into an O(log n) B-tree lookup at the cost of
+write speed and space. **Denormalization** duplicates data to avoid expensive
+joins on the read path — you trade write complexity (keep copies in sync) for
+read speed.
+
+<QA q="When would you reach for NoSQL over Postgres?">
+
+When a specific pressure justifies it: write throughput beyond what one
+leader handles (wide-column like Cassandra), a pure key-value access pattern
+needing single-digit-ms lookups at scale (DynamoDB/Redis), or genuinely schemaless
+documents. Absent that, Postgres gives transactions, joins and constraints that
+prevent whole classes of bugs — so my default is "relational until a real reason
+appears."
+
+</QA>
+
+<QA q="Explain consistent hashing and the problem it solves.">
+
+Plain `hash(key) % N` is fine until N changes — then almost every key remaps and
+you move the whole dataset. Consistent hashing places both keys and nodes on a
+hash ring; a key belongs to the next node clockwise. Adding/removing a node only
+reassigns the keys in that node's arc — about 1/N of keys — so resizing is cheap.
+Virtual nodes (each physical node owning many ring points) prevent uneven load.
+
+</QA>
+
+<QA q="What is replication lag and how do you deal with read-your-writes?">
+
+Followers apply the leader's writes asynchronously, so a read from a follower can
+miss a just-committed write — the user updates their profile and the next page
+shows the old value. Fixes: route that user's reads to the leader for a short
+window after a write, pin reads that must be fresh to the leader, or track the
+write position and only read from a replica that has caught up to it.
+
+</QA>

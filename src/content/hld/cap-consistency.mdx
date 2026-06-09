@@ -1,0 +1,77 @@
+---
+title: "CAP, Consistency & ACID vs BASE"
+summary: "What CAP actually forces you to choose during a partition, the spectrum of consistency models, and when strong consistency is worth its latency cost."
+order: 4
+tags: ["CAP", "consistency", "distributed-systems"]
+---
+
+## CAP, stated correctly
+
+A distributed store can't simultaneously guarantee all three of **C**onsistency,
+**A**vailability, **P**artition-tolerance. Since network partitions *will* happen,
+P isn't optional — so the real choice **during a partition** is:
+
+- **CP** — refuse some requests to stay consistent (e.g. a banking ledger).
+- **AP** — keep serving, accept that replicas may diverge and reconcile later
+  (e.g. a social feed, a shopping cart).
+
+<Callout type="warn" title="CAP is a partition-time choice, not an always-on label">
+When the network is healthy you can have both consistency and availability. CAP
+only bites *during* a partition. PACELC extends it: **E**lse (no partition),
+you still trade **L**atency vs **C**onsistency — strong consistency costs round
+trips.
+</Callout>
+
+## The consistency spectrum
+
+| Model | Guarantee | Example |
+|---|---|---|
+| Strong | every read sees the latest write | balances, inventory decrement |
+| Read-your-writes | you see your own updates immediately | edit your profile |
+| Monotonic reads | you never see time go backwards | a paginated feed |
+| Eventual | replicas converge "soon" | view counts, social timelines |
+
+Most large systems are **eventually consistent** by default and reserve strong
+consistency for the few operations that truly need it.
+
+## ACID vs BASE
+
+- **ACID** (classic RDBMS): Atomicity, Consistency, Isolation, Durability —
+  transactions are all-or-nothing and isolated. Great for money, orders,
+  anything with invariants. StockStump's balance decrement needs this.
+- **BASE** (many NoSQL): Basically Available, Soft state, Eventually consistent —
+  trades strict guarantees for availability and scale.
+
+The decision isn't ideological — it's per-workload. A trading balance is ACID; a
+"who viewed your profile" counter is happily BASE.
+
+<QA q="State the CAP theorem and what it means for a design decision.">
+
+During a network partition you can't have both consistency and availability, so
+you pick: CP (reject requests to avoid serving stale/divergent data) or AP (keep
+serving and reconcile later). Since partitions are unavoidable, every
+distributed datastore is effectively choosing CP or AP for its failure behavior.
+In an interview I'd tie it to the data: money/inventory → CP; feeds/counters →
+AP.
+
+</QA>
+
+<QA q="Give an example where eventual consistency is fine and one where it isn't.">
+
+Fine: a tweet's like-count or "X people are viewing this" — if it's stale for a
+few seconds nobody is harmed, and AP availability is more valuable. Not fine: a
+bank balance or seat/inventory reservation — a stale read lets two users spend
+or book the same thing, which is a correctness bug. Those need strong
+consistency (a transaction or an atomic conditional update).
+
+</QA>
+
+<QA q="Why not make everything strongly consistent to be safe?">
+
+Strong consistency costs latency and availability: it needs coordination
+(consensus/round trips) and must reject writes during partitions. Forcing it
+everywhere makes the whole system slower and less available than its weakest
+guarantee needs to be. You scope strong consistency to the operations with hard
+invariants and let the rest be eventually consistent.
+
+</QA>

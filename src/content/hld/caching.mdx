@@ -1,0 +1,75 @@
+---
+title: "Caching & CDNs"
+summary: "Where to cache, what to cache, how to invalidate, and the failure modes (stampede, penetration, avalanche) interviewers love to probe."
+order: 2
+tags: ["performance", "redis", "cdn", "scalability"]
+---
+
+## The layers
+
+A request can be served from several caches before it ever touches your
+database. Push the cache as close to the user as you can afford to.
+
+<Mermaid chart={`flowchart LR
+  U[Client] --> B[Browser cache]
+  B --> E[CDN / edge]
+  E --> G[API gateway]
+  G --> A[App server]
+  A --> R[(Redis)]
+  A --> D[(Database)]
+  R -. miss .-> D`} />
+
+| Layer | Caches | TTL feel | Invalidation |
+|---|---|---|---|
+| Browser | static assets, GET responses | minutes–days | `Cache-Control`, content-hash filenames |
+| CDN / edge | images, JS/CSS, cacheable API GETs | minutes–days | purge API, versioned URLs |
+| Application (Redis) | hot rows, computed views, sessions | seconds–hours | TTL + explicit delete on write |
+| Database | buffer pool, query cache | — | engine-managed |
+
+## Read strategies
+
+- **Cache-aside (lazy):** app checks cache → on miss, reads DB and populates.
+  Simple, resilient, the default. Risk: first request after expiry is slow.
+- **Read-through:** the cache library loads from DB on miss. Cleaner app code,
+  couples you to the cache layer.
+- **Write-through / write-behind:** write to cache and DB together (through) or
+  flush async (behind). Behind is fast but can lose writes on crash.
+
+<Callout type="warn" title="The three failure modes to name">
+**Stampede / dogpile** — a hot key expires and 10k requests hit the DB at once.
+Fix: per-key lock or "early recompute" with a probabilistic TTL.
+**Penetration** — queries for keys that don't exist bypass the cache every time.
+Fix: cache the negative result (short TTL) or a Bloom filter.
+**Avalanche** — many keys share an expiry instant. Fix: jitter the TTLs.
+</Callout>
+
+## Invalidation
+
+> "There are only two hard things in Computer Science: cache invalidation and
+> naming things." — Phil Karlton
+
+Practical rules: prefer **TTL + explicit delete on write** over trying to keep
+caches perfectly coherent. Use **content-hashed URLs** for static assets so you
+never invalidate — you just stop referencing the old file. For derived data,
+store a **version stamp** and bump it on write.
+
+<QA q="A product page is read 100k times/min and updated a few times a day. How do you cache it?">
+
+Cache-aside in Redis with a generous TTL (say 5–10 min) plus **explicit
+invalidation on the rare write** (delete or overwrite the key in the update
+path). Put the static assets behind a CDN with content-hashed filenames.
+Because writes are rare, coherence is cheap; because reads are huge, the hit
+rate is ~100%. Add TTL jitter to avoid avalanche and a per-key lock to avoid a
+stampede when the key does expire.
+
+</QA>
+
+<QA q="Why not just cache everything forever?">
+
+Memory is finite and stale data is a correctness bug. You need an eviction
+policy (usually **LRU/LFU**) so the cache holds the *working set*, and a TTL so
+data that changes out-of-band doesn't live forever. "Cache everything forever"
+also makes invalidation the only lever you have — and invalidation is the hard
+part.
+
+</QA>

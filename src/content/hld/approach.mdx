@@ -1,0 +1,90 @@
+---
+title: "How to Approach a System Design Round"
+summary: "A repeatable 7-step framework so you never freeze: scope → estimate → API → data → high-level → deep-dive → trade-offs. Plus the back-of-envelope numbers worth memorizing."
+order: 1
+tags: ["framework", "estimation", "interview"]
+---
+
+## The script
+
+Most SDE2 design rounds are 35–45 minutes. Don't jump to boxes-and-arrows —
+**drive the conversation through these steps** and narrate as you go.
+
+1. **Clarify requirements (5 min).** Functional ("what must it do") and
+   non-functional ("how well" — scale, latency, availability, consistency).
+   Write them down. Pin scope: *"I'll design X and Y, treat Z as out of scope —
+   agree?"*
+2. **Capacity estimation.** DAU → QPS, read/write ratio, storage/year,
+   bandwidth. You're justifying later choices (cache? shard? CDN?), not being
+   precise.
+3. **API design.** A handful of endpoints (or a sketch of the RPCs). This pins
+   down the contract and surfaces the data you move.
+4. **Data model.** Core entities + relationships; pick SQL vs NoSQL **with a
+   reason**. Call out the access patterns.
+5. **High-level design.** Now draw it: clients → LB → services → data stores →
+   async workers. Keep it coarse.
+6. **Deep dive.** The interviewer steers you into 1–2 components. This is where
+   the signal is: caching, sharding key, the hot path, a race condition.
+7. **Bottlenecks & trade-offs.** SPOFs, hotspots, what breaks at 10×, and how
+   you'd evolve. Close with a crisp summary.
+
+<Callout type="tip" title="Make non-functional requirements explicit">
+"Highly available" vs "strongly consistent" changes the entire design (CAP).
+Ask: how many users? read- or write-heavy? is stale data OK for N seconds? what
+latency? Getting these on the board early earns signal and prevents a wrong turn.
+</Callout>
+
+## Estimation numbers worth memorizing
+
+| Quantity | Rule of thumb |
+|---|---|
+| Seconds in a day | ~86,400 ≈ **10⁵** |
+| 1M writes/day | ≈ **12 writes/sec** average (×~3–5 for peak) |
+| Read:write | Most consumer apps are **read-heavy** (100:1+) |
+| L1/L2 cache ref | ~1 ns / ~4 ns |
+| Main memory ref | ~100 ns |
+| SSD random read | ~16 µs |
+| Network round trip (same DC) | ~0.5 ms |
+| Disk seek (HDD) | ~10 ms |
+| Inter-continental RTT | ~150 ms |
+
+The big takeaway: **memory is ~100,000× faster than disk, and a cross-region hop
+dwarfs everything** — which is *why* we cache and put data near users.
+
+## A reusable high-level skeleton
+
+<Mermaid chart={`flowchart LR
+  C[Clients] --> CDN[CDN]
+  CDN --> LB[Load balancer]
+  LB --> S1[Stateless app servers]
+  S1 --> CA[(Cache)]
+  S1 --> DB[(Primary DB)]
+  DB --> RR[(Read replicas)]
+  S1 --> Q[Queue]
+  Q --> W[Async workers]`} />
+
+Nearly every design is a variation on this: a CDN for static assets, a load
+balancer over **stateless** app servers, a cache in front of the database, read
+replicas for read scale, and a queue + workers to push slow work off the request
+path.
+
+<QA q="The interviewer asks you to 'design Twitter'. What's your first move?">
+
+Don't draw anything yet. Scope it: *"Twitter is huge — should I focus on posting
+tweets and the home timeline, and treat search, DMs, and ads as out of scope?"*
+Then nail down non-functional needs: scale (hundreds of millions of users,
+read-heavy), timeline latency target, and whether eventual consistency is
+acceptable (it is). Only then estimate and design. Scoping first is itself a
+strong signal.
+
+</QA>
+
+<QA q="Why do back-of-the-envelope estimation at all if it's imprecise?">
+
+Because the numbers justify the architecture. "100:1 read:write and 50k read
+QPS" is the reason you add a cache and read replicas. "2 TB/year and growing" is
+the reason you shard. Estimation isn't about being right to two decimals — it's
+about turning hand-wavy requirements into concrete pressure that your design has
+to withstand.
+
+</QA>

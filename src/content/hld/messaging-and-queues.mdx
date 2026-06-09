@@ -1,0 +1,89 @@
+---
+title: "Messaging, Queues & Async Work"
+summary: "Why you push slow work off the request path, queue vs pub/sub, the three delivery guarantees, and why idempotency is the price of reliability."
+order: 6
+tags: ["queues", "async", "kafka", "idempotency"]
+---
+
+## Why async at all
+
+If a request triggers slow work (send email, run an ML scoring job, evaluate
+alerts), doing it inline makes the user wait and couples your uptime to the
+downstream's. Put a **queue** between them: the request enqueues a job and
+returns fast; **workers** consume at their own pace.
+
+<Mermaid chart={`flowchart LR
+  API[API] -->|enqueue| Q[(Queue)]
+  Q --> W1[Worker]
+  Q --> W2[Worker]
+  W1 --> DB[(DB / side effects)]
+  W2 --> DB`} />
+
+Benefits: **decoupling** (producer/consumer scale independently), **buffering**
+(absorb spikes), **resilience** (retry on failure), and **smoothing** load.
+StockVision's APScheduler alert worker and LandAI's ingestion are exactly this:
+slow/bursty work moved off the hot path.
+
+## Queue vs pub/sub
+
+- **Queue (point-to-point):** each message is processed by **one** consumer —
+  work distribution (e.g. task queues like RabbitMQ/SQS).
+- **Pub/sub (fan-out):** each message goes to **every** subscriber — event
+  broadcast (e.g. Kafka topics, Redis pub/sub for live price ticks).
+
+Kafka blurs the line: a partitioned, durable log where consumer *groups* split
+partitions (queue-like) while different groups each see all events (pub/sub-like).
+
+## Delivery guarantees
+
+| Guarantee | Meaning | Cost |
+|---|---|---|
+| At-most-once | may drop, never duplicates | simplest, lossy |
+| At-least-once | never drops, may duplicate | **the common default** |
+| Exactly-once | no loss, no dupes | expensive; often "effectively-once" via idempotency |
+
+<Callout type="warn" title="At-least-once means you WILL see duplicates">
+A worker that crashes after doing the work but before ack'ing will reprocess the
+message. So consumers must be **idempotent** — processing the same message twice
+has the same effect as once. Use an idempotency key / dedupe table, or make the
+operation naturally idempotent (upsert, set-to-value).
+</Callout>
+
+## Ordering, backpressure, DLQs
+
+- **Ordering** is only guaranteed within a partition/key — design so order-
+  sensitive events share a key.
+- **Backpressure:** if producers outrun consumers, the queue grows; bound it and
+  shed or slow producers.
+- **Dead-letter queue:** messages that keep failing go to a DLQ for inspection
+  instead of blocking the pipeline forever.
+
+<QA q="Why put a queue between your API and a slow task instead of just doing it inline?">
+
+To decouple latency and uptime. Inline, the user waits for the slow task and your
+endpoint fails whenever the downstream does. With a queue the API enqueues and
+returns in milliseconds; workers process asynchronously, retry on failure, and
+absorb spikes by letting the backlog grow instead of dropping requests. It also
+lets you scale producers and consumers independently.
+
+</QA>
+
+<QA q="Your message broker guarantees at-least-once delivery. What must your consumer do?">
+
+Be idempotent, because it will occasionally see the same message twice (e.g. a
+worker that did the work but crashed before acking). I make the operation safe to
+repeat: dedupe on an idempotency key, use an upsert or a conditional write, or
+record processed message IDs. "Exactly-once" in practice is at-least-once
+delivery plus idempotent processing.
+
+</QA>
+
+<QA q="Queue vs pub/sub — give a concrete example of each from a trading app.">
+
+Queue: "settle this trade" — exactly one worker should process each trade, so a
+task queue distributes jobs across workers. Pub/sub: "player price updated" — a
+fan-out so every connected client's WebSocket gateway gets the tick. StockStump
+uses the pub/sub shape for live price broadcast and a queue shape for
+settlement-style work.
+
+</QA>
