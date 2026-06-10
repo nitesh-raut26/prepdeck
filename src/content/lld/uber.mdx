@@ -1,0 +1,231 @@
+---
+title: "Design Uber (LLD)"
+summary: "The trip as a state machine, fare calculation as composable strategies, matching behind an interface — the class design beneath the geospatial giant."
+order: 19
+difficulty: "Classic"
+tags: ["LLD", "OOD", "state-machine", "strategy"]
+---
+
+## Scope it first
+
+*"The object design of ride-hailing: trips and their lifecycle,
+riders/drivers, matching policy, fare calculation with surge, ratings.
+The [geo-index and scale story is the HLD doc](/hld/design-uber) —
+here we design the domain model a single region's service runs. OK?"*
+
+The grading centers: a **rich state machine** (the trip has more
+states, actors and illegal transitions than any other classic), and
+**fare calculation** — the cleanest real-world showcase of
+[Strategy + Decorator composition](/lld/patterns-in-depth) in the
+catalog.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class Trip {
+    +id
+    +rider, driver
+    +pickup, destination
+    +state TripState
+    +fare Fare
+    +requestMatch()/assign()/start()/complete()/cancel()
+  }
+  class Rider {
+    +paymentMethods
+    +rating
+  }
+  class Driver {
+    +vehicle
+    +status: OFFLINE/AVAILABLE/OFFERED/ON_TRIP
+    +rating
+  }
+  class MatchingStrategy {
+    <<interface>>
+    +pick(candidates, trip) Driver
+  }
+  class FareCalculator {
+    +calculate(trip) Fare
+  }
+  class FarePolicy {
+    <<interface>>
+    +apply(trip, runningFare) Fare
+  }
+  class RatingService {
+    +rate(trip, byWhom, stars)
+  }
+  Trip --> Rider
+  Trip --> Driver
+  Trip --> TripState
+  MatchingStrategy <|.. NearestDriver
+  MatchingStrategy <|.. BatchedAssignment
+  FareCalculator --> FarePolicy : ordered chain
+  RatingService --> Trip : only completed`} />
+
+Modeling calls to narrate:
+
+- **`Trip` is the aggregate root** — the entity every other object
+  hangs off, the unit of consistency
+  ([the precious data](/hld/design-uber)), and the *only* place state
+  transitions happen. Riders don't set drivers; trips assign drivers.
+- **`Driver.status` is a second, smaller state machine**
+  (`AVAILABLE → OFFERED → ON_TRIP`) that must stay consistent with
+  trips — the OFFERED reservation is the
+  [double-booking guard](/lld/bookmyshow).
+- **Two strategies, two interfaces:** `MatchingStrategy` (nearest /
+  highest-rated / batched assignment) and `FarePolicy` (below) vary
+  independently — don't fuse them into one "ConfigService."
+
+## The trip state machine (the rich one)
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> REQUESTED
+  REQUESTED --> MATCHING : request match
+  MATCHING --> ASSIGNED : driver accepts
+  MATCHING --> NO_DRIVERS : exhausted/timeout
+  ASSIGNED --> ARRIVING : driver en route
+  ARRIVING --> IN_PROGRESS : rider picked up
+  IN_PROGRESS --> COMPLETED : arrived
+  REQUESTED --> CANCELLED : rider cancels (free)
+  ASSIGNED --> CANCELLED : either cancels (policy!)
+  ARRIVING --> CANCELLED : either cancels (fee likely)
+  COMPLETED --> [*]`} />
+
+What makes this machine *interesting* — and the follow-up territory:
+
+- **Transitions have actors and guards:** `start()` is driver-only
+  and legal only from ARRIVING; `cancel()` is legal from many states
+  but **means something different in each** — that's not one method,
+  it's a `CancellationPolicy` consulted per state (free at REQUESTED,
+  fee after the driver's driven 5 minutes toward you). Encoding
+  "cancel" as state-dependent policy rather than an if-ladder is the
+  design move graders wait for.
+- **Every transition emits an event** (`TripAssigned`,
+  `TripCompleted`) — notifications, receipts, analytics and driver
+  payouts subscribe ([Observer](/lld/design-patterns) →
+  [event-driven seams](/backend/microservices)); `COMPLETED` is what
+  triggers payment, and a payment failure does *not* un-complete the
+  trip — money flows are compensated, never rewound
+  ([the saga stance](/lld/atm)).
+- **Trip + driver transitions must be atomic** at assignment
+  (`MATCHING→ASSIGNED` with `OFFERED→ON_TRIP`) — same transaction or
+  conditional update; this is where the
+  [HLD's matching race](/hld/design-uber) touches down in the code.
+
+## Fare calculation: strategies that compose
+
+A fare isn't one formula — it's an ordered pipeline of policies,
+each transforming a running total:
+
+```python
+class FarePolicy(ABC):
+    @abstractmethod
+    def apply(self, trip: Trip, fare: Money) -> Money: ...
+
+class BaseFare(FarePolicy):           # flat amount by city/vehicle class
+    def apply(self, trip, fare): return fare + self.base[trip.vehicle_class]
+
+class DistanceTime(FarePolicy):       # per-km + per-minute
+    def apply(self, trip, fare):
+        return fare + trip.km * self.per_km + trip.minutes * self.per_min
+
+class SurgeMultiplier(FarePolicy):    # multiplies everything BEFORE it
+    def apply(self, trip, fare): return fare * trip.surge_at_request
+
+class PromoDiscount(FarePolicy):      # subtracts AFTER surge, floor at minimum
+    def apply(self, trip, fare):
+        return max(fare - self.promo.value(fare), self.minimum_fare)
+
+calculator = FareCalculator(policies=[
+    BaseFare(...), DistanceTime(...), SurgeMultiplier(), PromoDiscount(...)
+])                                     # ORDER IS PART OF THE CONTRACT
+```
+
+Two sentences make this section senior-grade: **order is semantics**
+(surge-then-promo vs promo-then-surge are different prices — the list
+order is a business rule under test), and **the surge multiplier is
+captured at request time** onto the trip — the rider pays the price
+they were quoted, not the price at completion
+([the quoted-price-is-a-promise rule](/lld/bookmyshow); money facts
+freeze when shown). All arithmetic in integer paise with explicit
+rounding policy — [the Splitwise laws](/lld/splitwise) apply
+unchanged.
+
+## Walk a scenario
+
+Rider requests: `Trip(REQUESTED)`, surge 1.4× stamped on it →
+`MATCHING`; `NearestDriver` strategy picks from the
+[geo-index's candidates](/hld/design-uber); offer → accept →
+**atomic** `ASSIGNED` + driver `ON_TRIP`; `TripAssigned` event →
+rider's app shows the car ([live tracking is HLD](/hld/design-uber)).
+Driver arrives, taps start (guard: state == ARRIVING ✓) →
+IN_PROGRESS; arrival → `complete()` → fare pipeline runs:
+base 50 + (12 km, 31 min → 230) = 280, ×1.4 surge = 392, promo −50 =
+₹342 → `TripCompleted` → payment service charges (idempotency key =
+trip id), receipt notification, both parties prompted to rate
+(`RatingService` accepts only for COMPLETED trips, once per side —
+two more guards). A cancellation at ARRIVING instead would have
+consulted `CancellationPolicy(ARRIVING)` → ₹40 fee, driver released
+to AVAILABLE, *that* policy decision logged onto the trip for the
+inevitable support ticket.
+
+<QA q="Why does cancellation deserve a policy object instead of a cancel() method with ifs?">
+
+Because "cancel" is one verb hiding a family of business rules that
+vary along *three* axes: trip state (free at REQUESTED, fee at
+ARRIVING), actor (rider-cancel ≠ driver-cancel — driver cancellations
+hit *their* metrics, not the rider's wallet), and market/product
+rules that product managers retune monthly. An if-ladder inside
+`cancel()` couples all three axes in one method that every change
+touches ([Open/Closed violation](/lld/oop-and-solid)); a
+`CancellationPolicy` consulted per (state, actor) isolates each rule,
+makes them unit-testable as pure functions (state + context → fee +
+consequences), and lets ops change fees without redeploying the state
+machine. The general rule worth stating: **when a transition's
+*legality* is fixed but its *consequences* are business-variable,
+split the guard (state machine) from the outcome (policy object).**
+The same split runs the fare pipeline — it's one design idea, used
+twice.
+
+</QA>
+
+<QA q="Surge was 1.4× at request and 2.1× at completion. The fare pipeline runs at completion. What does the rider pay, and how does the design guarantee it?">
+
+1.4× — the quote is a promise. The design enforces it by *capturing*
+pricing inputs onto the Trip at the moment they're shown: the surge
+multiplier (and promo eligibility, and rate card version) are written
+into the trip at REQUESTED, and the `SurgeMultiplier` policy reads
+`trip.surge_at_request`, never the live surge service. This is the
+difference between an object recording *facts* and a pipeline reading
+*current state* — fares must be reproducible (support disputes,
+receipts, audits) from the trip alone, which also means the fare
+breakdown itself is persisted per policy line, not just the total.
+The trap version of this design queries live surge at completion and
+becomes un-auditable plus rider-hostile. Same principle as
+[BookMyShow honoring the price at seat-lock](/lld/bookmyshow) and
+[Splitwise's append-only money facts](/lld/splitwise): **money values
+freeze at the moment of user commitment.**
+
+</QA>
+
+<QA q="Assignment must flip Trip(MATCHING→ASSIGNED) and Driver(OFFERED→ON_TRIP) together. Walk through what goes wrong if they're two separate writes, and the fixes.">
+
+Two writes create a window where the system lies. Trip-first then
+crash: a trip claims a driver who's still AVAILABLE — the matcher
+offers them another trip, double-booking. Driver-first then crash: a
+driver is ON_TRIP for a trip still MATCHING — they're locked out of
+work while the rider re-matches someone else; the driver is leaked
+until a reconciler notices. Fixes, in order of preference: (1) put
+both rows in one database transaction (same region, same store —
+[the HLD keeps trips durable](/hld/design-uber) precisely for this);
+(2) if they're separate services, make assignment a two-step with the
+driver reservation as the lock: conditional-update driver
+OFFERED→ON_TRIP first (idempotent, keyed by trip id), then trip
+ASSIGNED, with a TTL'd reclaim job that releases drivers whose trip
+never confirmed — [the seat-lock + TTL pattern](/lld/bookmyshow)
+again; (3) full [saga](/backend/microservices) with compensations if
+both directions can fail. Name the invariant first ("a driver serves
+at most one trip; an assigned trip has exactly one committed
+driver"), then the mechanism — invariant-first is what the question
+is screening for.
+
+</QA>

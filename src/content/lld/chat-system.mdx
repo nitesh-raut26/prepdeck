@@ -1,0 +1,216 @@
+---
+title: "Design a Chat System (WhatsApp LLD)"
+summary: "The object design under the messaging giant: conversations, the message delivery state machine, local-first storage, and sync after offline."
+order: 18
+difficulty: "Classic"
+tags: ["LLD", "OOD", "state-machine", "sync"]
+---
+
+## Scope it first
+
+*"The object design of a WhatsApp-like client and its server-side
+session layer: 1:1 and group conversations, message states (sent /
+delivered / read), offline users syncing on return, typing
+indicators. The
+[distributed infrastructure is the HLD doc](/hld/design-whatsapp) —
+here we design the classes that ride on it. OK?"*
+
+That split is itself the lesson: the HLD answered *how a billion
+messages move*; this answers *what a message **is*** — and chat is
+the rare LLD where the **client** is the harder half, because phones
+are offline-first databases with a UI.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class Conversation {
+    <<abstract>>
+    +id
+    +participants
+    +lastMessage
+  }
+  class DirectChat
+  class GroupChat {
+    +admins
+    +addMember()/removeMember()
+  }
+  class Message {
+    +id (client-generated UUID)
+    +conversationId
+    +sender
+    +sentAt, seq
+    +content MessageContent
+    +status MessageStatus
+  }
+  class MessageContent {
+    <<interface>>
+  }
+  class TextContent
+  class MediaContent {
+    +blobUrl
+    +thumbnail
+  }
+  class MessageStore {
+    +append(msg)
+    +messagesAfter(convId, seq)
+  }
+  class SyncEngine {
+    +outbox Queue~Message~
+    +cursorPerConversation
+  }
+  Conversation <|-- DirectChat
+  Conversation <|-- GroupChat
+  Message --> MessageContent
+  MessageContent <|.. TextContent
+  MessageContent <|.. MediaContent
+  SyncEngine --> MessageStore`} />
+
+Decisions to narrate as you draw:
+
+- **`Conversation` is abstract; group vs direct are subclasses** —
+  groups add membership rules and admin powers; the message flow
+  stays identical, so all delivery code works on the base type
+  ([polymorphism earning rent](/lld/oop-and-solid)).
+- **`Message.id` is a client-generated UUID** — created *before* any
+  network contact, so retries dedup server-side and the message has
+  identity even while offline. The single most load-bearing field in
+  the design ([the WhatsApp HLD's dedup key](/hld/design-whatsapp),
+  born here).
+- **Content as an interface** (text/media/location/reply), not a blob
+  of nullable fields — adding "polls" is a new content type, not a
+  schema scar. Media content holds a **URL + local cache path**, never
+  bytes ([blobs ride elsewhere](/hld/design-whatsapp)).
+- **Ordering by server-assigned `seq` per conversation**, not by
+  clock — phones' clocks lie
+  ([sequence numbers, not timestamps](/hld/design-whatsapp)); the
+  client sorts and gap-detects on seq.
+
+## The message state machine (the ticks)
+
+Every sent message walks one state machine, and every transition has
+a *trigger and an owner*:
+
+```
+PENDING ──(server ack)──→ SENT ──(recipient device ack)──→ DELIVERED
+   │            ✓                        ✓✓                     │
+   │                                              (recipient opens chat)
+   └─(retries exhausted)──→ FAILED                              ↓
+                                                          READ  ✓✓ blue
+```
+
+- **PENDING** — exists only locally: rendered in the UI instantly
+  ([optimistic UI](/basics/frontend-and-backend)), sitting in the
+  **outbox** (below). One grey clock.
+- **SENT** — the *server* has it durably; one tick. Note what this is
+  *not*: no claim about the recipient.
+- **DELIVERED** — the recipient's *device* acked; two ticks. In
+  groups: per-participant fan-in — the aggregate shows when *all*
+  have it, the detail view shows each
+  (`Map<participant, DeliveryState>` — the state machine runs **per
+  recipient**).
+- **READ** — a *product* event (chat opened), not a transport event;
+  gated by privacy settings. Keeping transport states and product
+  states distinct in your model is a senior tell.
+
+Status updates arrive as tiny system messages flowing back along the
+same pipes — the [Observer pattern](/lld/design-patterns) live: the
+Message mutates, the conversation view re-renders the tick.
+
+## The client is a database (outbox + sync)
+
+The design's center of gravity. The phone must work in a tunnel:
+
+- **Local-first store:** every conversation's messages live in a
+  local DB (SQLite); the UI reads *only* local data — network
+  arrival writes to the store, and the store notifies the UI
+  (Observer again). This one decision makes offline reading, instant
+  search and fast startup fall out for free.
+- **The outbox pattern:** sending = append to local store (PENDING) +
+  enqueue in a persistent outbox. A background `SyncEngine` drains
+  it — retries with backoff across app restarts; the UUID makes every
+  retry idempotent. Kill the app mid-send; the message still goes.
+  (This is the [microservices outbox](/backend/microservices) living
+  in your pocket.)
+- **Sync on reconnect:** per conversation, the client tracks the last
+  seen `seq` (a **cursor**); reconnection asks "everything after
+  cursor" — exactly the [offline-inbox drain](/hld/design-whatsapp)
+  from the server's perspective, and the
+  [Google Drive change-log](/hld/design-google-drive) pattern from
+  the client's. Gap in seqs mid-session → same fetch. One mechanism
+  heals both.
+- **Typing indicators** are the anti-message: fire-and-forget,
+  *never* stored, TTL'd (3 s) so a dropped "stopped typing" packet
+  self-heals — explicitly contrasting them with messages shows you
+  classify data by durability need
+  ([the Uber location argument](/hld/design-uber)).
+
+## Walk a scenario
+
+Asha (in a lift, no signal) types "running late" to the group:
+UUID `m-91f3` created → local store append (PENDING) → outbox →
+UI shows it instantly, grey clock. Signal returns: SyncEngine drains —
+server acks, assigns seq 412 → SENT ✓. Server fans out
+([HLD's job](/hld/design-whatsapp)); Rahul's phone acks → his entry
+in the delivery map flips; when the last member's device acks →
+DELIVERED ✓✓; reads trickle in per privacy settings. Meanwhile Asha's
+phone had *missed* seqs 410–411 (sent while she was offline) — the
+same reconnect pulled them by cursor, slotting them above hers by
+seq. Every arrow in that story is a class from the diagram doing one
+job.
+
+<QA q="Why must the message id be generated on the client, and what breaks with server-assigned ids?">
+
+The message needs identity *before* the network exists: it's rendered
+optimistically, persisted locally, queued in the outbox, possibly
+retried across app restarts — all offline. With server-assigned ids,
+a send timeout is unresolvable: did the server get it? Retrying
+creates a duplicate; not retrying risks loss — the ambiguous-timeout
+problem with no idempotency key to save you ([the ATM
+lesson](/lld/atm)). A client UUID makes every retry a dedupable
+replay (server keeps a seen-set per sender), lets the UI thread
+replies and receipts to the message immediately, and survives the
+device being the only place the message exists. Server still assigns
+`seq` for *ordering* — identity and order are different concerns,
+allocated to the parties that own them: the client owns "this
+exists," the server owns "this comes after that."
+
+</QA>
+
+<QA q="Model read receipts in a 200-person group without melting phones or servers.">
+
+The per-recipient state machine doesn't scale naively: 200 members ×
+a READ event each × fan-out back to 200 phones is 40 K receipt
+messages per message. Design: receipts aggregate server-side — the
+delivery map lives with the conversation service; member devices send
+one compact "read up to seq N" cursor per conversation (not per
+message — opening a chat with 50 unread is *one* receipt), and the
+sender's phone receives batched summaries ("delivered to all" /
+"read by 47") with detail fetched on demand when someone opens the
+info screen. Cursor-based receipts also self-heal: a lost receipt is
+subsumed by the next one (monotonic cursors —
+[the sync engine's trick](/hld/design-google-drive), reused).
+Privacy gates filter at the server. The shape to name: **per-event
+fan-in compressed into monotonic per-member cursors** — the same
+compression that makes the whole sync design work.
+
+</QA>
+
+<QA q="The UI must never block on the network, yet messages must never be lost. Reconcile those requirements in the design.">
+
+They're reconciled by making the local store the only truth the UI
+sees, and the network a background replication concern. Sends:
+append-to-local + persistent outbox, UI renders from local
+immediately (PENDING); the SyncEngine drains the outbox with
+backoff + idempotent UUIDs — durability comes from the local
+persistence, not from awaiting the server, so a crash or tunnel
+costs nothing. Receives: network writes to the local store; the
+store's change events drive the UI (Observer) — rendering never
+awaits a socket. Loss-prevention closes end to end with acks: outbox
+entries clear only on server ack; the server's offline inbox clears
+only on device ack ([the HLD's no-loss chain](/hld/design-whatsapp));
+seq-cursors detect and repair any gap. The principle, portable to
+any offline-first app (Drive, Notion, email): **UI ← local store ←
+sync engine ← network — strictly one-directional reads, with
+durability at the first hop.**
+
+</QA>

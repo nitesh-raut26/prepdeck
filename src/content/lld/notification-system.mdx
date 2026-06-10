@@ -1,0 +1,183 @@
+---
+title: "Design a Notification System"
+summary: "The system every company actually builds: multi-channel delivery, templates, preferences, retries, dedup — and the patterns earning their keep together."
+order: 17
+difficulty: "Classic"
+tags: ["LLD", "OOD", "patterns", "async"]
+---
+
+## Scope it first
+
+*"A service other teams call to notify users — email, SMS, push.
+Templates with variables, user channel preferences and opt-outs,
+retries on provider failure, no duplicates, rate limits so we don't
+spam. OK?"*
+
+Why this one matters disproportionately: you will almost certainly
+*build or extend one at work* — every product notifies — and it's the
+LLD where the [pattern vocabulary](/lld/patterns-in-depth) stops being
+academic: Strategy, Factory, Decorator, Observer and a queue all earn
+their keep in one design. It's also the cleanest **LLD→HLD bridge** in
+the catalog.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class NotificationService {
+    +notify(userId, event, payload)
+  }
+  class NotificationRequest {
+    +id (idempotency key)
+    +user, event, payload
+  }
+  class Template {
+    +render(payload, channel) Content
+  }
+  class PreferenceStore {
+    +channelsFor(user, event) List~Channel~
+  }
+  class Channel {
+    <<interface>>
+    +send(user, content) Result
+  }
+  class EmailChannel
+  class SmsChannel
+  class PushChannel
+  NotificationService --> NotificationRequest : enqueues
+  NotificationService --> PreferenceStore
+  NotificationService --> Template
+  Channel <|.. EmailChannel
+  Channel <|.. SmsChannel
+  Channel <|.. PushChannel
+  NotificationService --> Channel : via factory`} />
+
+The flow: a caller says `notify(user, ORDER_SHIPPED, {orderId: 42})` —
+note callers speak in **events**, never in channels or copy; that
+decision is the whole API. The service resolves preferences ("Asha:
+push for shipping, email for billing, never SMS"), renders the
+template per channel, and dispatches.
+
+## Where the patterns live (the showcase)
+
+- **Strategy — `Channel`.** One interface, three (then ten)
+  implementations. Adding WhatsApp = one class
+  ([Open/Closed](/lld/oop-and-solid), again).
+- **Factory + registry** — `ChannelFactory.for(channelType)` so the
+  dispatch loop never names a concrete class
+  ([patterns-in-depth](/lld/patterns-in-depth)).
+- **Adapter** — each channel wraps a vendor SDK (SES, Twilio, FCM)
+  behind the `Channel` port; swapping SMS providers touches one file.
+- **Decorator** — retries, rate limiting and metrics wrap any channel:
+  `Metered(RateLimited(Retrying(SmsChannel)))` — assembled at startup,
+  testable in isolation.
+- **Observer — the caller side.** Product code *publishes*
+  `OrderShipped`; the notification service is one subscriber.
+  Shipping code knows nothing about emails — which is why marketing
+  can add a "review your purchase" notification without touching the
+  orders team ([event-driven decoupling](/backend/microservices) in
+  miniature).
+- **Template Method-ish rendering** — one `Template` per (event,
+  locale), rendering per channel: email gets HTML + subject, SMS gets
+  160 chars, push gets title + body. Content shaping is a *template*
+  concern, never an if-chain in the channel.
+
+## The reliability core (where seniors are graded)
+
+The naive version sends synchronously in the request path. The real
+version is **asynchronous by construction**:
+
+1. `notify()` validates, assigns a **request id**, persists the
+   request, **enqueues**, returns. (Caller latency: milliseconds.
+   Provider outages: invisible to callers —
+   [the queue's job](/hld/messaging-and-queues).)
+2. Workers consume, resolve preferences, render, dispatch per channel.
+3. **Retries with exponential backoff + jitter** on transient
+   failures (Decorator); after N attempts → **dead-letter queue** for
+   inspection, never silent drop.
+4. **Idempotency end-to-end:** the queue is at-least-once, so workers
+   may see a request twice; a `(request id, channel)` sent-record
+   makes redelivery a no-op — *"no duplicate notifications"* is a
+   dedup-key promise, not a hope
+   ([the same move as WhatsApp messages](/hld/design-whatsapp)).
+5. **Status tracking:** per (request, channel):
+   `PENDING → SENT → DELIVERED/FAILED` — provider delivery callbacks
+   ([webhooks](/basics/what-is-an-api)) advance it. A small
+   [state machine](/lld/atm), one more time.
+
+Plus the two product-integrity rules that distinguish people who've
+run one: **opt-outs are checked at send time, not enqueue time** (a
+user who unsubscribes between enqueue and send must not be messaged —
+compliance, not courtesy), and **rate limiting is per-user as well as
+per-provider** (a bug upstream must not let one user get 400 pushes —
+the [token bucket](/hld/rate-limiting), applied with empathy). For
+ordering ("OTP must beat marketing"): separate queues per priority
+class, never one queue with sorting.
+
+## Walk a scenario
+
+Order ships → orders service publishes `OrderShipped{user, orderId}` →
+notification service (subscriber) creates request `n-7741`, persists,
+enqueues, acks. Worker picks it up: preferences say push + email;
+template `order_shipped` renders both shapes; `PushChannel` (wrapped
+in retry/ratelimit decorators) sends — FCM times out, retry #2
+succeeds → status SENT; email passes through SES adapter → SENT;
+webhook later marks DELIVERED. Same afternoon, a redelivered queue
+message replays `n-7741` — the sent-record short-circuits both
+channels. Nobody got two pushes; the orders team never knew any of
+this happened. That mutual invisibility *is* the design working.
+
+<QA q="Why must the notification API accept events rather than messages — i.e., notify(user, ORDER_SHIPPED, data) and not send(user, 'email', 'Your order...')?">
+
+Because the caller knows *what happened*; the notification system owns
+*how users hear about it*. Event-based APIs centralize channel
+selection (preferences change per user without caller changes), copy
+(templates versioned, localized, A/B-tested in one place), compliance
+(opt-outs enforced at one chokepoint), and evolution (adding a digest
+mode or WhatsApp channel touches zero callers). Message-based APIs
+scatter all of that across every team — fifty services each
+hardcoding subject lines and channel choices, and an unsubscribe bug
+in each. It's the [API-as-contract principle](/basics/what-is-an-api):
+expose intent, hide mechanism — and it's the first thing reviewers
+check in this design because it determines whether everything else is
+even possible.
+
+</QA>
+
+<QA q="Guarantee 'no duplicate notifications' when your queue is at-least-once and providers time out ambiguously.">
+
+Three layers of the same idea. (1) Producer: every logical
+notification gets a stable request id at creation — the caller
+retrying `notify()` reuses it, so caller retries collapse. (2) Worker:
+before dispatching on a channel, atomically check-and-record
+(request id, channel) in a sent-store; queue redeliveries hit the
+record and no-op — the check-and-set must be atomic or two concurrent
+deliveries race ([check-then-act](/lld/bookmyshow), as always). (3)
+Provider: pass the id as the provider's idempotency key where
+supported, so an ambiguous timeout retried doesn't double-send at
+*their* end ([the ATM's transaction id](/lld/atm), the
+[Stripe pattern](/backend/rest-and-graphql)). The honest caveat that
+earns trust: with a provider that offers no idempotency, an ambiguous
+timeout forces a choice — risk a duplicate or risk a miss — and for
+OTPs you choose duplicate, for marketing you choose miss. Policy per
+notification class, stated explicitly.
+
+</QA>
+
+<QA q="Where does this LLD become an HLD problem, and what changes first?">
+
+The class design survives; the numbers attack it. At ~10⁶
+notifications/hour the single queue becomes partitioned
+streams (priority classes get isolation: OTP lanes never queue behind
+campaign blasts); the sent-record store becomes a real
+[key-value system](/hld/caching) with TTLs; per-provider rate limits
+become global coordination (N workers sharing one Twilio quota —
+[distributed rate limiting](/hld/rate-limiting)); template rendering
+for a 10 M-user campaign becomes a batch pipeline; and
+status/delivery callbacks become a webhook-ingestion system with its
+own [queue](/hld/case-ingestion-pipeline). What doesn't change: the
+Channel port, the event-based API, idempotency keys, send-time
+preference checks — the LLD seams *are* the HLD seams, which is the
+deepest reason to get the object design right first. This question is
+the bridge the whole design exists to teach.
+
+</QA>

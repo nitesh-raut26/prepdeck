@@ -1,0 +1,268 @@
+---
+title: "Design Patterns in Depth"
+summary: "The second tier of must-know patterns — Factory, Builder, Adapter, Decorator, Composite, Command, Chain of Responsibility — each with the problem it kills and where you already use it."
+order: 5
+difficulty: "Core"
+tags: ["LLD", "design-patterns", "creational", "structural", "behavioral"]
+---
+
+## How to read this page
+
+[The shortlist doc](/lld/design-patterns) covered the three patterns
+you'll *defend in interviews* (Strategy, Observer, Singleton). This
+page adds the seven that complete a working vocabulary — grouped the
+classic way: **creational** (how objects get made), **structural**
+(how objects compose), **behavioral** (how objects collaborate).
+
+For each: the pain it removes, the shape, and where you've *already
+used it without knowing*. That last part is the real test — patterns
+you can spot in libraries are patterns you actually understand.
+A pattern named without a pain is a buzzword; lead with the pain.
+
+## Creational
+
+### Factory Method / Simple Factory — "don't make callers know class names"
+
+**Pain:** code littered with `new PdfExporter()`, `new CsvExporter()`
+behind `if (format == ...)` chains — every new format edits every
+call site.
+
+```python
+class ExporterFactory:
+    _registry = {"pdf": PdfExporter, "csv": CsvExporter}
+
+    @classmethod
+    def create(cls, fmt: str) -> Exporter:
+        if fmt not in cls._registry:
+            raise ValueError(f"unknown format: {fmt}")
+        return cls._registry[fmt]()          # caller never names a class
+
+exporter = ExporterFactory.create(request.format)
+exporter.export(report)                      # polymorphism does the rest
+```
+
+Construction knowledge lives in **one place**; callers depend only on
+the `Exporter` interface ([DIP](/lld/oop-and-solid)). Adding a format
+= one registry entry. You've used it: `json.loads` deciding what to
+build, every DI container ([Spring](/backend/spring-boot) is a factory
+the size of a framework), `datetime.fromisoformat`.
+
+### Builder — "constructors with nine arguments are unreadable"
+
+**Pain:** `Pizza(true, false, null, 12, null, true)` — what do those
+mean? Which are optional?
+
+```java
+HttpRequest req = HttpRequest.newBuilder()       // you've seen this exact API
+    .uri(URI.create("https://api.example.com/orders"))
+    .timeout(Duration.ofSeconds(5))
+    .header("Authorization", token)
+    .POST(BodyPublishers.ofString(json))
+    .build();                                    // validate once, emit immutable object
+```
+
+Each setter is named and optional; `build()` validates the combination
+and returns an **immutable** result. Java/C++ lean on it heavily;
+Python mostly doesn't need it — keyword arguments
+(`Pizza(cheese=True, size=12)`) solve the same pain natively, and
+*saying that* is an interview point, not a dodge.
+
+## Structural
+
+### Adapter — "right behavior, wrong interface"
+
+**Pain:** your code expects `PaymentGateway.charge(amount)`; the new
+provider's SDK exposes `submit_transaction(cents, currency, ref)`.
+You can't change their SDK, and you shouldn't change your 40 call
+sites.
+
+```python
+class StripeAdapter(PaymentGateway):            # wraps theirs, speaks yours
+    def __init__(self, sdk: StripeSDK):
+        self._sdk = sdk
+
+    def charge(self, amount: Money) -> Receipt:
+        result = self._sdk.submit_transaction(
+            cents=amount.to_cents(), currency=amount.currency, ref=new_ref()
+        )
+        return Receipt.from_stripe(result)       # translate the answer too
+```
+
+One translation layer; both sides stay unchanged. This is the pattern
+of **integration work** — every "write a wrapper for the vendor SDK"
+ticket is an Adapter. It's also your testing seam: a `FakeGateway`
+implements the same interface ([the DI story](/backend/spring-boot)).
+
+### Decorator — "add behavior without touching the class"
+
+**Pain:** you need retries on the payment gateway. And logging. And
+metrics. Subclassing gives `RetryingLoggingMeteredGateway` — a
+combinatorial explosion.
+
+```python
+class RetryingGateway(PaymentGateway):          # wraps ANY gateway
+    def __init__(self, inner: PaymentGateway, attempts=3):
+        self._inner, self._attempts = inner, attempts
+
+    def charge(self, amount):
+        for i in range(self._attempts):
+            try:
+                return self._inner.charge(amount)     # delegate
+            except TransientError:
+                backoff(i)
+        raise
+
+gateway = MeteredGateway(RetryingGateway(StripeAdapter(sdk)))   # stack at runtime
+```
+
+Same interface in, same interface out — so decorators **stack** in any
+order, chosen at runtime. You've used it: Python's `@lru_cache` /
+`@app.get` decorators (the language feature is named after the
+pattern), Java's `BufferedReader(new FileReader(...))`, every
+[middleware pipeline](/backend/nodejs) — middleware *is* Decorator
+applied to request handlers.
+
+**Adapter vs Decorator in one line** (a favorite quiz): Adapter
+*changes the interface*, Decorator *keeps the interface and adds
+behavior*.
+
+### Composite — "treat one and many uniformly"
+
+**Pain:** a folder contains files *and folders*; your size-calculator
+shouldn't care which it's holding.
+
+```python
+class Node(ABC):
+    @abstractmethod
+    def size(self) -> int: ...
+
+class File(Node):
+    def size(self): return self._bytes
+
+class Folder(Node):
+    def __init__(self): self.children: list[Node] = []
+    def size(self): return sum(c.size() for c in self.children)   # recursion!
+```
+
+The tree shape from [recursion](/programming/recursion) and
+[trees](/dsa/trees-and-bsts), expressed as classes: leaves and
+containers share one interface, and every operation becomes a
+traversal. You've used it: the [DOM](/basics/websites-and-browsers),
+UI component trees ([React](/frontend/react) children), org charts,
+[Splitwise groups containing groups](/lld/splitwise).
+
+## Behavioral
+
+### Command — "turn an action into an object"
+
+**Pain:** undo/redo, job queues, macros — anything where actions must
+be *stored*, not just executed.
+
+```python
+class Command(ABC):
+    @abstractmethod
+    def execute(self): ...
+    @abstractmethod
+    def undo(self): ...
+
+class AddItemCommand(Command):
+    def __init__(self, cart, item): self.cart, self.item = cart, item
+    def execute(self): self.cart.add(self.item)
+    def undo(self): self.cart.remove(self.item)
+
+history.push(cmd); cmd.execute()        # undo = history.pop().undo()
+```
+
+Once an action is an object it can be queued
+([task queues](/hld/messaging-and-queues) carry serialized commands),
+logged ([event sourcing](/databases/event-sourcing-cqrs) is Command as
+a persistence strategy), replayed, or undone — the
+[undo stack](/dsa/stacks-and-queues) finally gets its element type.
+
+### Chain of Responsibility — "let a pipeline decide who handles it"
+
+**Pain:** a request must pass auth, then rate limiting, then
+validation, then the handler — without one god-function knowing all
+steps.
+
+```python
+class Handler(ABC):
+    def __init__(self): self._next = None
+    def set_next(self, h): self._next = h; return h
+    def handle(self, req):
+        if self._next: return self._next.handle(req)
+
+class AuthHandler(Handler):
+    def handle(self, req):
+        if not verify(req.token): raise Unauthorized()
+        return super().handle(req)          # pass it on
+```
+
+Each link does one check and forwards; the chain is assembled at
+startup. You've used it: [Express middleware](/backend/nodejs) is
+*literally* this pattern (the `next()` parameter is the chain),
+Spring's filter chain, logging frameworks' handler chains,
+[ATM cash dispensing](/lld/atm) by denomination.
+
+## The honest meta-lesson
+
+Patterns are **vocabulary, not virtue**. The failure mode interviews
+screen for isn't ignorance — it's *pattern fever*: a Builder for a
+two-field object, an AbstractFactoryFactory. Every pattern adds
+indirection, and indirection must pay rent
+([the simplicity rule](/lld/oop-and-solid)). Strong answers name the
+pain first, the pattern second, and the simpler alternative they
+rejected third. ("Keyword args would do, but this is Java, so:
+Builder.")
+
+<QA q="Adapter, Decorator, Facade — three wrappers. Distinguish them and give a one-line use for each.">
+
+All three wrap objects; they differ in *intent toward the interface*.
+**Adapter** converts one interface to another so incompatible pieces
+fit — wrap a vendor SDK so it satisfies your `PaymentGateway` port.
+**Decorator** preserves the interface while layering behavior — wrap
+that same gateway with retries, then metrics, stacking at runtime.
+**Facade** ([the shortlist doc](/lld/design-patterns)) *simplifies*: one
+friendly front over a messy subsystem — `BookingService.book()` hiding
+seat-locks, payment and notifications. Memory hook: Adapter changes
+the plug, Decorator adds layers to the same plug, Facade installs a
+single light switch for the whole room. Interviewers ask exactly this
+because using one name for another is the most common patterns error
+in code review.
+
+</QA>
+
+<QA q="Your checkout needs: log every payment call, retry transient failures, and support a second payment provider next quarter. Design it with patterns — and say where you'd stop.">
+
+Define the port: a `PaymentGateway` interface (`charge`, `refund`).
+Each provider gets an **Adapter** translating its SDK to the port —
+the second provider is a new adapter, zero call-site changes, selected
+by a small **Factory** keyed on config. Cross-cutting behavior layers
+as **Decorators** over the port: `RetryingGateway` (transient errors,
+backoff, [idempotency keys](/backend/rest-and-graphql) so retries are
+safe) and `LoggingGateway`, stacked in that order so retries are
+logged individually. Where to stop: no Builder (config objects are
+small), no Chain of Responsibility (the decorator stack already *is*
+the pipeline), and the factory stays a dict-lookup, not a class
+hierarchy. Closing sentence for the room: "every pattern here exists
+to make next quarter's provider a one-file change" — patterns
+justified by a concrete future, not by ceremony.
+
+</QA>
+
+<QA q="Why is middleware (Express/Spring filters) Chain of Responsibility, and what does recognizing that buy you?">
+
+Each middleware receives the request plus a `next` handle, does its
+one concern (parse, authenticate, rate-limit), and either forwards or
+short-circuits — exactly CoR's links: single responsibility per
+handler, runtime-assembled order, any link can terminate the chain.
+Recognizing it buys three things: you know the *order* is part of the
+design (auth before rate-limit-by-user, body-parse before validate —
+misordering is the classic middleware bug); you know how to test links
+in isolation (each is just an object with a fake `next`); and you can
+apply the shape outside HTTP — approval workflows, escalation
+policies, [ATM denomination dispensing](/lld/atm) — instead of
+reinventing it as nested ifs. Patterns-as-vocabulary in action: the
+name compresses a design conversation into one word.
+
+</QA>

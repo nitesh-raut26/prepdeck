@@ -1,0 +1,180 @@
+---
+title: "Design an ATM"
+summary: "The state-machine showcase — card, PIN, menu, dispense — plus the question that matters: debit first or dispense first?"
+order: 16
+difficulty: "Classic"
+tags: ["LLD", "OOD", "state-pattern", "consistency"]
+---
+
+## Scope it first
+
+*"Card-based ATM: authenticate with PIN, check balance, withdraw cash,
+deposit. It talks to the bank over a network. Deep-dive withdrawal —
+including what happens when the network dies mid-transaction. OK?"*
+
+Two design centers: the **session state machine** (the cleanest State-
+pattern showcase in the catalog) and the **dispense-vs-debit ordering
+problem** — a distributed-consistency question wearing a metal box,
+and the reason this "easy" classic appears in senior loops.
+
+## The state machine
+
+An ATM session is *nothing but* states — every button means something
+different depending on where you are:
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> Idle
+  Idle --> HasCard : card inserted
+  HasCard --> Authenticated : correct PIN
+  HasCard --> Idle : 3 wrong PINs / eject
+  Authenticated --> SelectingAmount : chooses withdraw
+  Authenticated --> Idle : eject card
+  SelectingAmount --> Dispensing : amount valid
+  Dispensing --> Idle : cash taken, card ejected`} />
+
+The State pattern makes each state a class owning *its* behavior;
+illegal actions become unrepresentable instead of un-checked:
+
+```python
+class AtmState(ABC):
+    def insert_card(self, atm, card): raise InvalidAction()
+    def enter_pin(self, atm, pin):    raise InvalidAction()
+    def withdraw(self, atm, amount):  raise InvalidAction()   # default: refuse
+
+class IdleState(AtmState):
+    def insert_card(self, atm, card):
+        atm.card = card
+        atm.state = HasCardState()
+
+class HasCardState(AtmState):
+    def enter_pin(self, atm, pin):
+        if atm.bank.verify(atm.card, pin):
+            atm.state = AuthenticatedState()
+        else:
+            atm.failed += 1
+            if atm.failed >= 3:
+                atm.retain_card()        # state machine + security policy
+                atm.state = IdleState()
+```
+
+Compare the alternative — one class with `if self.state == "HAS_CARD"
+and action == "withdraw"...` for every combination — and the pattern
+sells itself: adding a state (maintenance mode, deposit flow) is a new
+class, not 12 new elifs. Two timers ride along: every non-Idle state
+has a **timeout → eject → Idle** edge (abandoned sessions self-heal —
+[the TTL philosophy](/lld/bookmyshow)), and the card is *held by the
+machine* until the session ends for a human-factors reason
+interviewers enjoy: dispense-before-eject is how people historically
+left cards behind.
+
+## Hardware behind interfaces
+
+The controller never touches metal — it talks to **ports**
+([Adapter territory](/lld/patterns-in-depth)): `CardReader`,
+`CashDispenser`, `Screen`, `Keypad`, `BankNetwork`. Tests inject
+fakes; a new dispenser model is a new adapter. The one with logic
+inside is the dispenser:
+
+### Denomination dispensing
+
+"₹3,700 from notes of 2000/500/100" is the
+[coin-change problem](/dsa/dp-patterns) with inventory limits — and
+because real currencies are canonical, **greedy works**: largest note
+first, bounded by what's in each cassette; if the remainder can't be
+formed (out of 100s), fail *before* dispensing anything. A
+[Chain of Responsibility](/lld/patterns-in-depth) of cassette handlers
+(2000s → 500s → 100s) models it cleanly — each link takes what it can,
+passes the remainder. Edge to volunteer: amounts not formable by any
+combination (₹3,750 with no 50s) are rejected at *amount entry* —
+validate early, fail cheap.
+
+## The real question: debit first, or dispense first?
+
+Withdrawal touches two systems that can't share a transaction: the
+**bank's ledger** (over a network) and the **physical cash drawer**.
+Whatever order you pick, the failure between the two steps is the
+interview:
+
+- **Dispense → debit:** machine pays out, network dies before the
+  debit lands → free money, multiplied across a fleet. Unacceptable.
+- **Debit → dispense** (what real ATMs do): debit succeeds, dispenser
+  jams → customer charged, no cash. Bad — but **recoverable**, and
+  that asymmetry is the whole answer: money *not yet given out* can be
+  refunded by software; cash in a stranger's hand cannot be recalled.
+
+So the protocol is debit-first plus compensation
+([the saga shape](/backend/microservices), in miniature):
+
+1. Reserve/debit at the bank — with an
+   **idempotency key** ([transaction id](/backend/rest-and-graphql)),
+   so retrying an ambiguous timeout can't double-debit.
+2. Command the dispenser; **hardware confirms** notes-out (sensors).
+3. Confirm settlement to the bank.
+4. Dispense failed? Send a **reversal** with the same transaction id;
+   if the network is down, queue the reversal locally and replay —
+   the customer is made whole minutes later, and the journal (an
+   append-only local log of every step — [event
+   sourcing](/databases/event-sourcing-cqrs) in a metal box) is the
+   evidence for disputes.
+
+Every step writes the journal *before* acting — after any crash, the
+machine replays its journal to discover what it was doing and
+completes or compensates. That's a write-ahead log
+([the database trick](/fundamentals/databases)), reinvented at 4 AM in
+a gas station.
+
+<QA q="Why do real ATMs debit before dispensing, when that order can charge a customer who got no cash?">
+
+Because the two failure modes are asymmetric in recoverability.
+Dispense-first's failure (cash out, debit lost) is irreversible — the
+bank cannot reclaim physical notes, and at fleet scale the bug is an
+unbounded money leak. Debit-first's failure (debit landed, dispenser
+jammed) is fully recoverable in software: the machine's journal shows
+debit-without-dispense-confirmation, triggering an automatic reversal
+with the same idempotent transaction id — queued locally if the
+network is down — so the customer is restored without human
+intervention. Design principle to state plainly: **when a process
+spans systems that can't share a transaction, order the steps so
+every partial failure is compensable**, then build the compensation
+path as a first-class feature. It's the saga pattern; the ATM is its
+oldest production deployment.
+
+</QA>
+
+<QA q="Why is the State pattern the right tool here — and when would you NOT use it?">
+
+An ATM session's behavior is *entirely* state-dependent: the same
+keypad press is PIN entry, amount entry or menu choice depending on
+where the session stands, and the bug class that matters (dispensing
+without authentication) is an illegal transition. State classes make
+each state's legal actions explicit and everything else throw by
+default — adding maintenance mode or a deposit flow is additive, and
+the diagram on the whiteboard maps one-to-one to the code, which is
+exactly what machine-coding graders want to see. When not to: two
+states and three actions — a boolean and two ifs beat five classes
+([indirection must pay rent](/lld/patterns-in-depth)); or when
+transitions are data-driven and numerous (workflow engines), where a
+transition *table* beats a class per state. The judgment, stated in
+one line: State earns its keep when states have rich, distinct
+behavior — not merely distinct names.
+
+</QA>
+
+<QA q="The network times out right as the bank processes your debit request. The machine doesn't know if it succeeded. What happens?">
+
+This is the ambiguous-timeout problem — the request may or may not
+have landed, and both guessing wrong ways lose money. The protocol
+handles it with idempotency plus journaling: the debit request
+carried a unique transaction id, journaled locally before sending. On
+timeout the machine retries *the same id* — the bank's idempotent
+endpoint either applies it once or returns the original result, never
+double-debits ([the Stripe pattern](/backend/rest-and-graphql)). If
+retries exhaust, the machine aborts the session (no cash dispensed —
+debit-first ordering makes abort safe), queues a reversal-by-id, and
+reconciles when connectivity returns; nightly settlement between the
+journal and the bank's ledger catches anything that slipped. The
+generalizable answer interviewers are fishing for: **you cannot
+eliminate ambiguity over a network; you make operations idempotent so
+ambiguity becomes retriable.**
+
+</QA>

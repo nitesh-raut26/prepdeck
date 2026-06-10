@@ -1,0 +1,171 @@
+---
+title: "Design a Library Management System"
+summary: "The gentle classic that tests one big idea: a Book is not a BookCopy. Catalog vs inventory, loans, reservations and fines."
+order: 15
+difficulty: "Classic"
+tags: ["LLD", "OOD", "entity-modeling"]
+---
+
+## Scope it first
+
+*"Members search the catalog, borrow and return physical copies,
+reserve books that are out, and pay late fines. Librarians manage
+inventory. Single branch — multi-branch as a follow-up. OK?"*
+
+This is the friendliest LLD classic, which is exactly why it's asked:
+with no concurrency fireworks to hide behind, the grading falls
+entirely on **entity modeling** — and one distinction decides the
+interview.
+
+## The one big idea: Book vs BookCopy
+
+"1984 by Orwell" and "the physical copy with barcode #4471" are
+different things. The catalog entry (title, author, ISBN) exists
+*once*; the library owns *five copies* of it, each with its own
+condition, shelf and loan history:
+
+- Search and reservations are about the **Book** ("is 1984
+  available?" = does *any* copy stand free).
+- Borrowing, returning, damage and fines are about the **BookCopy**
+  (*which* physical object is in whose hands).
+
+Merge them and everything breaks: five copies means five duplicate
+title rows ([the normalization sin](/basics/what-is-a-database)), and
+"who has the book?" has no answer because *the book* isn't a thing
+anyone can hold. This is the same item-vs-instance split as
+[BookMyShow's Seat vs per-show SeatState](/lld/bookmyshow) and a
+flight vs a specific departure — interviewers reuse the test
+endlessly because so many candidates fail it.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class Book {
+    +isbn
+    +title
+    +authors
+    +availableCopies() int
+  }
+  class BookCopy {
+    +barcode
+    +status: ON_SHELF/ON_LOAN/RESERVED/LOST
+  }
+  class Member {
+    +id
+    +activeLoans
+    +fines
+  }
+  class Loan {
+    +copy BookCopy
+    +member Member
+    +dueDate
+    +returnedAt
+  }
+  class Reservation {
+    +book Book
+    +member Member
+    +position
+  }
+  class Library {
+    +checkout(member, copy) Loan
+    +returnCopy(copy)
+    +reserve(member, book)
+  }
+  Book "1" --> "*" BookCopy
+  Loan --> BookCopy
+  Loan --> Member
+  Reservation --> Book : note: BOOK, not copy
+  Library --> Loan : creates`} />
+
+The supporting decisions worth saying out loud:
+
+- **`Loan` is its own entity**, not fields on Member or Copy — it's
+  the *relationship with history* (who, what, when, due, returned).
+  Past loans are the audit trail; fines compute from them. Whenever
+  two entities relate *with attributes*, the relationship is a class.
+- **`Reservation` targets the Book, not a copy** — the member wants
+  *any* copy of 1984; binding to copy #4471 would make them wait for
+  that one while #4472 sits free. A FIFO
+  [queue](/dsa/stacks-and-queues) per book; on return, the head
+  reservation converts to a hold.
+- **`BookCopy.status` is a small state machine**
+  (`ON_SHELF → ON_LOAN → ON_SHELF`, with `RESERVED`/`LOST` branches) —
+  guard transitions; "checkout a LOST copy" should be unrepresentable
+  ([the State discipline](/lld/elevator)).
+- **Fines as records, not arithmetic on the fly** — a `Fine` is
+  created at return-time (days late × rate via a
+  [Strategy](/lld/design-patterns) — children's books may differ from
+  DVDs), then *persists* until paid. Money facts are
+  [append-only](/lld/splitwise).
+
+## Walk a scenario
+
+"Asha borrows 1984": search finds the Book with
+`availableCopies() = 2` → librarian scans copy #4471 →
+`Library.checkout(asha, copy4471)` validates the *business rules*
+(member in good standing? under the 5-loan limit? no unpaid fines
+over ₹100?) → copy `ON_SHELF → ON_LOAN`, a `Loan` with dueDate = +14
+days. Return three days late → Loan closes, fine strategy creates a
+₹15 `Fine` on Asha → copy's status checks the reservation queue:
+Rahul reserved 1984, so `ON_SHELF` is skipped for `RESERVED`, Rahul
+gets a [notification](/lld/notification-system) and 48 hours to
+collect, expiry releases it ([TTL self-healing](/lld/bookmyshow),
+the library edition).
+
+Business-rule placement is the quiet test here: the loan-limit check
+lives in `Library.checkout` (it spans member + loans), the
+status-transition guards live in `BookCopy` — rules sit with the data
+they protect ([encapsulation](/lld/oop-and-solid)), not in one god
+method.
+
+<QA q="Why must Book and BookCopy be separate classes? What breaks if they aren't?">
+
+They have different identity, lifecycle and relationships. Book is
+catalog: one row per title (ISBN, authors), the unit of search and
+reservation. BookCopy is inventory: one row per physical object
+(barcode, condition, status), the unit of loans, damage and loss.
+Merged, you either duplicate title data per copy (update anomalies —
+fix an author typo in five places) or you can't represent five copies
+with independent statuses at all; "reserve the book" and "loan this
+copy" become the same confused operation, and the loan history loses
+its target. The pattern generalizes — product vs stock unit, flight
+vs departure, [seat vs seat-state-per-show](/lld/bookmyshow) — and
+interviewers test it because conflating type with instance is the
+most common real-world modeling bug.
+
+</QA>
+
+<QA q="Where do reservations attach, and how does a returned copy meet the queue?">
+
+Reservations attach to the **Book** — the member wants any copy, so a
+per-book FIFO queue (with the member's position visible). On return,
+the copy's transition consults the book's queue before going
+ON_SHELF: if non-empty, dequeue the head, set the copy RESERVED for
+that member, notify them, and start a 48-hour hold timer; expiry
+either passes the copy to the next reservation or releases it to the
+shelf — TTL-based self-healing so no human cleanup is ever required.
+Edge cases worth naming: a member can't reserve a book with copies
+available (they should just borrow), can't hold duplicate
+reservations, and cancellation must heal queue positions. Attaching
+reservations to a copy is the trap: it strands members behind one
+specific barcode while identical copies circulate freely.
+
+</QA>
+
+<QA q="Follow-up: extend to multiple branches. What changes — and what doesn't?">
+
+The catalog doesn't change: Book stays global (1984 is 1984
+everywhere). Inventory gains a dimension: BookCopy gets a `branch`
+(and transfer states like IN_TRANSIT for inter-branch loans), and
+availability becomes a per-branch question — `availableCopies(branch)`
+— while search may aggregate across branches. Reservations need a
+policy decision: per-branch queues (simple, members pick a pickup
+branch) vs global queue with routing (better availability, more
+moving parts) — say the trade-off, pick per-branch for v1. Loans,
+fines and members stay branch-agnostic (a member is one member
+everywhere). The meta-answer interviewers want: because Book/BookCopy
+were separated from the start, the multi-branch change touches only
+the inventory side — good entity boundaries are what make follow-ups
+cheap, and that's precisely what the follow-up is probing.
+
+</QA>
