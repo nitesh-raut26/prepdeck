@@ -1,0 +1,102 @@
+---
+title: "Your STAR Stories"
+summary: "Five ready-to-adapt stories mined from your real projects — a hard technical bug, a judgment call, learning fast, handling ambiguity, and a failure — each in STAR form."
+order: 2
+tags: ["behavioral", "STAR", "stories", "projects"]
+---
+
+## How to use these
+
+Have **5 flexible stories** you can re-aim at many questions. Memorize the
+*beats*, not a script. Each below is grounded in your code so it'll hold up to
+follow-ups.
+
+## 1. Hardest technical problem — the double-spend race (StockStump)
+
+- **S/T:** StockStump lets users trade player shares against a balance; I found
+  the buy path could let two concurrent trades spend the same money.
+- **A:** I traced it to a read-modify-write on the balance — both requests read
+  ₹1000, both passed the check, both wrote. I considered an app-level lock but it
+  wouldn't survive multiple instances, so I pushed the invariant into the
+  database: a single atomic `UPDATE … SET balance = balance - cost WHERE balance
+  >= cost`, treating "0 rows" as insufficient funds. I also evaluated optimistic
+  locking with a version column as the alternative.
+- **R:** The double-spend was impossible after that, and I came away with a rule:
+  correctness invariants belong at the point of mutation in the datastore, not in
+  application memory.
+
+## 2. A judgment call / trade-off — honesty over coverage (LandAI)
+
+- **S/T:** LandAI ingests external data; I could have boosted coverage by scraping
+  property-listing portals and by filling gaps with plausible numbers.
+- **A:** I chose not to. I built a source registry + a compliance gate so
+  ToS-protected sources can't run, and a provenance envelope so every value
+  carries its source/freshness/confidence — and when a source is down the API
+  returns `available: false` instead of a fabricated number.
+- **R:** Less raw data, but a product you can trust and defend — which for a
+  forecasting tool is the whole value. It taught me to treat trust as a feature
+  with real engineering cost, not an afterthought.
+
+## 3. Learning something new fast — reactive Java (StockStump)
+
+- **S/T:** I wanted StockStump's backend to handle many live connections, which
+  pushed me to Spring WebFlux + R2DBC — reactive programming I hadn't shipped
+  before.
+- **A:** I learned the model (non-blocking `Mono`/`Flux`, never block the event
+  loop), and the sharp edge that a single blocking JDBC call would starve the
+  threads — so I committed to R2DBC for reactive DB access throughout.
+- **R:** A non-blocking backend suited to live price fan-out, and a durable
+  mental model of when reactive is worth its added complexity (I/O-bound, high
+  concurrency) versus when it isn't.
+
+## 4. Handling ambiguity / prioritization — StockVision's scope
+
+- **S/T:** StockVision grew to ~30 route modules; the risk was "a broad prototype
+  searching for scope."
+- **A:** I reframed the roadmap around **trust, not more pages**: real Postgres +
+  migrations, server-side entitlement enforcement, encryption of PAN/broker
+  tokens, and a `SystemStatus` widget so the UI never shows a dead value as live.
+  I deliberately stopped adding features.
+- **R:** A clearer product story and a principle I now lead with — depth and
+  trustworthiness over surface area when a system is already broad.
+
+## 5. A failure / something you'd do differently
+
+- **S/T:** Early on I leaned on "graceful fallbacks" (mock data when a backend was
+  down) to keep demos smooth.
+- **A:** That hid real breakage — a dead value looked live. I corrected course:
+  explicit health checks, status badges, and `available: false` envelopes, so
+  failure is visible instead of disguised.
+- **R:** The product became honest under failure. The lesson: silent fallbacks
+  trade short-term polish for long-term trust — surface failure, don't mask it.
+
+<Callout type="tip" title="Re-aim, don't multiply">
+These five cover most prompts: #1 for "hardest bug / conflict in code", #2 for
+"tough decision / ethics", #3 for "learn fast / outside comfort zone", #4 for
+"ambiguity / prioritization / too much work", #5 for "failure / feedback / what
+you'd do differently". Practice each to ~2 minutes.
+</Callout>
+
+<QA q="Tell me about a challenging technical problem you solved.">
+
+Use story #1: the StockStump double-spend. Briefly set up the trading/balance
+context, then spend most of the answer on the diagnosis (a read-modify-write race
+across concurrent requests) and the decision (why an app-level lock fails across
+instances, so I moved the invariant into the DB with an atomic conditional
+update, with optimistic locking as the alternative). Close with the result — the
+race was eliminated — and the lesson that correctness invariants belong at the
+point of mutation.
+
+</QA>
+
+<QA q="Tell me about a time you disagreed with an approach or made an unpopular call.">
+
+Use story #2 (honesty over coverage) or #5 (killing silent fallbacks). For #2:
+the easy, popular path was more data via scraping and gap-filling; I argued that
+for a forecasting product, fabricated or non-compliant data destroys the only
+thing that matters — trust — and instead built a compliance gate and provenance
+envelopes that return "unavailable" rather than a guess. The result was a smaller
+but defensible dataset, and it frames me as someone who optimizes for the real
+goal over the easy metric.
+
+</QA>

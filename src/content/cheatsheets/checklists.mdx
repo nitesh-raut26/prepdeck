@@ -1,0 +1,57 @@
+---
+title: "Round-by-Round Checklists"
+summary: "Fast pre-flight checklists for the coding, system-design, LLD and behavioral rounds — plus a day-before revision plan."
+order: 3
+tags: ["checklist", "revision", "interview"]
+---
+
+## Coding round
+
+- [ ] Restate the problem; ask about **edge cases** (empty, dup, negative,
+      overflow, huge n).
+- [ ] State the **brute force** + its complexity first.
+- [ ] Name the **pattern** that removes the bottleneck (use the constraints).
+- [ ] Code cleanly; narrate **invariants** as you go.
+- [ ] **Dry-run** a small example; check boundaries.
+- [ ] State final **time & space**; mention follow-ups (thread-safety, scale).
+
+## System design (HLD)
+
+- [ ] Clarify **functional + non-functional** requirements; pin scope.
+- [ ] **Estimate** QPS / storage / read:write.
+- [ ] Sketch the **API**.
+- [ ] **Data model** + SQL vs NoSQL with a reason.
+- [ ] **High-level diagram**: clients → LB → stateless services → cache → DB →
+      queue/workers.
+- [ ] **Deep-dive** the component they pick (caching, sharding key, hot path).
+- [ ] Call out **bottlenecks, SPOFs, trade-offs**; summarize.
+
+## Low-level design (LLD)
+
+- [ ] Clarify scope; list **entities (nouns)** and **responsibilities (verbs)**.
+- [ ] Draw **relationships**; prefer **composition over inheritance**.
+- [ ] Identify where behavior **varies → Strategy**; events → Observer; modes →
+      State.
+- [ ] Apply **SOLID**; keep classes single-responsibility.
+- [ ] Walk a **scenario**; handle the **concurrency** edge (atomic mutation).
+
+## Behavioral
+
+- [ ] 5 **STAR** stories rehearsed to ~2 min, "I" not "we".
+- [ ] A 90-second **"tell me about yourself"** (present → past → future).
+- [ ] 3–4 **questions to ask** them.
+- [ ] A real **failure** + **weakness** with a correction.
+
+## The day before
+
+1. Re-read your **project pages** — you must own "tell me about a project".
+2. Skim the **DSA pattern table** + **complexity cheat sheet**.
+3. Re-read the **system-design numbers** + the HLD **approach** framework.
+4. Re-read your **5 STAR stories**.
+5. Sleep. A rested brain pattern-matches; a tired one freezes.
+
+<Callout type="tip" title="Confidence comes from a process, not from knowing everything">
+You won't know every answer. What carries you is a **repeatable approach** for
+each round — so when you're stuck, you fall back on the process (clarify →
+brute force → pattern → optimize) instead of panicking.
+</Callout>

@@ -1,0 +1,52 @@
+---
+title: "Complexity Cheat Sheet"
+summary: "Big-O for data-structure operations and the common sorting algorithms — the table to glance at the morning of a coding round."
+order: 1
+tags: ["big-o", "data-structures", "sorting"]
+---
+
+## Data-structure operations (average / worst)
+
+| Structure | Access | Search | Insert | Delete | Notes |
+|---|---|---|---|---|---|
+| Array | O(1) | O(n) | O(n) | O(n) | contiguous, cache-friendly |
+| Dynamic array | O(1) | O(n) | O(1)* | O(n) | *amortized append |
+| Linked list | O(n) | O(n) | O(1) | O(1) | O(1) at a known node |
+| Hash map | — | O(1) | O(1) | O(1) | O(n) worst (collisions) |
+| Balanced BST | O(log n) | O(log n) | O(log n) | O(log n) | ordered, range queries |
+| Heap | — | O(n) | O(log n) | O(log n) | O(1) peek min/max |
+| Stack / Queue | — | — | O(1) | O(1) | LIFO / FIFO |
+| Trie | — | O(L) | O(L) | O(L) | L = key length, prefix search |
+
+## Sorting algorithms
+
+| Algorithm | Best | Average | Worst | Space | Stable |
+|---|---|---|---|---|---|
+| Quicksort | n log n | n log n | n² | log n | ❌ |
+| Mergesort | n log n | n log n | n log n | n | ✅ |
+| Heapsort | n log n | n log n | n log n | 1 | ❌ |
+| Insertion | n | n² | n² | 1 | ✅ |
+| Counting / Radix | n + k | n + k | n + k | n + k | ✅ (non-comparison) |
+
+**Defaults to remember:** comparison sorts can't beat **O(n log n)**. Quicksort is
+the usual in-memory pick (fast constants) but watch the O(n²) worst case;
+mergesort when you need stability or external/linked-list sorting; counting/radix
+only for small integer keys.
+
+## Common algorithm complexities
+
+| Task | Complexity |
+|---|---|
+| Binary search | O(log n) |
+| BFS / DFS (graph) | O(V + E) |
+| Dijkstra (binary heap) | O((V + E) log V) |
+| Topological sort | O(V + E) |
+| Build a heap | O(n) |
+| Two pointers / sliding window | O(n) |
+| Subsets / permutations (backtracking) | O(2ⁿ) / O(n·n!) |
+
+<Callout type="tip" title="Know why, not just what">
+Don't just memorize the table — be able to derive it. "Hash map is O(1) average
+because the key hashes to a bucket directly, but O(n) worst if everything
+collides into one bucket." The derivation is what survives a follow-up.
+</Callout>
