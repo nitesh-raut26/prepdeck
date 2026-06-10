@@ -1,0 +1,414 @@
+---
+title: "Kubernetes"
+summary: "Container orchestration from first principles — pods, deployments, services, ingress, autoscaling, and how Kubernetes keeps your apps running at scale."
+order: 3
+difficulty: "Advanced"
+tags: ["kubernetes", "k8s", "pods", "deployments", "services", "devops", "orchestration"]
+---
+
+## What is Kubernetes?
+
+**Kubernetes** (K8s — "K" + 8 letters + "s") is an open-source container orchestration platform. It automates:
+- Deploying containers across a cluster of machines
+- Scaling (up/down based on load)
+- Self-healing (restart crashed containers, reschedule on failed nodes)
+- Rolling updates and rollbacks (zero-downtime deployments)
+- Service discovery and load balancing
+
+```
+Analogy: Docker is like a shipping container.
+Kubernetes is like the global logistics system —
+it decides which ships carry which containers,
+reroutes around storms (node failures),
+and scales the fleet when shipping volume spikes.
+```
+
+**Why not just run Docker directly?**
+- Docker on one machine → single point of failure
+- Manual scaling → can't handle traffic spikes automatically
+- Manual recovery → a crashed container stays crashed
+- No built-in networking between machines
+- No rolling updates (zero-downtime deploys)
+
+Kubernetes solves all of these at scale.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                            │
+│                                                                  │
+│  ┌───────────────────────────────┐                              │
+│  │      Control Plane            │                              │
+│  │  ┌──────────┐ ┌─────────┐    │                              │
+│  │  │ API Server│ │  etcd   │    │  ← cluster state stored here │
+│  │  └──────────┘ └─────────┘    │                              │
+│  │  ┌──────────┐ ┌──────────────┐│                              │
+│  │  │Scheduler │ │Ctrl Manager  ││                              │
+│  │  └──────────┘ └──────────────┘│                              │
+│  └───────────────────────────────┘                              │
+│                                                                  │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+│  │   Node 1    │ │   Node 2    │ │   Node 3    │  ← Worker     │
+│  │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │     Nodes    │
+│  │ │  Pod    │ │ │ │  Pod    │ │ │ │  Pod    │ │              │
+│  │ │  Pod    │ │ │ │  Pod    │ │ │ │  Pod    │ │              │
+│  │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │              │
+│  │   kubelet   │ │   kubelet   │ │   kubelet   │              │
+│  └─────────────┘ └─────────────┘ └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- **API Server**: the front door — all kubectl commands and controllers go through it
+- **etcd**: distributed key-value store — the source of truth for all cluster state
+- **Scheduler**: decides which node runs each pod
+- **Controller Manager**: watches state and reconciles actual → desired (e.g., restarts crashed pods)
+- **kubelet**: agent on each node — ensures containers in pods are running
+- **Pod**: the smallest deployable unit — one or more containers sharing network and storage
+
+---
+
+## Core Objects
+
+### Pod — The Basic Unit
+
+```yaml
+# pod.yaml — rarely created directly in practice; use Deployments
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+  labels:
+    app: my-app
+    version: "1.0"
+spec:
+  containers:
+  - name: app
+    image: my-registry/my-app:1.0
+    ports:
+    - containerPort: 3000
+    env:
+    - name: NODE_ENV
+      value: production
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: db-secret
+          key: password
+    resources:
+      requests:
+        memory: "128Mi"    # minimum guaranteed
+        cpu: "250m"        # 250 millicores = 0.25 vCPU
+      limits:
+        memory: "256Mi"    # never exceed (OOMKilled if exceeded)
+        cpu: "500m"        # throttled if exceeded (not killed)
+    livenessProbe:         # restart pod if this fails
+      httpGet:
+        path: /health
+        port: 3000
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    readinessProbe:        # remove from load balancer until this passes
+      httpGet:
+        path: /ready
+        port: 3000
+      initialDelaySeconds: 5
+      periodSeconds: 5
+```
+
+### Deployment — Managing Pod Replicas
+
+```yaml
+# deployment.yaml — the standard way to run stateless apps
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: production
+spec:
+  replicas: 3                # run 3 pods at all times
+  selector:
+    matchLabels:
+      app: my-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1      # at most 1 pod down during update
+      maxSurge: 1            # at most 1 extra pod during update
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: app
+        image: my-registry/my-app:1.1   # update this to roll out new version
+        # ... (same as pod spec above)
+```
+
+```bash
+# Deployment commands
+kubectl apply -f deployment.yaml        # create or update
+kubectl get deployments                 # list deployments
+kubectl get pods                        # list pods
+kubectl describe deployment my-app     # detailed status
+kubectl rollout status deployment/my-app  # watch rollout progress
+
+# Rollback if something goes wrong
+kubectl rollout undo deployment/my-app
+kubectl rollout undo deployment/my-app --to-revision=3
+
+# Scale manually
+kubectl scale deployment my-app --replicas=5
+```
+
+### Service — Stable Network Endpoint
+
+Pods are ephemeral — they get new IPs when restarted. **Services** provide a stable IP and DNS name, and load-balance across all matching pods:
+
+```yaml
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-svc
+spec:
+  selector:
+    app: my-app           # route to all pods with this label
+  ports:
+  - port: 80              # service port
+    targetPort: 3000      # pod port
+  type: ClusterIP         # internal only (default)
+  # type: NodePort        # expose on each node's IP (dev/testing)
+  # type: LoadBalancer    # provision cloud load balancer (production)
+```
+
+Service types:
+- **ClusterIP**: only accessible within the cluster. Use for internal services.
+- **NodePort**: exposes on a high port on every node (30000-32767). Useful for dev.
+- **LoadBalancer**: provisions a cloud load balancer (AWS ALB, GCP LB). Use for public-facing services.
+- **ExternalName**: DNS alias to an external service.
+
+### Ingress — HTTP Routing
+
+**Ingress** handles HTTP/HTTPS routing — one cloud load balancer, many services:
+
+```yaml
+# ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - api.example.com
+    secretName: tls-secret
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-svc
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-svc
+            port:
+              number: 80
+  - host: admin.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: admin-svc
+            port:
+              number: 80
+```
+
+### ConfigMap & Secret
+
+```yaml
+# configmap.yaml — non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  LOG_LEVEL: "info"
+  MAX_CONNECTIONS: "100"
+  APP_URL: "https://api.example.com"
+
+# secret.yaml — sensitive data (base64 encoded, not encrypted by default — use Sealed Secrets or AWS KMS)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-secret
+type: Opaque
+data:
+  password: cGFzc3dvcmQxMjM=   # base64 encode: echo -n "password123" | base64
+  username: cG9zdGdyZXM=
+```
+
+```yaml
+# Use in deployment
+env:
+- name: LOG_LEVEL
+  valueFrom:
+    configMapKeyRef:
+      name: app-config
+      key: LOG_LEVEL
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: db-secret
+      key: password
+# Or mount entire configmap as environment
+envFrom:
+- configMapRef:
+    name: app-config
+```
+
+---
+
+## Autoscaling
+
+### Horizontal Pod Autoscaler (HPA)
+
+```yaml
+# hpa.yaml — scale pods based on CPU/memory
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70    # scale out when avg CPU > 70%
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: AverageValue
+        averageValue: 200Mi
+```
+
+### Cluster Autoscaler
+
+When HPA needs more pods but no nodes have capacity, the **Cluster Autoscaler** adds new nodes to the cluster (and removes them when idle). Configured at the cloud provider level (ASG on AWS, MIG on GCP).
+
+---
+
+## Namespace — Logical Isolation
+
+```bash
+kubectl create namespace staging
+kubectl create namespace production
+
+# Deploy to a specific namespace
+kubectl apply -f deployment.yaml -n production
+
+# Switch default namespace
+kubectl config set-context --current --namespace=production
+```
+
+Use namespaces to: separate environments (dev/staging/prod in one cluster), separate teams, apply different resource quotas and network policies.
+
+---
+
+## StatefulSet — For Stateful Apps
+
+Databases and other stateful apps need stable network identity and persistent storage. Use **StatefulSet** instead of Deployment:
+
+```yaml
+# statefulset.yaml (e.g., for Redis cluster)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  serviceName: redis        # creates headless service (stable DNS per pod)
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        volumeMounts:
+        - name: data
+          mountPath: /data
+  volumeClaimTemplates:     # creates a PVC for each pod
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: gp3
+      resources:
+        requests:
+          storage: 10Gi
+# Pods get stable names: redis-0, redis-1, redis-2
+# DNS: redis-0.redis.namespace.svc.cluster.local
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What's the difference between a Deployment and a StatefulSet?">
+
+**Deployment**: for stateless apps — pods are identical and interchangeable. Pod names are random (app-abc12). Scaling is trivial. If a pod crashes, any pod can replace it.
+
+**StatefulSet**: for stateful apps (databases, queues). Each pod has a stable identity (pod-0, pod-1). Ordered startup/shutdown. Each pod has its own PersistentVolumeClaim (data isn't shared). Pods have stable DNS hostnames. Use when: ordering matters (master-slave replication), state must survive pod rescheduling.
+
+</QA>
+
+<QA q="Explain liveness and readiness probes.">
+
+**Liveness probe**: determines if a container is alive. If it fails, Kubernetes restarts the container. Use to detect deadlocks or hung processes that need a restart to recover.
+
+**Readiness probe**: determines if a container is ready to serve traffic. If it fails, the pod is removed from Service endpoints (stops receiving traffic) but isn't restarted. Use for: startup warmup (app is alive but not yet ready), temporary overload (remove from rotation temporarily), dependency issues.
+
+Both can be HTTP GET, TCP socket, or exec command probes.
+
+</QA>
+
+<QA q="How does Kubernetes handle zero-downtime deployments?">
+
+With RollingUpdate strategy: Kubernetes creates new pods, waits for their readiness probes to pass, then removes old pods — one by one (or in batches controlled by `maxUnavailable` and `maxSurge`). The Service only routes traffic to pods that pass their readiness probe, so users always hit healthy pods. Configuring both readiness probes and appropriate `initialDelaySeconds` is essential — without them, new pods receive traffic before they're ready.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Deploy a Node.js API to a local Kubernetes cluster (minikube). Create Deployment (3 replicas), Service (ClusterIP), and Ingress.
+2. **Config**: Store database connection string in a Secret and app configuration in a ConfigMap. Mount them in your Deployment as environment variables.
+3. **HPA**: Add an HPA to scale your Deployment between 2 and 10 replicas based on CPU utilization > 70%. Use `kubectl run` to generate load and observe scaling.
+4. **Rolling Update**: Update your Deployment to a new image version. Watch the rolling update with `kubectl rollout status`. Introduce a bug (bad image), observe it, and roll back.
+
+Next: [CI/CD](/devops/ci-cd) — automating builds, tests, and deployments.

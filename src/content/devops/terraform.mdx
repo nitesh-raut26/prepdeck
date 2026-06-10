@@ -1,0 +1,464 @@
+---
+title: "Terraform"
+summary: "Infrastructure as Code — provision and manage cloud resources with Terraform's declarative syntax, state management, modules, and production workflows."
+order: 5
+difficulty: "Advanced"
+tags: ["terraform", "iac", "infrastructure", "aws", "devops", "automation"]
+---
+
+## What is Infrastructure as Code?
+
+**Infrastructure as Code (IaC)** means defining your cloud infrastructure in code files that are version-controlled, reviewed, tested, and applied automatically — instead of clicking through cloud consoles.
+
+```
+Without IaC:
+Engineer clicks through AWS console → creates servers
+No record of what was created or how → impossible to reproduce
+One engineer knows the setup → bus factor = 1
+
+With Terraform:
+Code describes infrastructure → reviewed in PRs → applied via CI/CD
+Reproducible: apply same code → identical infrastructure
+Auditable: git log shows who changed what and when
+```
+
+**Terraform** (by HashiCorp) is the most widely used IaC tool. It's cloud-agnostic — one tool for AWS, Azure, GCP, Kubernetes, GitHub, PagerDuty, and 3000+ providers.
+
+---
+
+## Core Concepts
+
+```
+Terraform Workflow:
+  Write → Plan → Apply
+
+1. Write:  Define resources in .tf files (HCL language)
+2. Plan:   terraform plan → shows what will change (dry run)
+3. Apply:  terraform apply → makes changes real
+```
+
+**State**: Terraform tracks what it created in a **state file** (`terraform.tfstate`). It compares current state with desired state to determine changes. **Never edit state manually.** Store state remotely (S3 + DynamoDB for AWS) for team collaboration.
+
+---
+
+## HCL Syntax
+
+```hcl
+# Variables — input parameters
+variable "environment" {
+  description = "Deployment environment"
+  type        = string
+  default     = "production"
+  validation {
+    condition     = contains(["production", "staging", "dev"], var.environment)
+    error_message = "Environment must be production, staging, or dev."
+  }
+}
+
+variable "instance_count" {
+  type    = number
+  default = 2
+}
+
+# Locals — computed values
+locals {
+  name_prefix  = "${var.environment}-myapp"
+  common_tags  = {
+    Environment = var.environment
+    Project     = "PrepDeck"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Data sources — read existing resources (not managed by Terraform)
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
+# Resources — infrastructure to create
+resource "aws_instance" "app_server" {
+  count         = var.instance_count
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = "t3.micro"
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-server-${count.index + 1}"
+  })
+}
+
+# Outputs — values to display after apply (or pass to other modules)
+output "instance_ids" {
+  description = "IDs of the created EC2 instances"
+  value       = aws_instance.app_server[*].id
+}
+
+output "instance_public_ips" {
+  value = aws_instance.app_server[*].public_ip
+}
+```
+
+---
+
+## Complete AWS Infrastructure Example
+
+```hcl
+# main.tf — VPC, EC2, RDS, S3 for a web application
+
+terraform {
+  required_version = ">= 1.6"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "production/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"   # prevents concurrent applies
+    encrypt        = true
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+  default_tags {
+    tags = {
+      ManagedBy = "Terraform"
+      Project   = "MyApp"
+    }
+  }
+}
+
+# ─── VPC ───────────────────────────────────────────────────────
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags = { Name = "myapp-vpc" }
+}
+
+resource "aws_subnet" "public" {
+  count             = 2
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.${count.index + 1}.0/24"
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  map_public_ip_on_launch = true
+  tags = { Name = "myapp-public-${count.index + 1}" }
+}
+
+resource "aws_subnet" "private" {
+  count             = 2
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.${count.index + 10}.0/24"
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  tags = { Name = "myapp-private-${count.index + 1}" }
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+}
+
+# ─── Security Groups ───────────────────────────────────────────
+resource "aws_security_group" "web" {
+  name   = "myapp-web-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "db" {
+  name   = "myapp-db-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.web.id]  # only from app tier
+  }
+}
+
+# ─── RDS ───────────────────────────────────────────────────────
+resource "aws_db_subnet_group" "main" {
+  name       = "myapp-db-subnet-group"
+  subnet_ids = aws_subnet.private[*].id
+}
+
+resource "aws_db_instance" "postgres" {
+  identifier           = "myapp-postgres"
+  engine               = "postgres"
+  engine_version       = "16.1"
+  instance_class       = "db.t3.medium"
+  allocated_storage    = 100
+  storage_type         = "gp3"
+  storage_encrypted    = true
+
+  db_name  = "myapp"
+  username = "postgres"
+  password = var.db_password   # from variable (set via TF_VAR_db_password env var)
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.db.id]
+
+  multi_az               = true
+  backup_retention_period = 7
+  deletion_protection    = true   # prevents accidental deletion
+  skip_final_snapshot    = false
+  final_snapshot_identifier = "myapp-postgres-final"
+
+  tags = { Name = "myapp-postgres" }
+}
+
+# ─── S3 ────────────────────────────────────────────────────────
+resource "aws_s3_bucket" "assets" {
+  bucket = "myapp-assets-${var.environment}"
+}
+
+resource "aws_s3_bucket_versioning" "assets" {
+  bucket = aws_s3_bucket.assets.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "assets" {
+  bucket = aws_s3_bucket.assets.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# ─── Outputs ───────────────────────────────────────────────────
+output "db_endpoint" {
+  value     = aws_db_instance.postgres.endpoint
+  sensitive = true
+}
+
+output "s3_bucket" {
+  value = aws_s3_bucket.assets.bucket
+}
+```
+
+---
+
+## Modules — Reusable Infrastructure Components
+
+```hcl
+# modules/rds/main.tf — reusable RDS module
+variable "identifier" { type = string }
+variable "instance_class" { type = string; default = "db.t3.medium" }
+variable "db_name" { type = string }
+variable "username" { type = string }
+variable "password" { type = string; sensitive = true }
+variable "subnet_ids" { type = list(string) }
+variable "security_group_ids" { type = list(string) }
+
+resource "aws_db_instance" "this" {
+  identifier     = var.identifier
+  engine         = "postgres"
+  engine_version = "16.1"
+  instance_class = var.instance_class
+  # ...
+}
+
+output "endpoint" { value = aws_db_instance.this.endpoint }
+
+# modules/rds/outputs.tf, modules/rds/variables.tf (split for clarity)
+
+# Usage in root module:
+module "production_db" {
+  source = "./modules/rds"
+
+  identifier    = "prod-postgres"
+  instance_class = "db.r6g.large"
+  db_name       = "myapp"
+  username      = "postgres"
+  password      = var.db_password
+  subnet_ids    = module.vpc.private_subnet_ids
+  security_group_ids = [aws_security_group.db.id]
+}
+
+module "staging_db" {
+  source = "./modules/rds"
+
+  identifier    = "staging-postgres"
+  instance_class = "db.t3.medium"   # cheaper for staging
+  db_name       = "myapp_staging"
+  username      = "postgres"
+  password      = var.staging_db_password
+  subnet_ids    = module.vpc.private_subnet_ids
+  security_group_ids = [aws_security_group.db.id]
+}
+```
+
+---
+
+## Terraform CLI Workflow
+
+```bash
+# Initialize — download providers and modules
+terraform init
+
+# Format code
+terraform fmt                        # auto-format all .tf files
+terraform fmt -check                 # check formatting (for CI)
+
+# Validate syntax
+terraform validate
+
+# Plan — see what will change (always review before applying)
+terraform plan
+terraform plan -out=tfplan           # save plan to file
+terraform plan -var="environment=staging"
+terraform plan -target=aws_db_instance.postgres  # only plan one resource
+
+# Apply
+terraform apply                      # interactive confirmation
+terraform apply -auto-approve        # no confirmation (use in CI only)
+terraform apply tfplan               # apply saved plan
+
+# Destroy (DANGEROUS — deletes real resources)
+terraform destroy
+terraform destroy -target=aws_instance.app_server  # delete only specific resource
+
+# State management
+terraform show                       # show current state
+terraform state list                 # list all managed resources
+terraform state show aws_db_instance.postgres  # show one resource's state
+terraform state rm aws_instance.old  # remove from state (doesn't delete real resource)
+terraform import aws_s3_bucket.assets my-existing-bucket  # import existing resource
+
+# Workspace — manage multiple environments
+terraform workspace new staging
+terraform workspace select production
+terraform workspace list
+```
+
+---
+
+## CI/CD with Terraform
+
+```yaml
+# .github/workflows/terraform.yml
+name: Terraform
+
+on:
+  pull_request:
+    paths: ["terraform/**"]
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        run: terraform init
+
+      - name: terraform fmt check
+        run: terraform fmt -check
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -out=tfplan
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+
+      # Post plan output as PR comment
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const plan = require('fs').readFileSync('plan.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan\n\`\`\`\n${plan}\n\`\`\``
+            })
+
+      - name: terraform apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What is Terraform state and why is it important?">
+
+Terraform state is a JSON file that tracks all resources Terraform manages — their IDs, attributes, and dependencies. It's the map between your configuration and real infrastructure. Terraform uses state to: determine what changes are needed (diff config vs state), know which resources belong to which configuration, and track metadata like resource dependencies. Remote state (S3 + DynamoDB locking) is essential for teams — without it, two engineers running `apply` simultaneously could corrupt infrastructure. Never edit state manually; use `terraform state` commands.
+
+</QA>
+
+<QA q="What's the difference between `terraform plan` and `terraform apply`?">
+
+`terraform plan` is a dry run — it compares desired config with current state, shows what would be created, changed, or destroyed, but makes NO real changes. It's safe to run anytime. `terraform apply` actually executes the changes. Best practice: always run `plan` first, review carefully (especially destroys), save the plan to a file (`-out=tfplan`), and apply from that file — ensures what you apply is exactly what you reviewed. This is especially important in CI/CD.
+
+</QA>
+
+<QA q="How do you handle sensitive values like passwords in Terraform?">
+
+Never hardcode secrets in `.tf` files (committed to git). Options: (1) **Variables + environment variables** — define `variable "db_password"` in config, set via `TF_VAR_db_password` environment variable in CI/CD. (2) **AWS Secrets Manager / SSM Parameter Store** — read at apply time via `data "aws_ssm_parameter"`, never stored in state as plaintext. (3) **Vault** — HashiCorp Vault provider for dynamic secrets. Mark sensitive variables with `sensitive = true` to suppress output in plan/apply. Note: sensitive values still appear in state file — encrypt state at rest.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Write Terraform to create an S3 bucket with versioning enabled, server-side encryption, and block public access. Apply it and verify in the AWS console.
+2. **Networking**: Create a VPC with 2 public subnets and 2 private subnets across 2 availability zones. Add an Internet Gateway and NAT Gateway.
+3. **Modules**: Create a reusable `ec2_instance` module that accepts instance type, AMI, and security group IDs. Use it to create 3 instances.
+4. **Complete stack**: Combine the above — VPC, EC2 instances in public subnets, RDS in private subnets, S3 bucket. Output the DB endpoint and EC2 public IPs.
+
+This covers Level 10 — Cloud & DevOps. Next: [AI & Machine Learning](/aiml/ai-ml-dl) for Level 11.

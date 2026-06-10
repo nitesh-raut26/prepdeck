@@ -1,0 +1,393 @@
+---
+title: "CI/CD Pipelines"
+summary: "Continuous Integration and Continuous Delivery — automating builds, tests, and deployments with GitHub Actions, deployment strategies, and production pipeline patterns."
+order: 4
+difficulty: "Core"
+tags: ["ci-cd", "github-actions", "devops", "automation", "deployment", "testing"]
+---
+
+## What is CI/CD?
+
+**CI/CD** is the practice of automatically building, testing, and deploying code on every change.
+
+```
+Without CI/CD:
+Developer writes code → "Works on my machine" → manual tests → manual deploy
+→ production incidents → 2 AM hotfixes
+
+With CI/CD:
+Developer writes code → push to git → automatic: test + build + deploy
+→ broken code rejected in minutes → always-deployable main branch
+```
+
+### Continuous Integration (CI)
+Every code push triggers automatic:
+1. Build the application
+2. Run unit + integration tests
+3. Static analysis (linting, type-checking, security scan)
+4. Report results — reject if anything fails
+
+**Goal**: The `main` branch is always buildable and passing tests.
+
+### Continuous Delivery (CD)
+Extend CI with automatic deployment to staging. Deployment to production requires human approval.
+
+### Continuous Deployment
+Fully automated — every passing commit to `main` automatically deploys to production. Requires very high test confidence. Used by Netflix, Amazon, Google.
+
+---
+
+## GitHub Actions — The Modern Standard
+
+GitHub Actions runs workflows defined as YAML files in `.github/workflows/`:
+
+### Basic CI Pipeline
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Spin up PostgreSQL for integration tests
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"            # cache node_modules between runs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/testdb
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+```
+
+### Full CI/CD Pipeline — Build, Test, Deploy
+
+```yaml
+# .github/workflows/cd.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: my-app
+  EKS_CLUSTER: my-cluster
+
+jobs:
+  # ─── Stage 1: Test ─────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm test
+
+  # ─── Stage 2: Build & Push Docker image ────────────────────────
+  build:
+    needs: test          # only run if test passes
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: meta
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          FULL_TAG=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker build -t $FULL_TAG .
+          docker push $FULL_TAG
+          echo "tags=$FULL_TAG" >> $GITHUB_OUTPUT
+
+  # ─── Stage 3: Deploy to Staging ────────────────────────────────
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }}
+
+      - name: Deploy to staging
+        run: |
+          kubectl set image deployment/my-app \
+            app=${{ needs.build.outputs.image-tag }} \
+            -n staging
+          kubectl rollout status deployment/my-app -n staging
+
+      - name: Run smoke tests
+        run: npm run test:smoke -- --env=staging
+
+  # ─── Stage 4: Deploy to Production (with approval) ─────────────
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production      # GitHub environment with required reviewers
+      url: https://api.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name prod-cluster
+
+      - name: Deploy to production
+        run: |
+          kubectl set image deployment/my-app \
+            app=${{ needs.build.outputs.image-tag }} \
+            -n production
+          kubectl rollout status deployment/my-app -n production --timeout=5m
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {"text": "Deployed ${{ github.sha }} to production: ${{ job.status }}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+---
+
+## Deployment Strategies
+
+### Rolling Update (Default in Kubernetes)
+```
+Before:  [v1] [v1] [v1] [v1]
+Step 1:  [v1] [v1] [v1] [v2]  ← one replaced
+Step 2:  [v1] [v1] [v2] [v2]
+Step 3:  [v1] [v2] [v2] [v2]
+After:   [v2] [v2] [v2] [v2]
+
+✅ Zero downtime
+✅ Simple, built into Kubernetes
+❌ Both versions run simultaneously for a period
+❌ Hard to rollback if DB schema changes are involved
+```
+
+### Blue-Green Deployment
+```
+Blue (live):  [v1] [v1] [v1]  ← all traffic
+Green (new):  [v2] [v2] [v2]  ← run tests here
+
+Switch:  Blue traffic → Green (instant switch at load balancer)
+
+If issue: switch back to Blue instantly
+If OK:    terminate Blue
+
+✅ Instant rollback (just switch back)
+✅ No mixed versions
+❌ Double infrastructure cost during transition
+❌ Requires feature flags for DB changes
+```
+
+### Canary Deployment
+```
+[v1] [v1] [v1] [v1] [v1] [v1] [v1] [v1] [v1] [v2]
+                                             ↑ 10% of traffic
+
+Monitor errors and latency for 30 minutes...
+OK → [v2] [v2] [v2] [v2] [v2] [v2] [v2] [v2] [v2] [v2]
+Bad → remove v2, all traffic back to v1
+
+✅ Real production traffic tests (best for catching issues)
+✅ Gradual confidence building
+❌ Requires sophisticated routing (Istio, NGINX, feature flags)
+❌ Two versions running simultaneously
+```
+
+**FAANG choice**: All three. Rolling for normal updates. Blue-green for major releases. Canary for risky changes affecting billions of users.
+
+---
+
+## Secrets Management in CI/CD
+
+```yaml
+# GitHub Secrets (Settings → Secrets and variables → Actions)
+# Never hardcode secrets in workflow files
+
+steps:
+  - name: Deploy
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}        # GitHub secret
+      API_KEY: ${{ secrets.THIRD_PARTY_API_KEY }}
+
+# Accessing AWS secrets at runtime (better practice)
+  - name: Fetch secrets from AWS Secrets Manager
+    run: |
+      SECRET=$(aws secretsmanager get-secret-value \
+        --secret-id prod/myapp/db \
+        --query SecretString --output text)
+      echo "DB_PASSWORD=$(echo $SECRET | jq -r .password)" >> $GITHUB_ENV
+```
+
+---
+
+## Branch Strategy
+
+```
+git flow for CI/CD:
+
+feature/my-feature  → develop → staging → main → production
+
+main:     always deployable, protected branch
+          CI must pass before merging
+          requires 1+ approving reviews
+
+develop:  integration branch, auto-deploys to dev environment
+staging:  pre-production, manual promotion from develop
+```
+
+**Trunk-based development** (Google/Facebook approach):
+```
+Everyone works on main (or short-lived feature branches < 1 day)
+Feature flags hide unfinished features in production
+Deploy to production multiple times per day
+```
+
+---
+
+## Quality Gates
+
+```yaml
+# Common quality checks in a CI pipeline
+- run: npm run lint              # code style (ESLint, Prettier)
+- run: npm run typecheck         # TypeScript type checking
+- run: npm test -- --coverage    # unit tests + coverage threshold
+
+# Coverage threshold (fail if drops below)
+# jest.config.js:
+coverageThreshold:
+  global:
+    branches: 80
+    functions: 80
+    lines: 80
+    statements: 80
+
+- run: npx snyk test             # security vulnerabilities in dependencies
+- run: docker scout quickview    # Docker image vulnerability scan
+- run: npx sonarqube-scanner     # code quality analysis
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What's the difference between CI and CD?">
+
+**CI (Continuous Integration)**: every code push triggers automatic build and test. The goal is to catch integration issues early and keep the main branch always green. Developers merge to main frequently (multiple times per day ideally).
+
+**CD** has two meanings:
+- **Continuous Delivery**: automatically deploy to staging after CI passes; production deployment requires human approval.
+- **Continuous Deployment**: fully automatic — every passing CI triggers production deployment, no human approval. Requires extremely high test coverage and confidence.
+
+Most companies practice Continuous Delivery; pure Continuous Deployment requires a mature test culture.
+
+</QA>
+
+<QA q="Explain blue-green vs canary deployments.">
+
+**Blue-green**: run two identical production environments. Traffic goes to "blue" (current). Deploy to "green" (new). Switch all traffic from blue to green at once. Rollback = switch back. Zero downtime, instant rollback, double cost during transition.
+
+**Canary**: route a small percentage (1-10%) of real traffic to the new version. Monitor error rates and latency. If healthy, gradually increase to 100%. Best for catching issues in real production traffic before full rollout. More complex to implement (requires traffic splitting at the load balancer or service mesh). Used extensively by Google and Amazon for high-risk changes.
+
+</QA>
+
+<QA q="How do you handle database migrations in CI/CD?">
+
+The key challenge: migrations must be backward compatible with the running application version during a rolling deploy. Strategy: (1) **Expand-Contract** (preferred) — add new columns as nullable first, deploy new code that writes both old and new, then backfill, then make non-nullable, then remove old column in a future release. (2) Run migrations as a separate job before deploying new app code. (3) Never remove columns/tables that the current running version still reads. Tooling: Flyway, Liquibase (Java), Alembic (Python), migrate (Go), Prisma migrations (JS).
+
+</QA>
+
+## Practice
+
+1. **Basic CI**: Create a GitHub Actions workflow for a Node.js project that runs ESLint, TypeScript check, Jest tests, and builds on every PR.
+2. **Full Pipeline**: Add CD to the workflow — build a Docker image, push to a registry, and deploy to a test environment on merge to main.
+3. **Deployment Strategy**: Implement a canary deployment using Kubernetes — deploy v2 with 1 replica alongside 9 v1 replicas (10% canary). Use a script to shift traffic gradually.
+4. **Rollback**: Add automatic rollback to your CD pipeline — if smoke tests fail after deployment, automatically roll back the Kubernetes deployment.
+
+Next: [Terraform](/devops/terraform) — infrastructure as code.

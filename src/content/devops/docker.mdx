@@ -1,0 +1,411 @@
+---
+title: "Docker"
+summary: "Containers from the ground up — what Docker is, how it works, writing Dockerfiles, docker-compose for multi-service apps, and production best practices."
+order: 2
+difficulty: "Core"
+tags: ["docker", "containers", "dockerfile", "docker-compose", "devops", "containerization"]
+---
+
+## What is Docker?
+
+**Docker** is a platform for building, shipping, and running applications in **containers**.
+
+```
+The classic problem without Docker:
+Developer: "It works on my machine!"
+QA:        "It crashes on mine!"
+Ops:       "It fails in production!"
+
+With Docker:
+"It runs in a container" = it runs IDENTICALLY everywhere.
+```
+
+**What's a container?** A lightweight, isolated process that includes everything needed to run an application: code, runtime, libraries, and configuration. Unlike a virtual machine, it shares the host OS kernel — much more efficient.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Virtual Machine (VM)          Container                         │
+│                                                                  │
+│  ┌──────────┬──────────┐      ┌───────┬───────┬───────┐        │
+│  │  App A   │  App B   │      │App A  │App B  │App C  │        │
+│  ├──────────┼──────────┤      │Libs A │Libs B │Libs C │        │
+│  │  OS A    │  OS B    │      ├───────┴───────┴───────┤        │
+│  ├──────────┴──────────┤      │     Docker Engine      │        │
+│  │    Hypervisor        │      ├────────────────────────┤        │
+│  ├─────────────────────┤      │      Host OS (1 copy)  │        │
+│  │      Hardware        │      ├────────────────────────┤        │
+│  └─────────────────────┘      │        Hardware         │        │
+│                                └────────────────────────┘        │
+│  GB of RAM per VM              MB per container                  │
+│  Minutes to start              Seconds to start                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key concepts**:
+- **Image**: A read-only template — the "recipe" for a container. Stored in a registry.
+- **Container**: A running instance of an image. Like a running process from a program.
+- **Registry**: A store for images. Docker Hub (public), ECR (AWS), GCR (Google).
+- **Dockerfile**: Instructions to build an image.
+
+---
+
+## Basic Docker Commands
+
+```bash
+# Pull and run
+docker pull nginx:1.25                       # download image
+docker run nginx:1.25                         # run in foreground
+docker run -d nginx:1.25                      # run detached (background)
+docker run -d -p 8080:80 --name webserver nginx:1.25
+#              ↑       ↑
+#          host port  container port
+
+# Manage containers
+docker ps                    # list running containers
+docker ps -a                 # list all containers (including stopped)
+docker stop webserver        # graceful stop (SIGTERM)
+docker kill webserver        # immediate stop (SIGKILL)
+docker rm webserver          # remove stopped container
+docker logs webserver        # view container logs
+docker logs -f webserver     # follow logs (like tail -f)
+docker exec -it webserver bash  # open shell in running container
+
+# Manage images
+docker images                # list local images
+docker rmi nginx:1.25        # remove image
+docker image prune           # remove unused images
+
+# Build
+docker build -t myapp:1.0 .       # build from Dockerfile in current dir
+docker build -t myapp:1.0 -f Dockerfile.prod .
+
+# Push to registry
+docker tag myapp:1.0 my-registry/myapp:1.0
+docker push my-registry/myapp:1.0
+```
+
+---
+
+## Writing Dockerfiles
+
+```dockerfile
+# Base image — always pin the version (never use :latest in production)
+FROM node:20-alpine
+
+# Set working directory in the container
+WORKDIR /app
+
+# Copy dependency files FIRST (before source code)
+# This leverages Docker layer caching — if package.json hasn't changed,
+# npm install is skipped on rebuild → much faster builds
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Expose port (documentation only — doesn't actually publish it)
+EXPOSE 3000
+
+# Create non-root user (security best practice)
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+USER nextjs
+
+# Start command
+CMD ["node", "dist/server.js"]
+```
+
+### Multi-Stage Build — Smaller Production Images
+
+Multi-stage builds separate the build environment from the runtime environment:
+
+```dockerfile
+# Stage 1: Builder (has all dev tools, large image)
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci                    # install ALL dependencies (including dev)
+COPY . .
+RUN npm run build             # compile TypeScript, bundle, etc.
+
+# Stage 2: Production (only what's needed to run)
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Copy ONLY the build output and production dependencies from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+RUN addgroup -g 1001 nodejs && adduser -S nextjs -u 1001
+USER nextjs
+
+EXPOSE 3000
+CMD ["node", "dist/server.js"]
+
+# Result:
+# builder: ~800MB (node + dev dependencies + source)
+# runner:  ~120MB (node + prod dependencies + compiled output)
+```
+
+### Python Dockerfile
+
+```dockerfile
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+  && rm -rf /var/lib/apt/lists/*   # clean up to reduce layer size
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Run as non-root
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### Java / Spring Boot Dockerfile
+
+```dockerfile
+# Multi-stage: build with Maven, run with JRE only
+FROM maven:3.9-eclipse-temurin-21 AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline      # cache dependencies
+COPY src ./src
+RUN mvn package -DskipTests        # build JAR
+
+FROM eclipse-temurin:21-jre-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+
+RUN addgroup -g 1001 spring && adduser -S spring -u 1001 -G spring
+USER spring
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+---
+
+## .dockerignore
+
+Like `.gitignore` — prevents unnecessary files from being sent to Docker:
+
+```
+# .dockerignore
+node_modules/
+.git/
+.env
+*.log
+.DS_Store
+dist/
+coverage/
+__pycache__/
+*.pyc
+```
+
+Without `.dockerignore`, `COPY . .` would send `node_modules` (potentially GBs) into the build context — slow and wasteful.
+
+---
+
+## Docker Compose — Multi-Service Apps
+
+**Docker Compose** defines and runs multi-container applications with a YAML file:
+
+```yaml
+# docker-compose.yml
+version: "3.9"
+
+services:
+  # Web application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:password@db:5432/myapp
+      - REDIS_URL=redis://cache:6379
+    depends_on:
+      db:
+        condition: service_healthy   # wait until postgres is ready
+      cache:
+        condition: service_started
+    volumes:
+      - ./uploads:/app/uploads      # persist uploaded files
+    restart: unless-stopped
+
+  # PostgreSQL database
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # persist data between restarts
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # run on first start
+    ports:
+      - "5432:5432"   # for local development access; remove in production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache
+  cache:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes  # enable persistence
+
+  # Nginx reverse proxy (production setup)
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+```bash
+# Docker Compose commands
+docker compose up                 # start all services (foreground)
+docker compose up -d              # start detached
+docker compose down               # stop and remove containers
+docker compose down -v            # also remove volumes (destroys data!)
+docker compose logs app           # logs for specific service
+docker compose exec app bash      # shell in running service
+docker compose build              # rebuild images
+docker compose ps                 # status of all services
+docker compose restart app        # restart one service
+```
+
+---
+
+## Docker Networking
+
+```yaml
+# Services in the same docker-compose.yml can talk to each other by service name
+# app can reach db at hostname "db", port 5432
+# app can reach cache at hostname "cache", port 6379
+
+# Custom networks for isolation
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+
+services:
+  nginx:
+    networks: [frontend]
+  app:
+    networks: [frontend, backend]  # can talk to nginx AND db
+  db:
+    networks: [backend]            # only app can reach db
+```
+
+---
+
+## Production Best Practices
+
+```dockerfile
+# ✅ Pin base image version
+FROM node:20.11.0-alpine3.19
+
+# ✅ Run as non-root user
+USER nodeuser
+
+# ✅ Use COPY, not ADD (ADD has unexpected behavior with URLs/archives)
+COPY src/ ./src/
+
+# ✅ Minimize layers — combine RUN commands
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# ✅ Set proper health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+# ✅ Use ENTRYPOINT + CMD for flexibility
+ENTRYPOINT ["node"]
+CMD ["dist/server.js"]
+# Override CMD: docker run myapp dist/migrate.js
+
+# ❌ Never store secrets in images
+# ENV DATABASE_PASSWORD=secret123   ← visible in docker history
+
+# ✅ Use build args for build-time values, runtime env vars for secrets
+ARG BUILD_VERSION
+ENV BUILD_VERSION=${BUILD_VERSION}
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What's the difference between a Docker image and a container?">
+
+An **image** is a read-only template — the blueprint for a container. It's a stack of immutable layers (each Dockerfile instruction adds a layer), stored in a registry. A **container** is a running instance of an image — a live process with its own writable layer on top. Multiple containers can run from the same image simultaneously. The relationship is like: image = program, container = running process.
+
+</QA>
+
+<QA q="Explain Docker layer caching and how to optimize for it.">
+
+Docker builds images layer by layer. If a layer's input (instruction + files) hasn't changed, Docker reuses the cached layer. This makes rebuilds fast. The key optimization: put things that change rarely (dependencies) before things that change often (source code). Specifically: COPY package.json → RUN npm install → COPY source. This way, `npm install` is only re-run when dependencies change, not on every code change — saving minutes per build.
+
+</QA>
+
+<QA q="What is the purpose of multi-stage builds?">
+
+Multi-stage builds use multiple FROM instructions in one Dockerfile, allowing you to discard build tools and intermediate artifacts from the final image. The builder stage has compilers, dev dependencies, and build tools (large). The runtime stage starts fresh and copies only the compiled output. Result: production images 5-10x smaller, smaller attack surface, faster deployments. Essential for compiled languages (Go, Java) and frontend apps (where node_modules is GBs but the output is MBs).
+
+</QA>
+
+<QA q="How do you handle secrets in Docker?">
+
+Never store secrets in images (visible in `docker history`). Options: (1) **Environment variables** at runtime (`docker run -e DB_PASSWORD=...`) — fine for basic use, but visible in `ps` output. (2) **Docker secrets** (Swarm) — encrypted at rest, mounted as files in containers. (3) **External secret manager** — AWS Secrets Manager, HashiCorp Vault, pulled at startup by the app. Production standard: use a secret manager; containers fetch secrets at runtime using an IAM role or Vault token. Never commit `.env` files with real credentials.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Dockerize a Node.js Express API with a two-stage build. Verify the image is under 150MB.
+2. **Compose**: Create a `docker-compose.yml` for a full stack app: Node.js API + PostgreSQL + Redis. The API should wait for the DB to be healthy before starting.
+3. **Optimization**: Take an existing large Docker image (use any public Dockerfile). Apply: layer caching, multi-stage build, non-root user, `.dockerignore`. Measure before/after image size.
+4. **Networking**: Add an Nginx reverse proxy to the compose setup from #2. Nginx should proxy `/api/*` to the Node.js service and serve static files from a volume.
+
+Next: [Kubernetes](/devops/kubernetes) — orchestrating containers at scale.

@@ -1,0 +1,309 @@
+---
+title: "Cloud Platforms (AWS / Azure / GCP)"
+summary: "The essential cloud services every engineer must know — compute, storage, networking, serverless, and managed databases on AWS, with Azure and GCP equivalents."
+order: 1
+difficulty: "Core"
+tags: ["aws", "cloud", "ec2", "s3", "lambda", "rds", "vpc", "devops"]
+---
+
+## What is Cloud Computing?
+
+**Cloud computing** means renting computing resources (servers, storage, databases, networking) from a provider over the internet, instead of buying and operating your own hardware.
+
+```
+Analogy: Cloud is like electricity from the grid.
+You don't build your own power plant to run your house.
+You plug in, use what you need, and pay for what you consume.
+Before cloud: buy servers, rack them, cool them, hire ops teams.
+After cloud:  API call → server running in 60 seconds. Pay per hour.
+```
+
+**The three major providers**:
+
+| | AWS (Amazon) | Azure (Microsoft) | GCP (Google) |
+|---|---|---|---|
+| Market share | ~33% (leader) | ~23% | ~11% |
+| Launched | 2006 | 2010 | 2011 |
+| Strong suit | Breadth, maturity | Enterprise, hybrid | Data/ML, Kubernetes |
+| Used by | Netflix, Airbnb, NASA | Microsoft products, LinkedIn | Spotify, Twitter, Snap |
+
+**FAANG perspective**: Most companies use AWS. Google uses GCP internally. Microsoft uses Azure. Many companies are multi-cloud.
+
+---
+
+## The Three Service Models
+
+```
+IaaS (Infrastructure as a Service):
+  You manage: OS, runtime, app, data
+  Provider manages: hardware, networking, virtualization
+  Example: EC2, Azure VMs, GCE
+
+PaaS (Platform as a Service):
+  You manage: app, data
+  Provider manages: OS, runtime, infrastructure
+  Example: Heroku, Google App Engine, AWS Elastic Beanstalk
+
+SaaS (Software as a Service):
+  You manage: your usage
+  Provider manages: everything
+  Example: Gmail, Salesforce, Slack
+```
+
+---
+
+## AWS Core Services
+
+### EC2 — Compute
+
+**EC2** (Elastic Compute Cloud) gives you virtual machines in the cloud.
+
+```bash
+# Launch an EC2 instance (AWS CLI)
+aws ec2 run-instances \
+  --image-id ami-0c02fb55956c7d316 \  # Amazon Linux 2 AMI
+  --instance-type t3.micro \            # CPU/RAM configuration
+  --key-name my-keypair \
+  --security-group-ids sg-0123456789 \
+  --subnet-id subnet-0123456789 \
+  --count 1
+
+# Connect via SSH
+ssh -i "my-keypair.pem" ec2-user@<public-ip>
+```
+
+**Instance types** (critical for interviews):
+- `t3.micro` — 2 vCPU, 1GB RAM — development, low traffic
+- `c5.large` — 2 vCPU, 4GB RAM — compute-intensive (C = compute)
+- `r5.large` — 2 vCPU, 16GB RAM — memory-intensive (R = RAM), databases
+- `m5.large` — 2 vCPU, 8GB RAM — balanced general purpose (M = middle)
+- `p3.xlarge` — GPU — ML training
+
+**Pricing models**:
+- **On-Demand**: pay by hour/second, no commitment. Most expensive, most flexible.
+- **Reserved**: commit to 1 or 3 years, 30-75% discount. Use for predictable baseline load.
+- **Spot**: bid on unused capacity, up to 90% discount, but can be interrupted. Batch jobs, ML training.
+- **Savings Plans**: commit to $/hour spend (not instance type), flexible discount.
+
+**Auto Scaling Group (ASG)**: automatically add/remove EC2 instances based on load:
+```
+ASG Configuration:
+  Min: 2 instances (always running)
+  Max: 20 instances (never exceed)
+  Desired: 5 (current target)
+  Scale-out trigger: CPU > 70% for 5 minutes → add 2 instances
+  Scale-in trigger: CPU < 30% for 10 minutes → remove 1 instance
+```
+
+### S3 — Object Storage
+
+**S3** (Simple Storage Service) stores files (objects) in **buckets**. Virtually unlimited storage, extremely durable (11 9s — 99.999999999%).
+
+```bash
+# Create bucket
+aws s3 mb s3://my-app-assets-prod
+
+# Upload file
+aws s3 cp ./image.jpg s3://my-app-assets-prod/uploads/image.jpg
+
+# Sync directory
+aws s3 sync ./build/ s3://my-website-bucket/ --delete
+
+# Make public (for static website hosting)
+aws s3 website s3://my-website-bucket --index-document index.html
+
+# Pre-signed URL (temporary access without credentials)
+aws s3 presign s3://my-bucket/private-file.pdf --expires-in 3600
+```
+
+**S3 storage classes** (cost vs retrieval speed):
+- **Standard**: milliseconds retrieval, ~$0.023/GB. Active data.
+- **Standard-IA** (Infrequent Access): cheaper storage, higher retrieval cost. Backups.
+- **Glacier Instant**: minutes retrieval, much cheaper. Quarterly reports.
+- **Glacier Deep Archive**: 12-hour retrieval, cheapest. Long-term archival.
+
+**S3 use cases**: static website hosting, image/video storage, database backups, data lake, CDN origin, application artifacts.
+
+### RDS — Managed Databases
+
+**RDS** (Relational Database Service) runs managed PostgreSQL, MySQL, MariaDB, Oracle, SQL Server.
+
+```bash
+# Create PostgreSQL RDS instance
+aws rds create-db-instance \
+  --db-instance-identifier mydb \
+  --db-instance-class db.t3.medium \
+  --engine postgres \
+  --engine-version 15.3 \
+  --master-username admin \
+  --master-user-password "SecurePass123!" \
+  --allocated-storage 100 \  # GB
+  --storage-type gp3 \
+  --multi-az \               # automatic failover to standby in another AZ
+  --backup-retention-period 7 # 7 days of automated backups
+```
+
+**What RDS manages for you**:
+- OS patching
+- Database engine upgrades (optionally)
+- Automated backups and point-in-time recovery
+- Multi-AZ failover (~30-120 seconds)
+- Read replicas (scale read traffic)
+- Storage auto-scaling
+
+**Read Replicas**: asynchronous copies of the primary DB for read scaling:
+```
+Primary DB (read + write) → Read Replica 1 (read-only)
+                          → Read Replica 2 (read-only)
+Your app directs: all WRITES to primary, read-heavy queries to replicas
+```
+
+### Lambda — Serverless Functions
+
+**Lambda** runs code without managing servers. You provide a function; AWS handles scaling, availability, and execution.
+
+```python
+# lambda_function.py — triggered by API Gateway
+import json
+import boto3
+
+def lambda_handler(event, context):
+    # event contains the HTTP request data
+    body = json.loads(event.get("body", "{}"))
+    name = body.get("name", "World")
+
+    # Can use AWS SDK to call other services
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table("greetings")
+    table.put_item(Item={"id": context.aws_request_id, "name": name})
+
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"message": f"Hello, {name}!"})
+    }
+```
+
+**Lambda characteristics**:
+- Runs 1 request = 1 invocation (can scale to thousands concurrently, automatically)
+- Max 15-minute execution (not for long-running tasks)
+- Pay only for compute time (per 100ms)
+- Cold starts: first invocation takes ~100-500ms extra to initialize
+- Use for: API endpoints, data processing, event handling, scheduled jobs (with EventBridge)
+
+### CloudFront — CDN
+
+**CloudFront** is AWS's CDN. It caches content at **edge locations** near users — lower latency globally:
+
+```
+Without CDN: User in India → US East server (200ms round trip)
+With CDN:    User in India → Mumbai edge (10ms round trip) → cache hit
+
+CloudFront Edge Locations: 450+ worldwide
+```
+
+```bash
+# Create CloudFront distribution for an S3 static site
+aws cloudfront create-distribution \
+  --origin-domain-name my-bucket.s3.amazonaws.com \
+  --default-root-object index.html
+```
+
+### VPC — Virtual Private Cloud
+
+**VPC** is your private network in the cloud. All other resources live inside it.
+
+```
+VPC (e.g., 10.0.0.0/16):
+  ├── Public Subnet (10.0.1.0/24) — Internet Gateway attached
+  │     └── EC2 instances with public IPs (web servers, load balancers)
+  └── Private Subnet (10.0.2.0/24) — No direct internet access
+        ├── EC2 instances (app servers) — access internet via NAT Gateway
+        └── RDS instances (databases) — never exposed to internet
+```
+
+**Security Groups** = firewall rules for EC2 instances (stateful — if you allow inbound, response traffic is automatically allowed):
+
+```bash
+# Allow HTTPS from anywhere, SSH only from your IP
+aws ec2 create-security-group --group-name web-sg --description "Web server"
+aws ec2 authorize-security-group-ingress --group-id sg-xxx \
+  --protocol tcp --port 443 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-id sg-xxx \
+  --protocol tcp --port 22 --cidr YOUR-IP/32
+```
+
+### IAM — Identity & Access Management
+
+**IAM** controls who (humans, services) can do what in AWS. **Principle of least privilege**: grant only the minimum permissions needed.
+
+```json
+// IAM Policy: allow reading from S3 bucket, nothing else
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject", "s3:ListBucket"],
+    "Resource": [
+      "arn:aws:s3:::my-bucket",
+      "arn:aws:s3:::my-bucket/*"
+    ]
+  }]
+}
+```
+
+**IAM Roles** (not credentials): attach to EC2/Lambda so the code can call AWS services without hardcoded keys. Always use roles in production — never embed AWS credentials in code or environment variables on production systems.
+
+---
+
+## AWS vs Azure vs GCP Equivalents
+
+| AWS | Azure | GCP | Purpose |
+|---|---|---|---|
+| EC2 | Virtual Machines | Compute Engine | Virtual machines |
+| S3 | Blob Storage | Cloud Storage | Object storage |
+| RDS | Azure Database | Cloud SQL | Managed databases |
+| Lambda | Azure Functions | Cloud Functions | Serverless |
+| CloudFront | Azure CDN | Cloud CDN | CDN |
+| EKS | AKS | GKE | Managed Kubernetes |
+| SQS | Service Bus | Pub/Sub | Message queues |
+| SNS | Event Grid | Pub/Sub | Pub/Sub notifications |
+| CloudWatch | Azure Monitor | Cloud Monitoring | Monitoring/logging |
+| Route 53 | Azure DNS | Cloud DNS | DNS |
+
+---
+
+## Common Interview Questions
+
+<QA q="What is the difference between S3, EBS, and EFS?">
+
+- **S3** (Simple Storage Service): object storage — files accessed via HTTP API. Not a filesystem; can't mount to EC2. Unlimited scale, 11 9s durability. For media, backups, static sites, data lakes.
+- **EBS** (Elastic Block Store): block storage — like a hard drive you attach to ONE EC2 instance. Low latency, high IOPS. For databases, OS volumes. Zonal (one AZ).
+- **EFS** (Elastic File System): managed NFS — can be mounted to MANY EC2 instances simultaneously. Great for shared file storage across instances. More expensive than EBS.
+
+</QA>
+
+<QA q="Explain the difference between horizontal and vertical scaling.">
+
+**Vertical scaling (scale up)**: increase the size of a single machine (more CPU, RAM). Simple but has limits — the biggest machine is still finite. Single point of failure. Example: t3.micro → r5.xlarge.
+
+**Horizontal scaling (scale out)**: add more machines and distribute load. Theoretically unlimited. Requires your app to be stateless (sessions in Redis, not local memory). AWS Auto Scaling Groups do this automatically. Example: 2 t3.micro → 20 t3.micro. Modern cloud architectures favor horizontal scaling.
+
+</QA>
+
+<QA q="What is a region and availability zone in AWS?">
+
+A **region** is a geographical area with multiple data centers (e.g., us-east-1 = N. Virginia, ap-south-1 = Mumbai). Data doesn't leave a region unless you configure it to.
+
+An **availability zone (AZ)** is one or more physically separate data centers within a region, connected via high-speed links. AZs are isolated from each other — power outage in one doesn't affect others. Multi-AZ deployments (e.g., RDS Multi-AZ) survive the failure of an entire data center. Deploy production systems across at least 2 AZs.
+
+</QA>
+
+## Practice
+
+1. **EC2 + RDS**: Set up a web application on EC2 with an RDS PostgreSQL backend. Use a VPC with public subnet for EC2 and private subnet for RDS.
+2. **S3 Static Site**: Deploy a Next.js static build to S3 with a CloudFront distribution. Add custom domain and HTTPS via ACM.
+3. **Lambda API**: Build a serverless REST API using Lambda + API Gateway + DynamoDB. Deploy with AWS SAM or the Serverless Framework.
+4. **IAM**: Create an IAM role for an EC2 instance that allows reading from one specific S3 bucket and writing to CloudWatch Logs — nothing else.
+
+Next: [Docker](/devops/docker) — containerizing applications.
