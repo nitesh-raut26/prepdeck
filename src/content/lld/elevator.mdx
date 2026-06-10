@@ -1,0 +1,177 @@
+---
+title: "Design an Elevator System"
+summary: "The state-machine classic: elevator states, the SCAN scheduling insight, Strategy for dispatch, and the multi-elevator follow-ups."
+order: 12
+difficulty: "Classic"
+tags: ["LLD", "OOD", "state-pattern", "scheduling"]
+---
+
+## Scope it first
+
+"Design an elevator" is two problems wearing one prompt: **object model**
+(states, requests, doors) and **scheduling** (which elevator answers, in
+what order). Clarify both: *"N elevators, M floors, hall calls (up/down
+button on a floor) + cabin calls (floor button inside), optimize average
+wait — ignore weight sensors and maintenance mode, OK?"*
+
+The two request types are the first real modeling decision — they carry
+different information: a **hall call** is (floor, direction); a **cabin
+call** is just (floor). Conflating them breaks scheduling later.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class ElevatorSystem {
+    +handleHallCall(floor, dir)
+    +step()
+  }
+  class Elevator {
+    +id
+    +currentFloor
+    +direction
+    +state
+    +addStop(floor)
+    +step()
+  }
+  class Door {
+    +open()
+    +close()
+  }
+  class DispatchStrategy {
+    <<interface>>
+    +pick(elevators, call) Elevator
+  }
+  class Request {
+    +floor
+    +direction
+  }
+  ElevatorSystem "1" --> "*" Elevator
+  ElevatorSystem --> DispatchStrategy : delegates
+  Elevator --> Door
+  ElevatorSystem --> Request : queues`} />
+
+- **`ElevatorSystem`** is the facade: receives calls, delegates "who goes?"
+  to a `DispatchStrategy`, ticks the world via `step()`.
+- **`Elevator`** owns its position, direction, door and **stop set** — and
+  is a textbook **state machine**: `IDLE → MOVING_UP / MOVING_DOWN →
+  STOPPED(doors) → …`. Transitions live in one place; "can't move with
+  doors open" becomes an invariant, not a scattered `if`.
+- **`DispatchStrategy`** (Strategy pattern, like the
+  [parking lot's](/lld/parking-lot) spot assignment): nearest-available,
+  least-loaded, same-direction-first — swappable without touching the
+  elevator.
+
+## The scheduling insight: SCAN, not FIFO
+
+Serving requests in arrival order (FIFO) makes the cabin ping-pong: 2 → 9
+→ 3 → 8 wastes everyone's time. Real elevators run **SCAN** (the
+"elevator algorithm" — disk drives borrowed it *from* elevators): **keep
+moving in the current direction, servicing every stop in that direction;
+reverse only when none remain.**
+
+The data structure follows from the algorithm: not a queue but **two
+sorted sets** per elevator — stops above (served ascending while going up)
+and stops below (descending while going down). In code:
+
+```python
+class Elevator:
+    def __init__(self, id):
+        self.id, self.floor, self.direction = id, 0, Direction.IDLE
+        self.up_stops = SortedSet()      # or a min-heap
+        self.down_stops = SortedSet()    # or a max-heap
+
+    def add_stop(self, floor):
+        if floor > self.floor: self.up_stops.add(floor)
+        elif floor < self.floor: self.down_stops.add(floor)
+
+    def step(self):                      # one tick of the state machine
+        if self.direction == Direction.UP:
+            self.floor += 1
+            if self.floor in self.up_stops:
+                self.up_stops.remove(self.floor)
+                self.open_doors()        # state: STOPPED
+            if not self.up_stops:        # exhausted this direction
+                self.direction = (Direction.DOWN if self.down_stops
+                                  else Direction.IDLE)
+        # ... mirrored for DOWN
+```
+
+A simple, defensible `DispatchStrategy`: prefer elevators **already moving
+toward the call in the same direction** (cost = distance), then idle ones
+(distance), then opposite-direction ones (distance to their reversal point
++ back). Naming that cost function out loud is the senior move; the exact
+formula matters less.
+
+## Where the patterns live
+
+- **State** — the elevator's lifecycle. Guards illegal transitions
+  (MOVING → doors open) structurally.
+- **Strategy** — dispatch policy, and door-dwell policy if pressed.
+- **Observer** — floor displays and hall-button lamps subscribe to
+  elevator events rather than being polled.
+- **Singleton (resist it)** — one `ElevatorSystem`, but
+  [inject it](/lld/oop-and-solid); tests will thank you.
+
+<Callout type="tip" title="Drive the design with `step()`">
+Making time explicit — a `step()`/tick method — turns the whole system
+into something you can unit-test deterministically ("after 3 ticks,
+elevator 2 is at floor 5 with doors open") and demo in the interview
+without threads. Real-time is then just a loop calling `step()` on a
+timer.
+</Callout>
+
+## Walk a scenario + the concurrency question
+
+"User on floor 6 presses DOWN; elevator A is at 3 going up with stops
+{7, 9}; B is idle at 8." Dispatch: A is moving away-then-toward (cost ≈
+(9−3) + (9−6) = 9), B is idle at distance 2 → **B**. B: IDLE →
+MOVING_DOWN, stops {6}; arrives, doors open; user presses 1 → cabin call
+adds 1 to down-stops; continues down. SCAN means if someone on 4 presses
+DOWN meanwhile, B collects them en route — no extra trip.
+
+**Concurrency follow-up:** hall calls arrive from many floors while
+elevators tick. Same answer family as the
+[parking lot's last spot](/lld/parking-lot): serialize mutations — a lock
+(or single-threaded event loop) around assign-and-add-stop so a call is
+assigned exactly once, and make `step()` atomic per elevator. One
+elevator's state is touched by one thread at a time.
+
+<QA q="Why is FIFO a bad scheduling policy for an elevator, and what do real systems use?">
+
+FIFO serves requests in arrival order regardless of position, so the cabin
+criss-crosses the shaft — request order 2, 9, 3, 8 travels ~21 floors
+where SCAN travels ~14 serving everyone. SCAN sweeps each direction
+servicing all stops along the way, bounding both total travel and the
+worst individual wait (no one is passed twice). It's also why the natural
+structure is two direction-sorted stop sets, not a queue — the algorithm
+chooses the data structure. Disk schedulers adopted the same algorithm for
+head movement, which makes a nice closing line.
+
+</QA>
+
+<QA q="How do you model the difference between hall calls and cabin calls?">
+
+As different request types with different data: a hall call is (floor,
+direction) and belongs to the *system* — any suitable elevator may claim
+it; a cabin call is (floor) and belongs irrevocably to *one elevator*.
+This split drives real behavior: dispatch only applies to hall calls; a
+DOWN hall call shouldn't be served by a full cabin sweeping up past it;
+and duplicate hall presses across floors dedupe at the system level while
+cabin stops dedupe per elevator. Modeling both as bare floor numbers
+loses exactly the information scheduling needs.
+
+</QA>
+
+<QA q="Two hall calls arrive simultaneously for the same idle elevator — what guarantees correctness?">
+
+Assignment must be atomic: the check "which elevator is best" and the
+mutation "add stop to that elevator" form a check-then-act, so two
+concurrent dispatches can both pick the same idle elevator and one
+assignment can be lost or doubled. Either funnel all dispatch through a
+single-threaded event loop (simplest, and plenty fast — buildings generate
+tens of events/sec, not thousands), or lock the dispatch critical section.
+Per-elevator `step()` should likewise be atomic so state transitions
+serialize. It's the same invariant-at-the-point-of-mutation rule as the
+parking lot's last spot and a balance double-spend.
+
+</QA>

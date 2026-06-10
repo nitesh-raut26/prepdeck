@@ -1,0 +1,176 @@
+---
+title: "Design Netflix"
+summary: "Video streaming at planet scale: the transcode pipeline, why the CDN is 95% of the design, adaptive bitrate, and the metadata/play split."
+order: 13
+tags: ["system-design", "video", "cdn", "case-study"]
+---
+
+## Prompt
+
+> Design a video streaming service: catalog browsing, smooth playback on
+> any device/network, resumable progress. Hundreds of millions of
+> subscribers worldwide.
+
+## 1. Requirements
+
+**Functional:** browse/search catalog; play with adaptive quality; resume
+across devices; (content ingestion for the studio side).
+**Non-functional:** instant start (under 2 s), no rebuffering — *smoothness
+beats sharpness*; works from fiber to 3G; global; cost-sane (video bytes
+are the bill).
+
+Scope cut: *"recommendations and DRM acknowledged but not deep-dived;
+focus on the video path — ingest → encode → distribute → play — OK?"*
+
+## 2. Estimation (shapes the design)
+
+~300 M subscribers, ~100 M daily watchers × ~1 h/day. A 1080p stream ≈
+5 Mbps → ~10 M concurrent streams at peak ≈ **50 Tbps egress**. Compare:
+the catalog is maybe ~20 K titles × ~50 GB across formats ≈ 1 PB —
+*static*. So the workload is: **a near-static petabyte read by everyone,
+everywhere, at once** — read-heavy in the most extreme form, ~zero writes
+on the hot path. The conclusion writes itself: this is a **distribution**
+problem. Almost nothing else in the design matters if the bytes don't sit
+near the viewers ([latency numbers](/cheatsheets/system-design-numbers)).
+
+## 3. High-level design
+
+Two planes that share almost nothing:
+
+<Mermaid chart={`flowchart TD
+  subgraph Ingest [Content plane — runs once per title]
+    SRC[Studio master file] --> ENC[Transcode pipeline<br/>chunk + encode matrix]
+    ENC --> PKG[Package: 4s segments<br/>+ manifest]
+    PKG --> ORIG[(Origin object storage)]
+    ORIG -->|pre-push popular titles| CDN[(CDN edge caches<br/>incl. servers inside ISPs)]
+  end
+  subgraph Play [Play plane — runs per view]
+    U[Player] -->|browse, auth, 'play X'| API[Control plane APIs<br/>catalog, auth, progress]
+    API -->|manifest + edge URLs| U
+    U -->|video segments| CDN
+    U -->|progress heartbeat| API
+  end
+  API --> META[(Metadata DB + cache)]
+  API --> PROG[(Progress store)]`} />
+
+The split to announce: the **control plane** (browse, search, auth,
+progress — small JSON, normal [scalable web service](/hld/scalability))
+and the **data plane** (video bytes — CDN only). API servers never touch
+video; the CDN never makes decisions.
+
+## 4. Deep dives
+
+### Transcode pipeline (write path — offline, embarrassingly parallel)
+
+One studio master becomes an **encoding matrix**: resolutions (4K → 240p)
+× codecs (H.264 for compatibility, HEVC/AV1 for efficiency) × audio/subs —
+dozens of renditions. The trick that makes it fast: **chunk the source**
+(~shot-aligned segments), encode chunks **in parallel** across thousands
+of workers, reassemble — a multi-hour film transcodes in minutes.
+Orchestrate with [queues](/hld/messaging-and-queues); a failed chunk
+retries without restarting the title (idempotent workers — the
+[ingestion-pipeline](/hld/case-ingestion-pipeline) playbook). This plane
+has *no latency requirement*, which is what lets it be cheap.
+
+### Segments + adaptive bitrate (the playback magic)
+
+Every rendition is cut into **~4-second segments**; a **manifest**
+(HLS/DASH) lists every segment at every quality. The player:
+
+1. Fetches the manifest, starts on a conservative quality → fast start.
+2. Measures actual download throughput continuously.
+3. Picks each *next* segment's quality from the measured bandwidth —
+   shifting up on good network, down *before* the buffer empties.
+
+**ABR (adaptive bitrate)** is why playback survives a train ride: quality
+degrades gracefully instead of pausing. The intelligence is **in the
+client**; servers just serve files. Segments also make seeking trivial
+(jump = fetch segment at offset) and caching perfect (immutable files,
+cache forever).
+
+### The CDN (95% of the answer)
+
+Serving 50 Tbps from origin data centers is impossible-shaped: the
+solution is edge caches — and Netflix's famous move, **Open Connect**:
+cache servers placed *physically inside ISP networks*, so video bytes
+often never cross the public internet at all. Because the catalog is
+finite and popularity is predictable (a Pareto few titles = most
+watching), edges **pre-load** popular content during off-peak hours —
+push-based caching, not just pull-on-miss ([caching](/hld/caching)).
+"Play" then means: control plane authenticates, returns manifest with
+URLs pointing at the *nearest healthy edge*; player streams segments from
+metres-away storage. Cache miss → edge pulls from a regional tier → origin
+(rare).
+
+### Progress & resume (the one hot write)
+
+The single hot-path write: a tiny `(user, title, position)` heartbeat
+every few seconds × 10 M streams ≈ ~2 M writes/sec — small values, perfect
+for a write-optimized KV store (Cassandra-class); losing 10 s of progress
+is harmless, so it can be async/batched ([eventual consistency where it's
+free](/hld/cap-consistency)). Resume-on-another-device = read your last
+heartbeat. This contrast — 50 Tbps of reads vs 2 M trivial writes — *is*
+the system in one sentence.
+
+## 5. Bottlenecks & failure modes
+
+- **New-release night** — everyone plays one title at 8 PM: pre-pushed to
+  every edge beforehand; this is the *easiest* load, not the hardest
+  (one hot, fully-cached file).
+- **An edge cluster dies** → manifests/redirects steer players to the
+  next-nearest edge; quality may dip (longer path), playback continues —
+  ABR absorbs infrastructure failure too.
+- **Control plane down ≠ video down** — active sessions keep streaming
+  from edges (manifest in hand); you can't *start* new sessions. Decoupled
+  planes shrink every blast radius.
+- **The recommendation row** is precomputed offline per user
+  ([batch pipeline](/hld/case-ingestion-pipeline)) and cached — homepage
+  loads read a prebuilt list, no live ML on the hot path. One sentence of
+  this acknowledges the topic and moves on.
+
+<QA q="Why does video streaming demand a CDN when a well-sharded web service handles most other loads?">
+
+Scale of bytes and physics. Peak streaming is ~50 Tbps — three orders
+beyond what origin clusters can egress, and long-haul transit at that
+volume is ruinously expensive; meanwhile latency/jitter across continental
+paths cause rebuffering no server optimization can fix. The workload is
+uniquely CDN-shaped: a near-static, finite catalog with Pareto popularity
+— so immutable segments cache perfectly and predictively (pre-pushed
+off-peak, even into ISP-housed servers), putting bytes one hop from
+viewers. The general rule: when the product *is* large static bytes ×
+enormous read fan-out, distribution beats computation — the inverse of
+[WhatsApp](/hld/design-whatsapp), whose bytes are tiny but live.
+
+</QA>
+
+<QA q="Explain adaptive bitrate streaming end to end. Why put the logic in the client?">
+
+Each title is encoded at multiple bitrates and cut into ~4 s aligned
+segments, all listed in a manifest. The player starts conservatively for
+instant startup, measures real throughput per segment, and chooses each
+next segment's quality to keep the buffer ahead — stepping down before
+stalling, up when headroom returns; switches land at segment boundaries so
+they're seamless. Client-side logic wins because only the client sees its
+own truth (radio conditions, buffer level, screen size), it scales the
+intelligence with the viewers, and it keeps servers as dumb immutable-file
+servers — which is exactly what lets CDNs cache everything. Servers
+adapting per-client would mean per-viewer state and uncacheable responses,
+forfeiting the entire distribution model.
+
+</QA>
+
+<QA q="Where are the writes in this system, and how would you store viewing progress for 100 M users?">
+
+The hot path is read-almost-everything: the only high-frequency write is
+the progress heartbeat — (user, title, position, device) every few
+seconds, ~1–2 M tiny writes/sec at peak. It's the friendliest write
+workload imaginable: key-value shaped, last-write-wins, tolerant of
+seconds of loss. So: a write-optimized, horizontally-partitioned KV/wide-
+column store (Cassandra-class), partitioned by user id, async writes
+(fire-and-forget from the player, batched server-side), TTL or compaction
+on stale rows. Strong consistency is deliberately *not* purchased —
+resume being 10 s stale is invisible; cross-device resume reads the
+latest row. Catalog metadata writes are rarer still (editorial), cached
+aggressively in front of a conventional DB.
+
+</QA>

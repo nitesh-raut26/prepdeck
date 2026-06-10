@@ -1,0 +1,196 @@
+---
+title: "Design BookMyShow"
+summary: "Movie ticket booking: the entity ladder from City to Seat, seat-lock with TTL, and the double-booking race — the LLD where concurrency IS the question."
+order: 14
+difficulty: "Classic"
+tags: ["LLD", "OOD", "concurrency", "booking"]
+---
+
+## Scope it first
+
+*"Browse movies by city, pick a show, see the seat map, hold seats, pay,
+get a ticket. One city's catalog, ignore payments beyond success/failure
+callbacks, ignore pricing tiers — OK?"* And know what you're walking
+into: every other classic hides its concurrency question at the end —
+**BookMyShow *is* the concurrency question**. Two users, one seat, same
+second; everything else is supporting cast.
+
+## Entities & relationships
+
+The catalog is a ladder of containment — get the chain right and the rest
+follows:
+
+<Mermaid chart={`classDiagram
+  class City
+  class Cinema {
+    +screens
+  }
+  class Screen {
+    +seats List~Seat~
+  }
+  class Movie
+  class Show {
+    +movie Movie
+    +screen Screen
+    +startTime
+    +seatStates Map~Seat, SeatState~
+  }
+  class Seat {
+    +row
+    +number
+    +type SeatType
+  }
+  class Booking {
+    +show Show
+    +seats List~Seat~
+    +status BookingStatus
+    +expiresAt
+  }
+  City "1" --> "*" Cinema
+  Cinema "1" --> "*" Screen
+  Screen "1" --> "*" Seat
+  Show --> Movie
+  Show --> Screen
+  Booking --> Show`} />
+
+The non-obvious modeling decision — the one graders watch for: **a `Seat`
+is physical and permanent; its availability belongs to the `Show`.**
+Screen 4's seat F7 exists once; whether it's free is a different fact for
+the 6 PM and 9 PM shows. So `Show` owns
+`Map<Seat, SeatState>` where `SeatState = AVAILABLE | LOCKED | BOOKED`.
+Hanging state on `Seat` itself is *the* classic mistake here.
+
+`BookingStatus`: `PENDING → CONFIRMED | EXPIRED | CANCELLED` — a small
+[state machine](/lld/elevator) again, because payment isn't instant.
+
+## The flow: lock → pay → confirm
+
+Booking can't be atomic — payment takes a minute and might fail — so the
+flow is **two-phase with a TTL**:
+
+1. **Lock.** User picks seats → atomically transition each from
+   `AVAILABLE → LOCKED(user, expiresAt = now + 7 min)`. Any seat
+   unavailable → whole request fails (all-or-nothing; nobody wants half a
+   family's seats).
+2. **Pay.** A `PENDING` Booking exists; user completes payment with the
+   gateway.
+3. **Confirm or release.** Payment success → `LOCKED → BOOKED`, booking
+   `CONFIRMED`. Failure or timeout → lock expires, seats return to
+   `AVAILABLE`, booking `EXPIRED`.
+
+The TTL is the design's quiet hero: **no user action is ever required to
+free a seat** — abandonment self-heals. Expiry via lazy check
+(`isLocked() = state == LOCKED && now < expiresAt`) plus a sweeper; lazy
+checking means correctness never depends on the sweeper being on time.
+
+## The race, and the only acceptable answer
+
+Two users hit "lock F7" in the same 10 ms. A read-then-write
+(`if seat is available → mark locked`) lets **both** see AVAILABLE and
+both proceed — double-booking, the cinema equivalent of the
+[parking lot's last spot](/lld/parking-lot) and a balance double-spend.
+The invariant must be enforced **at the point of mutation**:
+
+```python
+class ShowSeating:
+    def lock_seats(self, seats, user):
+        with self.lock:                       # one mutex per SHOW — not global
+            for s in seats:                   # check ALL first…
+                if not self.is_available(s):
+                    raise SeatUnavailable(s)
+            for s in seats:                   # …then mutate (all-or-nothing)
+                self.states[s] = Locked(user, now() + LOCK_TTL)
+        return Booking(pending, seats, user)
+```
+
+In a database (the production reality), same idea, different spelling —
+one atomic conditional write:
+
+```sql
+UPDATE show_seats SET state = 'LOCKED', user_id = :u, expires_at = :t
+WHERE show_id = :s AND seat_id IN (:seats)
+  AND (state = 'AVAILABLE' OR (state = 'LOCKED' AND expires_at < now()));
+-- affected rows < requested seats ⇒ roll back, tell the user
+```
+
+Lock granularity is the follow-up: a global lock serializes the whole
+country's bookings; **per-show** locking is natural (contention is
+per-show by definition) and shows you think about lock scope.
+
+## Where the patterns live
+
+- **State** — seat availability and booking lifecycle; illegal transitions
+  (`BOOKED → LOCKED`) become unrepresentable.
+- **Strategy** — seat recommendation ("best available": center-out,
+  contiguous-block-finding) and later pricing.
+- **Observer** — seat-map UIs subscribe to seat-state changes (everyone
+  watching the map sees F7 grey out live); notification service subscribes
+  to booking confirmations.
+- **Facade** — `BookingService.book(show, seats, user)` orchestrating
+  lock → payment → confirm, so controllers never touch seat maps.
+
+<Callout type="tip" title="Say the invariant, then the mechanism">
+The sentence graders wait for: *"The invariant is a seat is never LOCKED
+or BOOKED by two users for the same show; I enforce it with an atomic
+check-and-set under a per-show lock, with TTL so abandoned locks
+self-release."* Mechanism without the invariant sounds memorized;
+invariant first proves you know *why*.
+</Callout>
+
+## Walk a scenario
+
+Asha and Rahul, both eyeing F7+F8 for the 9 PM show. Asha's lock request
+wins the mutex: both seats → LOCKED(asha), PENDING booking, 7-minute
+clock. Rahul's request enters the mutex 80 ms later, sees F7 LOCKED and
+unexpired → `SeatUnavailable`; UI offers the Strategy's next-best
+contiguous pair. Asha pays in 3 minutes → seats BOOKED, booking
+CONFIRMED, observers repaint the map. Had she abandoned: at minute 7 the
+seats lazily read as AVAILABLE again — no cleanup dependency, no stuck
+inventory.
+
+<QA q="Why do seat locks need a TTL, and what breaks without one?">
+
+The lock spans an *external* slow step (payment) driven by a user who may
+vanish — close the tab, lose connectivity, walk away. Without expiry,
+those seats are stranded in LOCKED until manual intervention: inventory
+shrinks all day, and the failure mode compounds during exactly the
+high-demand shows where abandonment is highest. A TTL makes every lock
+self-releasing: hold time generous enough for honest payment (5–10 min),
+enforced lazily on read (`LOCKED && now < expiresAt`) so correctness
+doesn't depend on a background sweeper's punctuality — the sweeper is just
+hygiene. Same pattern as distributed locks and DHCP leases: *never grant
+indefinite holds on shared resources to unreliable parties.*
+
+</QA>
+
+<QA q="Where exactly does double-booking come from, and what are the legitimate fixes?">
+
+From check-then-act on shared state: both requests read F7 as AVAILABLE
+before either writes LOCKED — the gap between read and write is the race.
+Fixes all collapse the check and write into one atomic step: (1) in-process
+mutex per show around validate-and-lock — right for the whiteboard;
+(2) database conditional update (`UPDATE … WHERE state='AVAILABLE'`) and
+verify affected-row count — the atomicity lives in the DB; (3) optimistic
+concurrency — version column, retry on conflict — best when contention is
+rare; (4) unique constraint on (show, seat) in a bookings table as the
+final backstop that makes the invariant unviolatable even by buggy code.
+Production uses 2 or 3 *plus* 4: enforce at mutation, guarantee at the
+schema.
+
+</QA>
+
+<QA q="How does this design change for a flash sale — a blockbuster's tickets opening at 9 AM sharp?">
+
+The per-show lock becomes the bottleneck by design (correctness first),
+so engineer around it: queue admission (virtual waiting room) to cap
+concurrent bookers at what the seat-map service sustains; serve the
+*read* path (seat map) from cache with milliseconds of staleness while
+keeping the *write* path strictly atomic — browsing stale is fine, booking
+stale is not; shard contention naturally per show/screen; pre-warm locks'
+store (the seat state moves to Redis with the same conditional-write
+semantics). That's the LLD→HLD seam: invariants stay identical, the
+enforcement point moves from a mutex to a distributed conditional write —
+the full story is the [scalability](/hld/scalability) and
+[caching](/hld/caching) chapters.
+
+</QA>

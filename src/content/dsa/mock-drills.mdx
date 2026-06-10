@@ -1,0 +1,179 @@
+---
+title: "Mock-Interview Drills"
+summary: "Timed drill formats, the UMPIRE protocol, a self-scoring rubric, and how to practice the talking — because the interview tests narration, not just code."
+order: 22
+difficulty: "Training"
+tags: ["mock-interview", "practice", "interview-prep"]
+---
+
+## The gap drills close
+
+Knowing the [patterns](/dsa/blind-75) and performing under observation are
+different skills. Real interviews add a clock, an audience, narration while
+typing, and recovery-from-stuck — none of which LeetCode-in-silence trains.
+Drills install those. The good news: the performance layer is *more*
+trainable than the algorithmic one, and it's where most prepared candidates
+actually fail.
+
+## The protocol: UMPIRE
+
+Run **every** drill problem through the same six beats — the structure is
+what keeps you calm when the problem is hostile:
+
+1. **U — Understand.** Restate the problem in your own words. Ask about
+   constraints: n's size, value ranges, duplicates, empty input. (n ≤ 10⁵
+   whispers O(n log n); n ≤ 20 whispers
+   [backtracking](/dsa/backtracking).)
+2. **M — Match.** Name candidate patterns out loud: "contiguous substring →
+   [sliding window](/dsa/sliding-window); or precompute with a
+   [hash map](/dsa/hash-tables)…"
+3. **P — Plan.** Two-to-four sentences, *before code*: approach, data
+   structures, complexity target. Get a nod.
+4. **I — Implement.** Narrate intent while typing ("dummy head so head
+   deletion isn't special-cased"). Clean names
+   ([Level 1 rules](/programming/functions)) — reviewers grade them.
+5. **R — Review.** Walk one normal case and one edge case through the code
+   *line by line*, before declaring done. Catching your own off-by-one
+   beats the interviewer catching it, by a lot.
+6. **E — Evaluate.** State time and space complexity, and one trade-off or
+   improvement ("with sorted input, two pointers drops the dict").
+
+Time budget for a 35-minute problem: ~5 / 3 / 5 / 15 / 5 / 2. The most
+common self-sabotage is jumping U→I in ninety seconds; the second most
+common is polishing P forever and never finishing I.
+
+## Drill formats
+
+**Format A — the standard rep (45 min, 2–3×/week).** One unseen
+medium from a [Blind 75](/dsa/blind-75) group you've finished. Timer
+visible. Full UMPIRE, **speaking aloud the whole time** — yes, alone at
+your desk; narration is a motor skill and silent practice doesn't build it.
+Recording yourself once a week is uncomfortable and pays off immediately:
+you'll hear the dead air and the mumbled complexity claims.
+
+**Format B — the pressure set (60–75 min, weekly in the final month).**
+Easy + medium + medium/hard back-to-back, simulating a real loop's pacing
+decisions: when to bank a fast solve, when to cut losses and present a
+partial.
+
+**Format C — the human mock (the gold standard, ≥4 before the real loop).**
+A friend/peer plays interviewer with a problem you haven't seen. Their job:
+stay mostly silent, drop one hint if you're stuck >10 min, and fill the
+rubric below. Trade roles — **interviewing someone else teaches you what
+the rubric looks like from the grader's chair**, which permanently changes
+how you present. (Platforms like Pramp pair strangers for exactly this.)
+
+**Format D — recovery reps (15 min, as needed).** Deliberately practice
+being stuck: open a *hard* problem, and the drill is the first 15 minutes
+only — generate brute force, name patterns that *don't* fit and say why,
+find any partial structure. You're training the moment panic usually wins.
+
+## The rubric (score every drill)
+
+| Axis | 1 | 3 | 5 |
+| --- | --- | --- | --- |
+| Understanding | coded immediately, wrong problem | asked some constraints | restated + probed edges before planning |
+| Approach | no stated plan | plan emerged mid-code | plan + complexity stated and confirmed upfront |
+| Correctness | wrong / major bugs | minor bugs, fixed when prompted | worked; edge cases self-caught in Review |
+| Code quality | unreadable names, tangled flow | readable | clean structure, named helpers, guard clauses |
+| Communication | silent stretches > 1 min | narrated when prompted | continuous, structured narration |
+| Complexity | wrong / absent | right after thought | stated unprompted, with trade-offs |
+
+Log scores per drill (the same self-tracking habit as the
+[problem-bank flashcards](/dsa/problem-bank)). Two patterns predict real
+outcomes: a flat ≥4 average across axes beats a spiky 5/5/2 profile, and
+**Communication improves fastest** — usually within five spoken drills.
+
+## When you're stuck mid-drill (the script)
+
+Memorize the ladder, climb it out loud:
+
+1. Re-read the constraints — the hint is usually there (sorted? small n?
+   values bounded?).
+2. Solve a tiny case by hand and *watch yourself do it* — your manual
+   method often **is** the algorithm.
+3. Say the brute force and its complexity; ask "which part is redundant
+   work?" — the answer names the structure
+   (re-scanning → [hash](/dsa/hash-tables); re-summing →
+   [prefix](/dsa/arrays-and-strings); re-sorting →
+   [heap](/dsa/heaps-and-intervals)).
+4. Name the gap explicitly: "I need 'have I seen this?' in O(1)" — even
+   unfinished, this earns pattern-recognition credit.
+5. Take the hint gracefully and *use* it. Hint-resistance is a real
+   rejection reason; hint-usage is a real hire signal ("coachable").
+
+## Common mistakes
+
+- **Drilling only new problems.** Re-deriving old ones cold *is* the
+  retention mechanism; new-only feels productive and decays in days.
+- **Silent practice.** The narration is graded; train it or it won't exist
+  under pressure.
+- **No timer / soft timer.** The clock is most of the difficulty. Hard
+  stop, then post-mortem.
+- **Skipping Review.** "Done!" with an untested edge case converts a
+  5-minute self-catch into the interviewer's note: *missed empty input*.
+- **Mock-only-hards.** Real loops are mostly mediums done *well*; drill
+  the level you'll face, with excellence, not the level that flatters
+  anxiety.
+- **No post-mortem.** Five written minutes after each drill — what stalled,
+  which rubric axis dipped, one fix for next time — doubles the value of
+  the hour.
+
+## Interview perspective
+
+<QA q="What does an interviewer's feedback form actually contain, and how should that change your practice?">
+
+Roughly the rubric above: problem comprehension, approach quality and
+whether a plan preceded code, correctness including self-caught edge
+cases, code readability, communication/collaboration (including hint
+response), and complexity analysis — plus a hire/no-hire with evidence
+bullets. The implications: narrate (silent correct code under-scores
+against spoken imperfect code with clear reasoning), state the plan and
+complexity explicitly (unstated = unscorable), respond to hints by
+building on them (it's logged as coachability), and walk edge cases before
+declaring done (self-caught bugs score *positively*). Practicing against
+the form beats practicing against the judge in your head.
+
+</QA>
+
+<QA q="It's minute 20 of 35, your approach just collapsed. What do you do?">
+
+Say so, calmly and specifically: "the window invariant breaks on negatives
+— this needs a different structure." Salvage what's true (the parsing, the
+brute force, the partial insight). Offer the trade: "I can deliver the
+O(n²) brute force working in five minutes, then optimize if time allows" —
+working-suboptimal beats broken-clever in nearly every rubric. If the
+interviewer nudges, take it visibly and build. A composed recovery is
+among the strongest signals an interview can produce: it's the job, in
+miniature — production approaches collapse weekly.
+
+</QA>
+
+<QA q="One week to a loop and limited hours — drill what?">
+
+Stop acquiring; consolidate. Re-derive previously-solved problems cold —
+one per [pattern group](/dsa/blind-75), prioritizing groups with the
+longest gap since last touch. Two full-pressure sets (Format B) on
+loop-realistic difficulty, two human mocks if at all possible, every rep
+spoken and timed. Re-read your own drill post-mortems and pre-load the
+fixes. Sleep over volume on the final two days — recall under pressure
+degrades faster from fatigue than from one fewer practice set. The goal of
+the last week is making existing knowledge *retrievable*, not adding more.
+
+</QA>
+
+## Practice
+
+1. **Today:** one Format A drill, spoken, timed, scored. Note which UMPIRE
+   beat you skipped — that's next drill's focus.
+2. **This week:** recruit a mock partner and run Format C both directions;
+   compare your self-scores against their rubric scores.
+3. **Recovery rep:** open a hard you've never seen; practice only the
+   stuck-ladder for 15 minutes. The goal is composure, not a solve.
+4. **Graduate:** when three consecutive Format A drills average ≥4 across
+   the rubric, you're interview-ready on this axis — shift remaining time
+   to [system design](/hld/approach) and
+   [behavioral](/behavioral/framework).
+
+That completes Level 4. From here the roadmap climbs the design ladder:
+[LLD](/lld/oop-and-solid) and [HLD](/hld/approach).

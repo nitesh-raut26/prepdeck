@@ -1,0 +1,215 @@
+---
+title: "Sorting & Searching"
+summary: "Merge sort, quicksort, heap sort and when to use each — plus the searching ladder from linear scan to binary search, and what interviewers actually test."
+order: 11
+difficulty: "Core pattern"
+tags: ["sorting", "searching", "merge-sort", "quicksort"]
+---
+
+## Why sorting is the gateway algorithm
+
+Sorting matters for three reasons: it's the classic vehicle for learning
+**divide and conquer**; sorted data unlocks faster everything
+([binary search](/dsa/binary-search), [two pointers](/dsa/two-pointers),
+dedupe, ranges); and "should I sort first?" is the highest-value first
+question on dozens of interview problems. You will almost never *implement*
+a sort at work — you must still know how they work, because the follow-ups
+("why is quicksort O(n²) worst case?") are standard.
+
+## The complexity landscape
+
+| Algorithm | Average | Worst | Space | Stable? | The one-liner |
+| --- | --- | --- | --- | --- | --- |
+| Bubble/Insertion | O(n²) | O(n²) | O(1) | ✓ | teaching tools; insertion wins on *nearly-sorted* data |
+| **Merge sort** | O(n log n) | **O(n log n)** | O(n) | ✓ | guaranteed, stable, the linked-list choice |
+| **Quicksort** | O(n log n) | O(n²) | O(log n) | ✗ | fastest in practice, in place |
+| **Heap sort** | O(n log n) | O(n log n) | O(1) | ✗ | guaranteed + in place, slower constants |
+| Counting/Radix | O(n + k) | O(n + k) | O(k) | ✓ | non-comparison; small integer ranges only |
+
+O(n log n) is provably the floor for *comparison* sorting — counting sort
+beats it only by not comparing (it indexes by value, an
+[array trick](/dsa/arrays-and-strings)).
+
+## Merge sort — divide and conquer, canonically
+
+Split in half, sort each half (recursively), **merge** the two sorted
+halves. The merge is [two pointers](/dsa/two-pointers): repeatedly take the
+smaller front.
+
+```python
+def merge_sort(a):
+    if len(a) <= 1:
+        return a
+    mid = len(a) // 2
+    left, right = merge_sort(a[:mid]), merge_sort(a[mid:])
+    return merge(left, right)
+
+def merge(l, r):
+    out, i, j = [], 0, 0
+    while i < len(l) and j < len(r):
+        if l[i] <= r[j]:                # <= keeps it STABLE
+            out.append(l[i]); i += 1
+        else:
+            out.append(r[j]); j += 1
+    return out + l[i:] + r[j:]          # one side has leftovers
+```
+
+Why n log n: log n levels of splitting, O(n) merge work per level. Why it
+matters beyond sorting: the merge step *is* "merge two sorted lists," "merge
+k sorted lists" (add a [heap](/dsa/heaps-and-intervals)), and external
+sorting — how databases sort data **bigger than RAM** (sort chunks, merge
+streams — [files, Level 1](/programming/file-handling) meets scale).
+
+**Stable** means equal elements keep their original order — sort orders by
+date, then by customer, and each customer's orders stay date-sorted.
+Interviewers love this word; merge sort has it, quicksort doesn't.
+
+## Quicksort — partition and recurse
+
+Pick a **pivot**, partition the array into `< pivot | pivot | > pivot`
+(one O(n) pass, in place), then recurse on the two sides.
+
+```python
+def quicksort(a, lo=0, hi=None):
+    if hi is None: hi = len(a) - 1
+    if lo >= hi: return
+    p = partition(a, lo, hi)
+    quicksort(a, lo, p - 1)
+    quicksort(a, p + 1, hi)
+
+def partition(a, lo, hi):          # Lomuto: pivot = last element
+    pivot, write = a[hi], lo       # 'write' trails: everything left of it < pivot
+    for read in range(lo, hi):
+        if a[read] < pivot:
+            a[write], a[read] = a[read], a[write]
+            write += 1
+    a[write], a[hi] = a[hi], a[write]
+    return write
+```
+
+The worst case is the famous follow-up: a bad pivot (e.g., always the last
+element on *already-sorted* input) splits n into 1 and n−1 → O(n²).
+Defenses: random pivot or median-of-three. With randomization, expected
+O(n log n) and the best cache behavior of the bunch — which is why real
+libraries build on it (with introsort fallbacks to heap sort when recursion
+gets suspicious).
+
+**Partition alone is a tool**: **quickselect** finds the k-th smallest
+element in expected O(n) — partition, then recurse into *one* side only.
+"K-th largest element" is a top-10 interview question, and "quickselect or a
+[heap](/dsa/heaps-and-intervals)?" is the expected discussion.
+
+## What you actually do: call sort, design the key
+
+```python
+words.sort()                                  # Timsort: O(n log n), stable
+users.sort(key=lambda u: (-u.score, u.name))  # rank by score desc, tie → name
+```
+
+```java
+Arrays.sort(primitives);                       // dual-pivot quicksort
+Collections.sort(users, Comparator.comparing(User::getScore).reversed());
+```
+
+```cpp
+std::sort(v.begin(), v.end());                 // introsort
+std::stable_sort(v.begin(), v.end(), byScore); // when stability matters
+```
+
+The real-world skill is the **comparator/key**: multi-field, ascending/
+descending mixes, and custom orders ("largest number formed by
+concatenation" — sort with comparator `a+b > b+a`). Python's Timsort is
+merge-sort-based, stable, and *exploits existing runs* — nearly-sorted data
+sorts in nearly O(n).
+
+## The searching ladder
+
+1. **Linear scan** — O(n), unsorted data, no setup. Fine once; a loop of
+   them is the [hash-table cue](/dsa/hash-tables).
+2. **Binary search** — O(log n), needs sorted data. Halve the space each
+   comparison; full treatment (and its killer generalization, *binary
+   search on the answer*) in its [own doc](/dsa/binary-search).
+3. **Hash lookup** — O(1), needs preprocessing, exact-match only.
+4. **Structure-specific** — [BST](/dsa/trees-and-bsts) range queries,
+   [trie](/dsa/tries) prefixes.
+
+The strategic table — given n items and q queries:
+
+| Situation | Choice |
+| --- | --- |
+| One query | scan: O(n) beats sort-then-search O(n log n) |
+| Many exact-match queries | hash set/map: O(n) build, O(1) each |
+| Many *order* queries (range, nearest, rank) | sort once + binary search: O(n log n) + O(log n) each |
+| Data changes between queries | [BST/heap](/dsa/trees-and-bsts), not re-sorting |
+
+## Common mistakes
+
+- **Sorting when a hash map answers it** — two-sum sorted costs O(n log n)
+  and loses original indices; the dict is O(n).
+- **Destroying information by sorting** — need the *original index* later?
+  Sort pairs `(value, i)` instead.
+- **Quadratic "sorts" hiding in code** — `list.remove(min(list))` in a loop
+  is O(n²) selection sort wearing builtins.
+- **Claiming quicksort is O(n log n) flat** — it's *expected*; the worst
+  case and its trigger is the exact follow-up question.
+- **Stability blindness** — multi-pass sorting (by B, then by A) only works
+  with stable sorts; say the word.
+
+## Interview perspective
+
+<QA q="Merge sort vs quicksort — when would you actually prefer each?">
+
+Quicksort: in-memory arrays, average case — in-place (O(log n) stack only),
+cache-friendly, fastest constants; that's why library sorts build on it.
+Merge sort: when you need the O(n log n) *guarantee*, stability, or you're
+not on a random-access array — linked lists (merge needs no random access,
+O(1) extra), and external sorting of disk-resident data as sorted runs +
+k-way merge. One more: parallelism — merge sort's halves are independent.
+Naming a *context* per algorithm, not reciting the table, is the pass
+signal.
+
+</QA>
+
+<QA q="Find the k-th largest element in an unsorted array — compare the three approaches.">
+
+(1) Sort, take index k−1: O(n log n), trivial to write, fine if n is small.
+(2) Min-heap of size k: stream elements, push, pop when size exceeds k —
+O(n log k), the answer when data is a *stream* or k ≪ n. (3) Quickselect:
+partition and recurse into the side containing index n−k — expected O(n),
+worst O(n²), in place, mutates the array. Interviewers want the heap vs
+quickselect trade-off articulated: guaranteed n log k and streaming-friendly
+vs faster expected time but worst case and mutation.
+
+</QA>
+
+<QA q="Why is comparison-based sorting Ω(n log n), and how does counting sort 'beat' it?">
+
+A comparison sort's execution is a binary decision tree: each comparison has
+two outcomes, and the algorithm must distinguish all n! input orderings —
+so the tree needs n! leaves, hence height ≥ log₂(n!) ≈ n log n comparisons
+in the worst case. Counting sort never compares: it uses values as array
+indices directly (count occurrences of each value 0..k, then walk the
+counts), which is O(n + k) — but it requires small integer-range keys and
+O(k) memory, so it complements rather than replaces comparison sorts. Radix
+sort extends the trick digit by digit.
+
+</QA>
+
+## Practice
+
+1. **Implement from memory:** merge sort, then quicksort with random pivot.
+   Time both on 10⁵ random ints, then on 10⁵ *already-sorted* ints with a
+   fixed last-element pivot — watch the O(n²) happen.
+2. **Comparator reps:** sort a list of `(name, dept, salary)` by dept asc,
+   salary desc, name asc — one sort call. Then: why does doing it as three
+   separate stable sorts (in reverse priority order) also work?
+3. **The canon:** k-th largest (all three ways); merge intervals (sort by
+   start — see [heaps & intervals](/dsa/heaps-and-intervals)); "sort
+   colors" (Dutch national flag — partition with
+   [three pointers](/dsa/two-pointers), no counting allowed).
+4. **Judgment:** 10⁹ 32-bit integers on disk, 4 GB RAM — sketch the
+   external merge sort. (Chunks that fit, sort each, k-way merge with a
+   heap. You just designed a database primitive.)
+
+Next pattern: [Greedy](/dsa/greedy) — when taking the locally best choice
+is provably globally optimal.

@@ -1,0 +1,206 @@
+---
+title: "Blind 75 — Pattern Walkthrough"
+summary: "The famous list, reorganized by pattern with the key insight for each problem — so you learn 15 ideas, not 75 answers."
+order: 21
+difficulty: "Checklist"
+tags: ["blind-75", "problem-list", "interview-prep"]
+---
+
+## How to use this list
+
+The **Blind 75** (a Facebook engineer's curated LeetCode list) endures
+because it's the minimal set covering nearly every pattern interviews
+draw from. Used wrong, it's 75 memorized solutions that evaporate under
+pressure. Used right, it's **~15 patterns, each seen from 3–6 angles** —
+this page groups it that way, with the one-line insight per problem.
+
+Protocol per problem: attempt 25–30 min cold → if stuck, read *only the
+insight* here and try again → solved or not, say the approach out loud in
+one sentence → log it for re-attempt in a week
+(self-rate with the [problem bank](/dsa/problem-bank) flashcards, schedule
+via the [study plan](/dsa/study-plan)). Marking "solved" after reading a
+solution is the cardinal sin — re-derive, days later, or it didn't happen.
+
+## Arrays & Hashing — [hash tables](/dsa/hash-tables), [arrays](/dsa/arrays-and-strings)
+
+| Problem | The insight |
+| --- | --- |
+| Two Sum | dict of seen values → complement lookup, one pass |
+| Contains Duplicate | set membership |
+| Product of Array Except Self | prefix products × suffix products, no division |
+| Maximum Subarray | Kadane: running sum, reset when it goes negative (1-D DP in disguise) |
+| Maximum Product Subarray | track running *max and min* (negatives flip them) |
+| Top K Frequent | count dict → bucket-by-frequency (or [heap](/dsa/heaps-and-intervals)) |
+| Group Anagrams | canonical key: sorted word / letter counts |
+| Valid Anagram | counting dict |
+| Longest Consecutive Sequence | set + only start counting at left edges (x−1 absent) |
+| Encode/Decode Strings | length-prefix framing — delimiters alone can't be safe |
+
+## Two Pointers — [doc](/dsa/two-pointers)
+
+| Problem | The insight |
+| --- | --- |
+| Valid Palindrome | opposite ends, skip non-alphanumerics |
+| 3Sum | sort; fix one, two-pointer the rest; skip duplicates carefully |
+| Container With Most Water | move the *shorter* wall inward — exchange argument |
+| Trapping Rain Water | water[i] = min(maxL, maxR) − h[i]; two pointers carry the maxes |
+
+## Sliding Window — [doc](/dsa/sliding-window)
+
+| Problem | The insight |
+| --- | --- |
+| Best Time to Buy/Sell Stock | running min, best diff — window degenerates to one pass |
+| Longest Substring Without Repeating | window + set; shrink from left past the repeat |
+| Longest Repeating Character Replacement | window valid while (size − maxFreq) ≤ k |
+| Minimum Window Substring | need/have counts; expand right, shrink left greedily |
+
+## Stack — [doc](/dsa/stacks-and-queues)
+
+| Problem | The insight |
+| --- | --- |
+| Valid Parentheses | the canonical LIFO match |
+
+## Binary Search — [doc](/dsa/binary-search)
+
+| Problem | The insight |
+| --- | --- |
+| Search Rotated Sorted Array | one half is always sorted — decide which, recurse into the right one |
+| Find Min in Rotated Sorted Array | compare mid to *right* end; shrink toward the bend |
+
+## Linked List — [doc](/dsa/linked-lists)
+
+| Problem | The insight |
+| --- | --- |
+| Reverse Linked List | the three-pointer dance, from memory, both directions of asking |
+| Merge Two Sorted Lists | dummy head + two pointers |
+| Reorder List | middle → reverse second half → interleave (three sub-skills) |
+| Remove Nth From End | lead pointer n ahead, then move both |
+| Linked List Cycle | Floyd fast/slow |
+| Merge K Sorted Lists | heap of k heads — O(N log k) |
+
+## Trees — [doc](/dsa/trees-and-bsts)
+
+| Problem | The insight |
+| --- | --- |
+| Max Depth | the 3-line recursion template |
+| Same Tree / Invert Tree | simultaneous recursion / swap-and-recurse |
+| Subtree of Another Tree | same-tree check at every node |
+| LCA of a BST | walk from root until the targets split |
+| Validate BST | (low, high) bounds passed down — child-check fails |
+| Level Order Traversal | BFS queue, level = current queue length |
+| Kth Smallest in BST | in-order traversal, count down |
+| Construct from Preorder + Inorder | preorder[0] is root; inorder splits children |
+| Binary Tree Max Path Sum | post-order: best one-leg path up vs best arch through |
+| Serialize/Deserialize | preorder with null markers |
+
+## Tries — [doc](/dsa/tries)
+
+| Problem | The insight |
+| --- | --- |
+| Implement Trie | children dict + end-flag |
+| Word Search II | trie over dictionary guides grid [backtracking](/dsa/backtracking) — prune dead prefixes |
+| Design Add & Search Words | '.' wildcard → branch into all children (DFS) |
+
+## Heap — [doc](/dsa/heaps-and-intervals)
+
+| Problem | The insight |
+| --- | --- |
+| Find Median from Data Stream | two heaps: max-heap lower half, min-heap upper, rebalance |
+
+## Backtracking — [doc](/dsa/backtracking)
+
+| Problem | The insight |
+| --- | --- |
+| Combination Sum | choose/explore/un-choose; reuse allowed → don't advance index |
+| Word Search | grid DFS + mark/unmark visited |
+
+## Graphs — [doc](/dsa/graphs-bfs-dfs)
+
+| Problem | The insight |
+| --- | --- |
+| Number of Islands | flood fill (BFS/DFS) per unvisited land cell |
+| Clone Graph | dict old→new while traversing |
+| Pacific Atlantic Water Flow | reverse-flow BFS from both oceans; intersect |
+| Course Schedule | cycle detection = topological sort (Kahn's / DFS colors) |
+| Graph Valid Tree | connected + exactly n−1 edges ([union-find](/dsa/union-find)) |
+| Number of Connected Components | union-find counting, or DFS sweeps |
+| Alien Dictionary | build precedence edges from adjacent words → topo sort |
+
+## Intervals — [greedy](/dsa/greedy) + [heaps](/dsa/heaps-and-intervals)
+
+| Problem | The insight |
+| --- | --- |
+| Insert Interval | three phases: before, merge-overlaps, after |
+| Merge Intervals | sort by start; extend or push |
+| Non-overlapping Intervals | max meetings kept (sort by end) → n − kept |
+| Meeting Rooms I / II | overlap check / heap of end times |
+
+## 1-D DP — [doc](/dsa/dynamic-programming)
+
+| Problem | The insight |
+| --- | --- |
+| Climbing Stairs | Fibonacci — the hello-world recurrence |
+| House Robber I / II | take[i] vs skip[i]; circular → run twice excluding one end |
+| Coin Change | min coins per amount, bottom-up (the greedy-fails poster child) |
+| Longest Increasing Subsequence | O(n²) DP, or patience trick with binary search O(n log n) |
+| Word Break | dp[i] = any dp[j] && s[j:i] in dict |
+| Decode Ways | climbing stairs with validity conditions |
+| Palindromic Substrings / Longest Palindromic Substring | expand around 2n−1 centers |
+
+## 2-D DP & Strings
+
+| Problem | The insight |
+| --- | --- |
+| Unique Paths | grid[i][j] = top + left |
+| Longest Common Subsequence | match → diag+1; else max(top, left) |
+
+## The remainder (bit/math/matrix — appear less, finish last)
+
+Set/Clear bits family (Number of 1 Bits, Counting Bits, Missing Number,
+Reverse Bits, Sum of Two Integers), Rotate Image (transpose + reverse
+rows), Spiral Matrix (shrink four boundaries), Set Matrix Zeroes (first
+row/col as markers).
+
+<Callout type="tip" title="The order that compounds">
+Do the groups top-to-bottom as listed — each reuses the previous (3Sum needs
+two pointers; trees need recursion comfort; graphs need BFS from trees;
+intervals need greedy). Two groups per week with re-attempts is a realistic
+6-week pass; see the <a href="/dsa/study-plan">study plan</a> for
+scheduling, then graduate to <a href="/dsa/mock-drills">mock drills</a>.
+</Callout>
+
+## Interview perspective
+
+<QA q="You've 'done' the Blind 75 but blank in real interviews. What went wrong, and what's the fix?">
+
+Almost always: solutions were *read* and recognized, not *re-derived* —
+recognition memory survives re-reading but not a blank editor under a
+clock. Fixes: (1) re-attempt every problem cold ≥3 days later and only then
+mark it done; (2) practice the verbalization — one sentence naming pattern
+and complexity before coding ("sorted + pair-sum → opposite-end two
+pointers, O(n)"), because articulating *is* the retrieval you'll need;
+(3) timed [mock drills](/dsa/mock-drills) to install the clock pressure.
+The list teaches patterns; only spaced re-derivation makes them yours.
+
+</QA>
+
+<QA q="An interviewer gives a problem that isn't on any list. Walk me through the first 5 minutes.">
+
+Restate the problem and confirm constraints — n's size (hints the target
+complexity), value ranges, duplicates, sorted-ness. Work one small example
+by hand. Name the brute force and its complexity *out loud* — it anchors
+correctness and proves you'll always have *something*. Then pattern-match
+on the structure: sorted → two pointers/binary search; "contiguous" →
+sliding window/prefix; "k-th/top-k" → heap; pairs/lookup → hash; "count
+ways/min cost with choices" → DP; "all configurations" → backtracking;
+grid/connectivity → BFS/DFS/union-find. Pick one, state the plan in two
+sentences, *then* code. The lists exist precisely to make that
+pattern-match step fast.
+
+</QA>
+
+## Practice
+
+The page *is* the practice. Track group-by-group; when all groups are
+green twice, you're ready for [mock drills](/dsa/mock-drills) — the last
+step before the real thing.

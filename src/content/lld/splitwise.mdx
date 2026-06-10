@@ -1,0 +1,179 @@
+---
+title: "Design Splitwise"
+summary: "Expense modeling with Strategy for split types, the balance-sheet invariant, and the debt-simplification algorithm everyone gets asked."
+order: 13
+difficulty: "Classic"
+tags: ["LLD", "OOD", "strategy-pattern", "graphs"]
+---
+
+## Scope it first
+
+*"Users create group expenses — one payer, many participants, split
+equally / by exact amounts / by percentages. Show who owes whom; simplify
+debts. Single currency, ignore payments/settlement execution and auth —
+OK?"* That scope hits everything graders look for: a Strategy seam, a
+money-correctness invariant, and one genuine algorithm.
+
+## Entities & relationships
+
+<Mermaid chart={`classDiagram
+  class ExpenseManager {
+    +addExpense(paidBy, amount, participants, strategy)
+    +balanceOf(user)
+    +simplify(group) List~Transaction~
+  }
+  class Expense {
+    +paidBy User
+    +amount Money
+    +splits List~Split~
+  }
+  class Split {
+    +user User
+    +share Money
+  }
+  class SplitStrategy {
+    <<interface>>
+    +computeSplits(amount, participants, args) List~Split~
+  }
+  class BalanceSheet {
+    +net Map~User, Money~
+    +apply(expense)
+  }
+  ExpenseManager --> Expense : records
+  ExpenseManager --> BalanceSheet : updates
+  Expense --> "*" Split
+  SplitStrategy <|.. EqualSplit
+  SplitStrategy <|.. ExactSplit
+  SplitStrategy <|.. PercentSplit
+  Expense --> SplitStrategy : built via`} />
+
+- **`Expense`** is an immutable record: who paid, how much, and the
+  computed `Split`s. Edits create a new version (audit trail — finance
+  code never destroys history).
+- **`SplitStrategy`** — equal / exact / percent are interchangeable
+  algorithms producing `List<Split>`: the cleanest Strategy showcase in
+  any LLD classic. New split type (by shares, by adjustment) = new class,
+  zero edits (Open/Closed, [same seam as parking-lot
+  pricing](/lld/parking-lot)).
+- **`BalanceSheet`** holds **net balance per user** (positive = is owed,
+  negative = owes). Derived from expenses, so it's a cache — rebuildable
+  by replay, which is your data-corruption escape hatch.
+
+Each strategy **validates its own args**: exact amounts must sum to the
+total; percentages to 100. Validation inside the strategy, not the
+manager — the class that defines the rule enforces it
+([encapsulation](/lld/oop-and-solid)).
+
+## Money: the two non-negotiables
+
+1. **Never floats.** ₹0.10 isn't representable in binary; pennies leak.
+   Integer paise/cents or `BigDecimal`
+   ([Level 1 said it](/programming/variables-and-data-types); here it's
+   load-bearing).
+2. **The conservation invariant: every expense's splits sum exactly to
+   the amount, and the global net sums to zero.** ₹100 split three ways is
+   33.33 + 33.33 + 33.34 — *someone* gets the spare paisa
+   (convention: first participant). Write the assertion; mention it
+   unprompted. It's the difference between candidates who've handled money
+   and those who haven't:
+
+```python
+def equal_split(amount_paise, users):
+    base, remainder = divmod(amount_paise, len(users))
+    return [Split(u, base + (1 if i < remainder else 0))
+            for i, u in enumerate(users)]
+    # sum of shares == amount_paise, ALWAYS — assert it in tests
+```
+
+## The algorithm: debt simplification
+
+A trip's raw expenses create a messy web of IOUs. But only **net balances**
+matter: compute each user's net, then match debtors to creditors:
+
+```
+Raw: A→B ₹20, B→C ₹20, C→A ₹10        Nets: A −10, B 0, C +10
+Simplified: A pays C ₹10.  (3 transactions → 1; B vanished entirely)
+```
+
+```python
+def simplify(net):                       # net: user → paise (sum == 0)
+    owes  = [(u, -v) for u, v in net.items() if v < 0]
+    owed  = [(u,  v) for u, v in net.items() if v > 0]
+    txns, i, j = [], 0, 0
+    while i < len(owes) and j < len(owed):
+        debtor, debt = owes[i]
+        creditor, credit = owed[j]
+        pay = min(debt, credit)
+        txns.append(Transaction(debtor, creditor, pay))
+        owes[i], owed[j] = (debtor, debt - pay), (creditor, credit - pay)
+        if owes[i][1] == 0: i += 1
+        if owed[j][1] == 0: j += 1
+    return txns
+```
+
+[Two pointers](/dsa/two-pointers) over debtors and creditors — at most
+**n−1 transactions** for n users, each iteration retires at least one side.
+Greedily matching *largest debtor to largest creditor*
+(two [heaps](/dsa/heaps-and-intervals)) tends to produce fewer
+transactions; the true *minimum* transaction count is NP-hard
+(subset-sum in disguise) — knowing that "good greedy, optimal is NP-hard,
+n−1 is fine" line is exactly the [greedy-judgment](/dsa/greedy) graders
+want.
+
+## Walk a scenario + concurrency
+
+"Trip group: A pays ₹300 dinner, equal among A,B,C" →
+`EqualSplit.computeSplits` → splits (100,100,100) → BalanceSheet: B −100,
+C −100, A +200. "B pays ₹150 taxi, exact: A 50, B 100" → A +50… → nets:
+A +150, B −50, C −100 → `simplify` → *C pays A ₹100, B pays A ₹50.* Two
+transactions settle the trip.
+
+**Concurrency follow-up:** two expenses added to one group simultaneously
+→ the balance update is read-modify-write. Same family as the
+[parking-lot race](/lld/parking-lot): atomic per-group mutation (lock or
+serialized queue per group), or make balances *derived only* — append
+expenses to a log, compute nets on read; appends don't race
+(the [event-sourcing instinct](/hld/case-ingestion-pipeline), in
+miniature).
+
+<QA q="Why is SplitStrategy the right abstraction, and what would you lose hardcoding split types in the Expense class?">
+
+Split computation is the *varying behavior* — equal, exact, percent,
+shares, adjustments all consume (amount, participants, args) and produce
+splits, so they slot behind one interface chosen at expense creation.
+Hardcoding means a switch inside Expense touched by every new type
+(Open/Closed violation), validation rules tangled together, and untestable
+combinations. With Strategy, each type validates its own invariant (exact
+sums to total; percents to 100) and tests in isolation. Same seam as
+pricing in the parking lot — LLD interviews reward recognizing the
+recurring shape.
+
+</QA>
+
+<QA q="₹100 split equally three ways — walk through the money handling.">
+
+Store paise integers: 10000 / 3 = 3333 remainder 1 by `divmod`. Shares:
+3334, 3333, 3333 — distribute the remainder deterministically (first k
+participants get the extra paisa) so results are reproducible and
+auditable. The invariant — splits sum exactly to the amount — is asserted
+at creation; floats are banned because 0.1 has no exact binary
+representation and per-expense rounding drift accumulates into real money.
+Across the system, all nets sum to zero (money is conserved); that global
+check is your nightly reconciliation test. This tiny question reliably
+separates candidates who've touched financial code.
+
+</QA>
+
+<QA q="Is minimizing the number of settlement transactions tractable?">
+
+Finding *the minimum* is NP-hard — it reduces to partitioning users into
+zero-sum subsets (subset-sum flavored): each disjoint zero-sum subset of
+size k settles internally with k−1 transactions, so minimizing
+transactions = maximizing zero-sum partitions. Practical answer: net out
+balances, then greedy-match largest debtor against largest creditor with
+two heaps — at most n−1 transactions, usually near-optimal, O(n log n).
+Saying "I'd ship the greedy and note optimality is NP-hard" demonstrates
+both the algorithm and the engineering judgment about when optimal isn't
+worth chasing.
+
+</QA>

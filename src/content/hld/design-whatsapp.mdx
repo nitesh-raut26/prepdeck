@@ -1,0 +1,165 @@
+---
+title: "Design WhatsApp"
+summary: "The messaging system design: persistent connections, the online/offline delivery split, message ordering, receipts, and group fan-out."
+order: 12
+tags: ["system-design", "messaging", "websocket", "case-study"]
+---
+
+## Prompt
+
+> Design a 1:1 and group messaging app: real-time delivery, offline users
+> get messages when they return, sent/delivered/read receipts, media.
+> Billions of users.
+
+## 1. Requirements
+
+**Functional:** 1:1 chat; group chat (cap it: ≤1024 members); delivery
+states ✓/✓✓/blue; online/last-seen presence; media (images/video).
+**Non-functional:** real-time feel (under 500 ms end-to-end); **no message
+loss, ever** (the invariant users trust); messages from one sender appear
+in order; works on flaky mobile networks; end-to-end encrypted.
+
+Scope cut to say aloud: *"calls, status/stories and multi-device out;
+deep-dive 1:1 delivery and group fan-out — OK?"*
+
+## 2. Estimation (shapes the design)
+
+~2 B users, ~100 B messages/day ≈ **1.2 M messages/sec** average, ~3–4 M
+peak. A text message is tiny (~100 bytes + metadata) → message *volume* is
+a connection problem, not a bandwidth problem. The number that actually
+designs the system: **hundreds of millions of simultaneously open
+connections** — you can't poll ("any messages for me?" × 2 B phones × every
+second), so the phones must hold **persistent connections** and servers
+must *push*. A tuned server holds ~1 M idle connections → a fleet of a few
+hundred **chat gateways**.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  A[Phone A] -->|persistent WebSocket| GA[Chat gateway 1]
+  B[Phone B] -.->|persistent WebSocket| GB[Chat gateway 7]
+  GA --> SR[(Session registry<br/>user → gateway)]
+  GA --> MQ[[Message queue]]
+  MQ --> CS[Chat service]
+  CS --> SR
+  CS -->|B online: push via| GB
+  CS -->|B offline: store| INBOX[(Offline inbox<br/>per-user queue)]
+  CS --> MSG[(Message store<br/>wide-column DB)]
+  A2[Media] --> BLOB[(Object storage + CDN)]`} />
+
+- **Chat gateways** — stateless-ish WebSocket terminators; their only job
+  is holding sockets and forwarding frames. Scale by adding boxes.
+- **Session registry** — `user → gateway` mapping (Redis): the routing
+  table that answers "where is B connected *right now*?"
+- **Chat service** — the brain: persist, look up recipient, route or
+  store-for-later.
+- **Message store** — write-heavy, append-mostly, queried as "recent
+  messages per conversation" → wide-column store (Cassandra/HBase
+  lineage), partition key = conversation, clustering by time
+  ([databases at scale](/hld/databases-at-scale)).
+- **Media** — never through the chat path: upload to object storage,
+  send the *URL + key* as the message; recipients fetch via CDN.
+
+## 4. Deep dive — the delivery flow
+
+The heart of the design is one decision repeated forever: **is the
+recipient online?**
+
+1. A sends; gateway acks to A's device (✓ *sent* — server has it,
+   durably: persisted/enqueued *before* the ack, or the no-loss invariant
+   is fiction).
+2. Chat service looks up B in the session registry.
+   - **Online** → push down B's gateway socket. B's device acks → ✓✓
+     *delivered* (a receipt is just a tiny system message flowing back).
+   - **Offline** → append to B's **offline inbox** (per-user durable
+     queue). When B reconnects, the gateway drains the inbox, B acks each,
+     ✓✓ fires late.
+3. *Read* (blue) is purely client-emitted when the chat is viewed —
+   product semantics layered on the same receipt channel.
+
+**No-loss mechanics:** every hop is ack-or-retry with the message kept
+until acked — at-least-once delivery, so duplicates can occur (network
+blips, retries) → client **dedupes by message id** (sender-generated
+UUID). At-least-once + idempotent receive is the standard answer
+([messaging](/hld/messaging-and-queues)); exactly-once-on-the-wire is a
+trap to walk past, out loud.
+
+**Ordering:** global ordering is unnecessary and unscalable — what users
+need is **per-conversation** ordering. Per-sender sequence numbers per
+conversation; receiver sorts/gap-detects. Wall-clock timestamps lie
+(clock skew); say "sequence numbers, not timestamps."
+
+**Groups:** sender uploads **once**; the chat service (or a group service
+with the member list) **fans out** server-side — N inbox-or-push
+deliveries, reusing the entire 1:1 machinery. The 1024-member cap exists
+precisely to bound fan-out cost; "what if groups were 1 M?" → that's a
+*broadcast channel*, a different design (pull/feed, not push — closer to
+[Netflix's](/hld/design-netflix) read path).
+
+**E2EE in one line:** with the Signal protocol, devices exchange keys and
+the server forwards ciphertext it cannot read — which *forces* server-side
+features (search, spam filtering) onto the client. One sentence of this
+earns the depth point; the crypto itself is out of scope.
+
+## 5. Bottlenecks & failure modes
+
+- **A gateway dies** → its ~1 M sockets drop; phones auto-reconnect
+  (with jittered backoff — avoid the thundering herd), land on other
+  gateways, registry updates, inboxes drain. Messages survived because
+  durability lives in the queue/store, *never* in the gateway.
+- **Presence storms** — last-seen updates from 2 B phones would melt a
+  naive design: batch, debounce, and only fan out presence to users
+  actively viewing that contact's chat.
+- **Hot conversations** (a 1024-member group going viral) → fan-out
+  spikes; queue absorbs, workers scale ([the queue's whole
+  job](/hld/messaging-and-queues)).
+- **Registry staleness** — B's socket moved between lookup and push →
+  push fails → fall back to offline inbox; reconnect drains it. Every
+  online-path failure degrades to the offline path: *the offline path is
+  the system's safety net*, design it first.
+
+<QA q="Why persistent connections instead of polling, and what does that choice cost?">
+
+Polling 2 B devices even every 5 s is 400 M wasted requests/sec, almost
+all answering "nothing new," with up-to-5 s latency — both unacceptable. A
+persistent (WebSocket) connection inverts the model: the server pushes the
+instant a message arrives — sub-second delivery, near-zero idle cost per
+message. The price: gateways become *stateful* (a socket lives on a
+specific box), so you need a session registry for routing, reconnect
+handling with backoff, heartbeats to detect dead sockets, and capacity
+planning in *connections* (~1 M/box) rather than requests/sec. That
+trade — latency and efficiency for connection-state management — is the
+core of every chat/realtime design ([same machinery as the pricing
+engine's fan-out](/hld/case-realtime-pricing)).
+
+</QA>
+
+<QA q="How do you guarantee a message is never lost, end to end?">
+
+Durable-before-ack at every hop, plus retry until acked. Sender keeps the
+message until the server acks; the server acks only after the message is
+persisted (store/replicated queue); delivery to the recipient retries
+until the device acks; if the recipient is offline the message rests in a
+durable per-user inbox drained on reconnect. Retries mean duplicates, so
+receivers dedupe by sender-generated message id — at-least-once delivery
+with idempotent receipt. The unreliable components (gateways, sockets,
+phones) hold no authoritative state; everything in flight is recoverable
+from durable storage, so any crash degrades to "deliver again later," not
+"gone."
+
+</QA>
+
+<QA q="Group message to 1024 members — walk through the fan-out and its costs.">
+
+Sender uploads once with a group id; server resolves membership (cached —
+it changes rarely) and fans out: per member, the same online/offline
+decision as 1:1 — push via their gateway or append to their inbox. Cost is
+O(members) server-side work per message, which is why the cap exists:
+1024 × manageable per-delivery cost keeps worst-case fan-out bounded; the
+queue absorbs spikes. Media stays O(1) — one blob in object storage, the
+fan-out carries only URLs+keys. Push-per-member stops scaling around tens
+of thousands of members; beyond that you flip from push to pull
+(channel/feed model — members fetch on open, only online-and-viewing get
+pushes). Naming that push→pull boundary is the senior close.
+
+</QA>
