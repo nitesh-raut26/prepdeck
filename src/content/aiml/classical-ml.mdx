@@ -1,0 +1,267 @@
+---
+title: "Classical ML"
+summary: "Regression, trees and clustering — the algorithms that still win on tabular data, plus the evaluation discipline (precision, recall, overfitting) that carries to all of ML."
+order: 3
+difficulty: "Foundations"
+tags: ["machine-learning", "regression", "classification", "clustering"]
+---
+
+## Why learn 'old' ML in the LLM era
+
+Three reasons, all practical. **It still wins:** on tabular business
+data — churn, fraud, pricing, credit — gradient-boosted trees beat
+neural networks routinely, train in seconds, and explain themselves;
+most production "AI" at most companies is this. **It's where the
+concepts live:** overfitting, train/test splits, precision/recall —
+the evaluation discipline that [fine-tuning](/aiml/fine-tuning) and
+every LLM eval inherits — are learnable here in five minutes per
+experiment instead of five hours. **It's interview material:** ML
+roles screen on exactly this page.
+
+The three problem shapes:
+
+```
+SUPERVISED (you have labeled examples):
+  Regression       → predict a NUMBER        (price, demand, ETA)
+  Classification   → predict a CATEGORY      (spam/ham, churn/stay, fraud)
+
+UNSUPERVISED (no labels — find structure):
+  Clustering       → discover natural GROUPS (user segments, anomalies)
+```
+
+## Linear regression — the hello world that won't die
+
+Predict a number as a weighted sum of features — the
+[dot product](/aiml/math-foundations) with a name:
+
+```python
+price = w₁·area + w₂·bedrooms + w₃·age + b
+
+# scikit-learn (the classical-ML standard library):
+from sklearn.linear_model import LinearRegression
+model = LinearRegression().fit(X_train, y_train)   # finds the best w's
+preds = model.predict(X_test)
+```
+
+"Fit" means: choose weights minimizing the **mean squared error**
+between predictions and truth — solvable directly or by
+[gradient descent](/aiml/math-foundations). Don't let the simplicity
+fool you: linear regression is interpretable (each weight says how
+much a bedroom is *worth*), fast at any scale, and the baseline every
+fancier model must beat to justify itself
+([baselines, always](/aiml/math-foundations)).
+
+**Logistic regression** is its classification twin: the weighted sum
+is squashed through a sigmoid into a probability —
+`P(churn) = σ(w·x + b)` — and despite the name and its age, it's
+still the default first classifier in industry: calibrated
+probabilities, millisecond inference, coefficients you can show a
+regulator.
+
+## Trees and forests — the tabular champions
+
+A **decision tree** asks a sequence of threshold questions, learned
+from data:
+
+```
+                is balance < ₹1,000?
+               /                    \
+            yes                      no
+            /                          \
+   logins last week < 2?          [stays: 94%]
+       /          \
+    yes            no
+     |              |
+ [churns: 81%]  [stays: 72%]
+```
+
+Trees are readable (that diagram *is* the model), handle mixed
+feature types without scaling, and capture non-linear interactions
+linear models can't ("low balance matters *only when* logins are
+rare"). Alone, one tree overfits — grown deep enough it memorizes the
+training set. The fixes became the industry's workhorses:
+
+- **Random forest** — train hundreds of trees on random subsets of
+  rows and features; average their votes. Variance cancels;
+  accuracy jumps. Nearly tuning-free.
+- **Gradient boosting** (XGBoost/LightGBM) — train trees
+  *sequentially*, each correcting the previous ensemble's errors
+  ([gradient descent](/aiml/math-foundations), but each "step" is a
+  whole tree). The Kaggle-and-industry king of tabular data —
+  [LandAI's price model](/projects/landai) is exactly this.
+
+When does deep learning beat them? When features must be *learned*
+from raw perception — pixels, audio, text
+([neural networks](/aiml/neural-networks) onward). When a human can
+name the columns, trees usually win. That sentence is the
+model-selection interview answer.
+
+## K-means — clustering in one idea
+
+No labels; find k natural groups: place k centers randomly, then
+repeat — assign every point to its nearest center
+([distance in vector space](/aiml/math-foundations)), move each
+center to its points' average — until stable. Segmenting users by
+behavior, grouping similar support tickets, compressing colors —
+k-means is the first tool. Its honest limits: you choose k (the
+elbow heuristic helps), it assumes roughly-round clusters, and
+results vary with initialization. The conceptual bridge: clustering
+in *embedding* space — k-means over
+[text embeddings](/aiml/vector-databases) — is how you find themes
+in a million documents today.
+
+## Evaluation — the discipline that is the actual lesson
+
+### Overfitting and the split
+
+A model can score 100% by *memorizing* training data and still fail
+on new data — **overfitting**, the central failure mode of all ML
+([fine-tuning's enemy](/aiml/fine-tuning), met here first). The
+defense is procedural, not clever:
+
+```
+data → TRAIN (fit the model) / VALIDATION (tune choices) / TEST (touch ONCE)
+
+The test set answers one question, one time: "will this generalize?"
+Tune against it repeatedly and it silently becomes a second training
+set — the most common self-deception in applied ML.
+```
+
+Watch the gap: training accuracy 99%, validation 78% → overfitting
+(simplify the model, get more data, regularize — **regularization**
+penalizes large weights, mathematically preferring simpler
+explanations). Both low → **underfitting** (model too simple for the
+pattern).
+
+### Precision and recall (the interview centerpiece)
+
+Accuracy lies on imbalanced data: 99% of transactions are legitimate,
+so "never flag anything" is 99% accurate and 100% useless. The
+honest pair:
+
+```
+                       PREDICTED
+                    fraud      legit
+ACTUAL   fraud       TP         FN      ← recall = TP/(TP+FN)
+         legit       FP         TN          "of real frauds, how many caught?"
+
+precision = TP/(TP+FP)  →  "of flagged, how many were real?"
+```
+
+They **trade off** through the decision threshold: flag at
+P(fraud) > 0.3 and recall rises while precision falls (more catches,
+more false alarms); at > 0.9, the reverse. The threshold is a
+**business decision**: cancer screening wants recall (missing a case
+is catastrophic, a follow-up test is cheap); spam filtering wants
+precision (deleting a real email is worse than a stray spam). F1
+averages them when you must rank single numbers; an ROC/PR curve
+shows the whole menu. *"Which matters more here, and what does each
+error cost?"* is the question that makes you sound like you've
+shipped one.
+
+## Common mistakes
+
+- **Skipping the baseline** — majority class for classification, mean
+  for regression, last-value for time series. No baseline, no claim.
+- **Data leakage** — a feature that encodes the answer
+  ("account_closed_date" predicting churn), or normalizing/tuning
+  using test data. Symptom: results too good; outcome: production
+  collapse. The time-series version — random splits letting the model
+  train on the future — is the classic.
+- **Accuracy on imbalanced classes** — the 99%-useless trap above.
+- **Jumping to deep learning on 5,000 tabular rows** — XGBoost in
+  seconds beats an underfed network in hours
+  ([pattern fever](/lld/patterns-in-depth), ML edition).
+- **Ignoring calibration** — a model saying "90%" should be right
+  ~90% of those times if you're using the probabilities
+  ([for pricing or ranking](/projects/stockvision)), not just the
+  argmax.
+- **One metric, no slices** — fine on average, broken for one region
+  or segment ([the observability instinct](/devops/observability):
+  percentiles and slices, not means).
+
+<QA q="Fraud detection: 1 in 200 transactions is fraud. Your model is '99.5% accurate.' Interrogate that number and design the real evaluation.">
+
+99.5% is exactly the majority-class baseline — "never flag" achieves
+it — so the number says nothing yet. Real evaluation: build the
+confusion matrix on a held-out, *time-split* test set (train on
+months 1–10, test on 11–12 — random splits leak future fraud
+patterns backward). Report precision (of flagged, how many real —
+every false positive is a blocked legitimate customer and a support
+ticket) and recall (of real fraud, how many caught — every miss is
+direct loss), then choose the operating threshold from costs: if a
+miss costs ₹5,000 average and a false flag costs ₹50 of friction,
+you can literally optimize expected cost over the PR curve. Add
+per-segment slices (new users, high-value transactions) because
+aggregate metrics hide the segment fraud concentrates in, and a
+calibration check if downstream systems consume the probabilities.
+Close by naming drift: fraud adapts, so the metric is monitored in
+production, not certified once ([observability](/devops/observability)
+for models).
+
+</QA>
+
+<QA q="When do gradient-boosted trees beat neural networks, and why — mechanically, not just empirically?">
+
+On tabular data with human-named features (transactions, customers,
+sensors-with-meaning), boosted trees usually win. Mechanically:
+tabular features are heterogeneous (categorical + numeric, wildly
+different scales) and individually meaningful — trees split on raw
+thresholds, so they're scale-invariant, handle categoricals natively,
+and capture sharp conditional interactions ("only when X < 5 and Y =
+'new'") that smooth neural activations approximate awkwardly. Tabular
+datasets are also typically small (thousands–millions of rows), below
+the regime where networks' capacity pays; and trees' inductive bias —
+axis-aligned splits — matches how such data is generated (rules,
+thresholds, segments). Neural networks win when features must be
+*constructed* from raw signal — pixels, audio, text — because
+representation learning is the entire point
+([neural networks](/aiml/neural-networks)); no human can hand-author
+"edge detector" columns. The crisp rule: **columns that mean
+something → trees first; raw perception → deep learning** — plus the
+engineering bonuses that trees train in seconds and explain
+themselves to regulators.
+
+</QA>
+
+<QA q="Explain the precision-recall trade-off through the threshold, and who should set it.">
+
+A classifier outputs a probability; the *threshold* converts it to a
+decision. Lower the threshold and you flag more: recall rises (fewer
+real positives missed), precision falls (more false alarms). Raise
+it and the reverse. So one trained model offers a whole menu of
+operating points — the PR curve — and "which point" is not an ML
+question: it's a cost question. Each error type has a price (missed
+cancer vs unnecessary biopsy; blocked fraud vs blocked customer;
+deleted spam vs deleted job offer), and the threshold should minimize
+expected cost — which means product/business owns the choice,
+informed by ML's curve. The engineering corollary: ship the
+threshold as *configuration*, monitored and re-tunable, never
+hardcoded — costs change, fraud adapts, and the model retrains
+([the same freeze-vs-config instinct](/lld/uber) as any business
+rule). Candidates who say "I'd ask what each error costs" pass;
+candidates who say "I'd maximize F1" reveal they've never had to
+choose.
+
+</QA>
+
+## Practice
+
+1. **The full loop in 30 lines:** scikit-learn's Titanic or churn
+   dataset — baseline, logistic regression, random forest;
+   train/val/test split; confusion matrix; one paragraph: which model
+   ships and why.
+2. **Overfit on purpose:** fit a decision tree with no depth limit;
+   compare train vs test accuracy; then sweep `max_depth` 1→20 and
+   plot both curves — the U-shape you see is the
+   bias-variance trade-off, and you'll never need it explained again.
+3. **Threshold lab:** for your churn model, sweep the threshold
+   0.1→0.9; plot precision and recall; mark where *you'd* operate if
+   a retention call costs ₹100 and a lost customer ₹2,000.
+4. **Cluster something real:** k-means over your
+   [word-frequency vectors](/programming/collections) from Level 1 or
+   embeddings of 100 news headlines; inspect the groups; change k and
+   watch meaning shift.
+
+Next: [Neural Networks](/aiml/neural-networks) — what happens when
+the features must be learned too.

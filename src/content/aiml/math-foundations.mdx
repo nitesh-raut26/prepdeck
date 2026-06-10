@@ -1,0 +1,239 @@
+---
+title: "Math Foundations for ML"
+summary: "The minimal math that makes ML stop being magic: vectors as data, dot products as similarity, gradients as direction, and probability as honesty."
+order: 2
+difficulty: "Foundations"
+tags: ["math", "linear-algebra", "probability", "calculus", "ml"]
+---
+
+## How much math do you actually need?
+
+Honest calibration first: to *use* ML (call models, build
+[RAG](/aiml/rag), fine-tune), you need **intuitions**, not proofs. To
+*build* models or read papers, you need more. This page is the
+intuition layer — four ideas, each explained until it's obvious, each
+mapped to where you'll meet it. Nothing here requires more than
+[Level 1 programming](/programming/variables-and-data-types) and
+high-school algebra.
+
+```
+The map:
+
+  Linear algebra  →  how data and models are REPRESENTED (vectors, matrices)
+  Calculus        →  how models LEARN (gradients = which way to nudge)
+  Probability     →  how models express UNCERTAINTY (distributions, likelihood)
+  Statistics      →  how you know it WORKED (sampling, significance, baselines)
+```
+
+## Linear algebra: data is vectors, models are matrices
+
+### Vectors — a point is a list of numbers
+
+A **vector** is just an ordered list of numbers — and the leap that
+unlocks all of ML: *anything can be one*. A house is
+`[area, bedrooms, age] = [1200, 3, 15]`. A word, after
+[embedding](/aiml/rag), is 1,536 numbers. An image is pixel values.
+Once data is vectors, "similar things" becomes "nearby points," and
+geometry becomes your query language.
+
+### The dot product — the most important operation in ML
+
+Multiply two vectors element-by-element and sum:
+
+```
+a · b = a₁b₁ + a₂b₂ + ... + aₙbₙ
+
+[2, 1, 0] · [3, 1, 4] = 6 + 1 + 0 = 7
+```
+
+Two readings, both essential:
+
+1. **Similarity.** When two vectors point the same way, their dot
+   product is large; perpendicular → zero; opposite → negative.
+   Normalize by length and you get **cosine similarity** — the number
+   your [vector database](/aiml/vector-databases) computes a billion
+   times a day, and the "attention score" inside
+   [transformers](/aiml/transformers). *Semantic search is dot
+   products.*
+2. **A weighted sum.** `features · weights` = each feature times how
+   much it matters, summed — which is literally what a
+   [linear model predicts](/aiml/classical-ml) and what each neuron
+   in a [neural network](/aiml/neural-networks) computes before its
+   activation. *A neuron is a dot product with an opinion.*
+
+### Matrices — many dot products at once
+
+A **matrix** is a grid of numbers; matrix-times-vector is "take the
+dot product of the vector with *every row*." So one matrix multiply
+runs *every neuron in a layer* simultaneously — and that's the whole
+secret of why **GPUs run AI**: graphics cards are matrix-multiply
+machines, and a neural network is a stack of matrix multiplies.
+"Model weights" — the gigabytes in a model file — are these matrices'
+entries; a "70B-parameter model" has 70 billion such numbers
+([fine-tuning](/aiml/fine-tuning) nudges them; LoRA adds small
+matrices beside them).
+
+## Calculus: the gradient is a compass
+
+Forget integrals; ML needs one idea. A model's **loss** is a single
+number measuring how wrong it currently is
+([the error in training](/aiml/neural-networks)). Training is: change
+the weights to make the loss smaller. With 70 billion weights, which
+ones, and which way?
+
+The **derivative** answers it for one weight: "if I nudge this weight
+up a hair, does the loss go up or down, and how steeply?" The
+**gradient** is just that answer for *every* weight at once — a
+vector of slopes, pointing in the direction of steepest *increase*.
+So:
+
+```
+GRADIENT DESCENT (all of deep learning's training, one line):
+
+    weights ← weights − learning_rate × gradient
+
+"Take a small step DOWNHILL, repeat a few million times."
+
+  - learning_rate = step size: too big → you leap over valleys and
+    diverge; too small → training takes geologic time
+    (the knob you met in fine-tuning)
+  - backpropagation = the bookkeeping algorithm that computes the
+    gradient efficiently through stacked layers (chain rule, applied
+    relentlessly — the "how" of neural-networks training)
+```
+
+That hiking-downhill-in-fog picture — you can't see the valley, only
+feel the slope under your feet — is genuinely the mental model
+researchers use. Loss curves flattening = the terrain leveled off;
+"stuck in a local minimum" = a valley that isn't the deepest one.
+
+## Probability: models that admit uncertainty
+
+A classifier doesn't say "spam" — it says **P(spam) = 0.93**, a
+**probability distribution** over outcomes (numbers ≥ 0 summing
+to 1). An LLM's entire output is one: given the text so far, a
+distribution over every possible next token
+("the cat sat on the **mat** 0.41, **floor** 0.18, …" —
+[LLMs](/aiml/llms) are next-token distributions, sampled). Three
+working ideas:
+
+- **Conditional probability** — P(A given B): the "given" is what
+  changes everything. P(spam) might be 0.1; P(spam *given* the word
+  "lottery") might be 0.9. Models are conditional-probability
+  machines: P(label | features), P(next token | context).
+- **Expectation** — the probability-weighted average: what you'd get
+  *on average* over many draws. Loss functions are expectations over
+  the training data; "expected revenue per user" is the same math in
+  a business meeting.
+- **Likelihood & training** — "maximize likelihood" = choose weights
+  under which the *actual observed data* would have been most
+  probable. Cross-entropy loss — the loss of essentially every
+  classifier and LLM — is this, in logarithms. When you read
+  "training minimizes cross-entropy," hear: *make the truth look
+  probable.*
+
+And the one distribution to know by name: the **normal (Gaussian)** —
+the bell curve that measurement noise and many natural quantities
+follow, the default assumption behind "mean ± standard deviation."
+
+## Statistics: knowing whether it worked
+
+The unglamorous quarter that saves real money:
+
+- **Sampling bias** — your model is only as general as the data was
+  representative ([the fine-tuning distribution-mismatch
+  bug](/aiml/fine-tuning)). Train on daytime photos, fail at night.
+- **Train/test discipline** — accuracy on data the model has seen is
+  memory, not learning; held-out evaluation is the entire
+  epistemology of ML ([classical ML](/aiml/classical-ml) makes this
+  concrete).
+- **Baselines** — "94% accurate" means nothing until you know the
+  dumbest model's score (predict the majority class: 91%?). Always
+  ask "compared to what?"
+- **Variance & significance** — rerun training with a different
+  random seed and accuracy moves a point; a 0.5% "improvement" might
+  be noise. A/B tests ([the product version](/hld/scaling-journey))
+  exist because per-user variance swamps small effects.
+
+<QA q="Why are GPUs the hardware of AI? Connect it to the math.">
+
+A neural network's forward pass is a stack of matrix multiplications:
+each layer multiplies its input vector by a weight matrix — thousands
+of independent dot products, each a sequence of multiply-adds with no
+dependency on its neighbors. GPUs were built to transform millions of
+independent vertices/pixels for graphics — i.e., they are
+massively-parallel multiply-add machines with thousands of small
+cores and memory bandwidth to feed them. CPUs optimize for sequential
+control flow ([the event-loop world](/backend/nodejs)); GPUs optimize
+for "do this same arithmetic on 10,000 things at once," which is
+exactly the shape of `matrix × batch`. Training adds backpropagation
+— more matrix multiplies — and batching multiplies the parallelism
+again. That's also why model size is quoted in parameters (matrix
+entries), why memory bandwidth often beats raw FLOPs as the
+bottleneck, and why [LoRA](/aiml/fine-tuning) (smaller matrices)
+makes fine-tuning cheap.
+
+</QA>
+
+<QA q="Explain gradient descent to a smart non-engineer, then name the two ways it fails and the knob that controls both.">
+
+You're dropped on a foggy mountainside and must reach the valley: you
+can't see anything, but you can feel the slope under your feet — so
+you repeatedly step in the steepest downhill direction. The mountain
+is the loss surface (altitude = how wrong the model is), your
+position is the current weights, the felt slope is the gradient, and
+the step length is the learning rate. Failure one: steps too large —
+you leap across the valley and end up higher, oscillating or
+diverging (training loss explodes). Failure two: steps too small —
+you inch along and training takes forever, or stalls on a flat
+plateau. The learning rate controls both, which is why it's the
+single most-tuned hyperparameter, and why schedules (start bigger,
+shrink over time) are standard: long strides on the open slope,
+careful steps near the bottom. Local minima and saddle points —
+valleys that aren't the deepest — are the third hazard, mitigated in
+practice by momentum and the sheer high-dimensionality of real loss
+surfaces.
+
+</QA>
+
+<QA q="Your teammate reports 96% accuracy and wants to ship. Ask the four statistics questions that protect you.">
+
+(1) *Compared to what baseline?* If 95% of transactions are
+legitimate, "predict legitimate always" scores 95% — the model may be
+adding one point, or may be the majority-class predictor wearing a
+costume. Demand precision/recall per class, not accuracy
+([classical ML](/aiml/classical-ml) covers why). (2) *Measured on
+what data?* Held-out test data never touched during training or
+tuning — and drawn from the distribution production will see
+(time-split for anything temporal; random splits leak the future).
+(3) *Is the difference real?* Across seeds/resamples, what's the
+variance? A point of improvement inside the noise band is a coin
+flip. (4) *What does production look like that the test set
+doesn't?* Sampling bias — new users, new fraud patterns, different
+regions ([the distribution-mismatch failure](/aiml/fine-tuning)).
+None of these need advanced math; all of them are statistics, and
+skipping them is how 96% in the notebook becomes 70% and an incident
+in production.
+
+</QA>
+
+## Practice
+
+1. **Dot products by hand:** compute cosine similarity between
+   `[1,2,0]`, `[2,4,0]` and `[0,0,3]` — confirm the parallel pair
+   scores 1.0 and the perpendicular pair 0. Then do it in NumPy and
+   feel the [vector-DB query](/aiml/vector-databases) you just ran.
+2. **Gradient descent in 15 lines:** fit `y = wx + b` to ten points
+   with the update rule above — no libraries. Print the loss each
+   step; try learning rates 0.0001, 0.01, and 1.0, and watch all
+   three behaviors from the QA.
+3. **Distribution feel:** simulate 10,000 coin-flip batches of 100 in
+   Python; histogram the heads-counts and meet the bell curve. Then
+   compute how often a *fair* coin gives ≥60 heads — your first
+   significance intuition.
+4. **Baseline audit:** for any dataset you've touched, compute the
+   majority-class baseline before any model. Make it a permanent
+   habit.
+
+Next: [Classical ML](/aiml/classical-ml) — the algorithms these four
+ideas power, and why they still beat deep learning on most tables.
