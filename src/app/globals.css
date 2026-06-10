@@ -148,3 +148,138 @@ body {
 .prose :where(table) {
   font-size: 0.875rem;
 }
+
+/* ── Language Switcher ────────────────────────────────────── */
+.lang-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.lang-switcher-skeleton {
+  width: 180px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+}
+
+.lang-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.lang-btn:hover {
+  color: var(--color-subtle);
+  background: var(--color-surface-3);
+}
+
+.lang-btn-active {
+  color: var(--color-ink) !important;
+  background: var(--color-surface-3) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Per-language active accent colours */
+.lang-btn-python.lang-btn-active {
+  color: #60a5fa !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.lang-btn-java.lang-btn-active {
+  color: #fbbf24 !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.lang-btn-cpp.lang-btn-active {
+  color: #34d399 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.lang-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.lang-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+}
+
+/* ── Code Block (language-aware) ─────────────────────────── */
+.code-block-wrapper {
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface-3);
+  border-bottom: 1px solid var(--color-line);
+  padding: 6px 14px;
+  min-height: 36px;
+}
+
+.code-lang-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--badge-color, var(--color-faint));
+  font-family: var(--font-mono);
+  opacity: 0.9;
+}
+
+.code-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--color-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  opacity: 0;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-2);
+}
+
+/* Remove duplicate border/radius from inner <pre> since wrapper handles it */
+.code-block-wrapper > pre {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+

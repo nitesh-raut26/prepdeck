@@ -5,12 +5,14 @@ import { Menu, Search } from "lucide-react";
 export function Topbar({
   onMenu,
   onSearch,
+  languageSwitcher,
 }: {
   onMenu: () => void;
   onSearch: () => void;
+  languageSwitcher?: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface-1/80 px-4 backdrop-blur-md lg:px-10">
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface-1/80 px-4 backdrop-blur-md lg:px-6">
       <button
         type="button"
         onClick={onMenu}
@@ -32,7 +34,14 @@ export function Topbar({
         </kbd>
       </button>
 
-      <span className="ml-auto hidden text-xs text-faint md:block">
+      {/* Language switcher — placed right of search bar */}
+      {languageSwitcher && (
+        <div className="flex-shrink-0">
+          {languageSwitcher}
+        </div>
+      )}
+
+      <span className="ml-auto hidden text-xs text-faint lg:block">
         SDE2 prep · built from a real portfolio
       </span>
     </header>

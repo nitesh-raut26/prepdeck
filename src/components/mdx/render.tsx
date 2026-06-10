@@ -8,12 +8,15 @@ import { QA } from "./qa";
 import { Mermaid } from "./mermaid";
 import { Callout } from "./callout";
 import { Figure } from "./figure";
+import { CodeBlock } from "./code-block";
 
 const components = {
   QA,
   Mermaid,
   Callout,
   Figure,
+  // Replace default <pre> with our language-aware CodeBlock
+  pre: (props: ComponentProps<"pre">) => <CodeBlock {...props} />,
   // Keep wide tables from breaking the layout.
   table: (props: ComponentProps<"table">) => (
     <div className="my-6 overflow-x-auto rounded-xl border border-line">
