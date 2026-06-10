@@ -1,0 +1,374 @@
+---
+title: "TypeScript"
+summary: "JavaScript with types — catch bugs at compile time, not runtime. Types, interfaces, generics, utility types, and how TypeScript works under the hood."
+order: 3
+difficulty: "Intermediate"
+tags: ["typescript", "types", "interfaces", "generics", "static-typing"]
+---
+
+## What is TypeScript and Why Use It?
+
+**TypeScript** is JavaScript with an optional static type system, developed by Microsoft. It **compiles to plain JavaScript** — browsers and Node.js run the JS output, not TypeScript directly.
+
+```
+Analogy: JavaScript is like writing on paper with no spellcheck.
+TypeScript adds spellcheck + grammar check that runs before you
+hand in the document — catching errors before they reach the reader.
+```
+
+**Why it exists**: As JavaScript codebases grew to millions of lines, bugs from wrong types became expensive. TypeScript moves these errors from runtime (production crashes) to compile time (editor/build errors).
+
+```typescript
+// JavaScript — no error until runtime
+function double(n) {
+  return n * 2;
+}
+double("5");  // returns "55" — silent bug!
+
+// TypeScript — error at development time
+function double(n: number): number {
+  return n * 2;
+}
+double("5");  // ❌ Argument of type 'string' is not assignable to type 'number'
+```
+
+**Industry adoption**: TypeScript is now the default for most major JavaScript projects — React, Next.js, Angular, Vue 3, Node.js backends, and virtually every FAANG JavaScript codebase.
+
+---
+
+## Basic Types
+
+```typescript
+// Primitives
+let name:    string  = "Alice";
+let age:     number  = 25;         // includes floats: 3.14
+let active:  boolean = true;
+let nothing: null    = null;
+let missing: undefined = undefined;
+let unique:  symbol  = Symbol("id");
+
+// Arrays
+let nums: number[]        = [1, 2, 3];
+let strs: Array<string>   = ["a", "b"];    // generic syntax (equivalent)
+
+// Tuple — fixed-length, fixed-type array
+let point: [number, number] = [10, 20];
+let entry: [string, number] = ["age", 25];
+
+// Any — opts out of type checking (avoid; use only when migrating)
+let data: any = fetchUnknownData();
+
+// Unknown — safer any — must type-check before using
+let input: unknown = getUserInput();
+if (typeof input === "string") {
+  input.toUpperCase();  // ✅ TS knows it's a string here
+}
+
+// Never — function that never returns (throws or infinite loops)
+function fail(msg: string): never {
+  throw new Error(msg);
+}
+
+// Void — function that returns nothing
+function log(msg: string): void {
+  console.log(msg);
+}
+```
+
+## Type Inference
+
+TypeScript infers types automatically — you don't need to annotate everything:
+
+```typescript
+// TypeScript infers these types — no annotation needed
+const count = 0;            // type: number
+const name  = "Alice";      // type: string
+const nums  = [1, 2, 3];    // type: number[]
+const user  = { id: 1, name: "Alice" };  // type: { id: number; name: string }
+
+// Annotate only when inference isn't enough
+const items: string[] = [];  // inference would give never[] without the annotation
+```
+
+## Interfaces vs Type Aliases
+
+Both define the shape of an object. Prefer **interfaces** for objects, **types** for unions/intersections.
+
+```typescript
+// Interface
+interface User {
+  id: number;
+  name: string;
+  email?: string;     // optional property (may be undefined)
+  readonly createdAt: Date;  // cannot be reassigned after creation
+}
+
+// Type alias
+type UserID = number;
+type Status = "active" | "inactive" | "pending";  // union type
+
+// Interfaces can be extended (open for extension — good for libraries)
+interface AdminUser extends User {
+  role: "admin" | "super-admin";
+  permissions: string[];
+}
+
+// Type aliases use intersection for extension
+type AdminUser = User & {
+  role: "admin";
+};
+
+// Interface merging — same name merges automatically
+interface Window {
+  myCustomProp: string;  // adds to the existing Window interface
+}
+```
+
+**Key difference**: Interfaces can be re-declared to merge; type aliases cannot. Both support most use cases — pick one and be consistent.
+
+## Union Types & Discriminated Unions
+
+```typescript
+// Union — value can be one of several types
+type StringOrNumber = string | number;
+function format(val: StringOrNumber): string {
+  if (typeof val === "string") return val.toUpperCase();  // type narrowing
+  return val.toFixed(2);
+}
+
+// Discriminated unions — a common field (discriminant) differentiates cases
+type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "rectangle"; width: number; height: number }
+  | { kind: "triangle"; base: number; height: number };
+
+function area(shape: Shape): number {
+  switch (shape.kind) {
+    case "circle":    return Math.PI * shape.radius ** 2;
+    case "rectangle": return shape.width * shape.height;
+    case "triangle":  return 0.5 * shape.base * shape.height;
+  }
+  // TypeScript knows the switch is exhaustive — no default needed
+}
+```
+
+Discriminated unions are the TypeScript equivalent of algebraic data types. They make switch statements exhaustive and type-safe.
+
+## Generics
+
+**Generics** let you write functions and classes that work with any type while still being type-safe.
+
+```typescript
+// Without generics: returns any — loses type info
+function first(arr: any[]): any { return arr[0]; }
+
+// With generics: preserves the type
+function first<T>(arr: T[]): T | undefined { return arr[0]; }
+
+const n = first([1, 2, 3]);     // TypeScript knows n is number | undefined
+const s = first(["a", "b"]);    // TypeScript knows s is string | undefined
+
+// Generic constraints — T must have certain properties
+function getLength<T extends { length: number }>(val: T): number {
+  return val.length;
+}
+getLength("hello");   // ✅ strings have .length
+getLength([1, 2, 3]); // ✅ arrays have .length
+getLength(42);        // ❌ numbers don't have .length
+
+// Generic interfaces
+interface Repository<T> {
+  findById(id: number): Promise<T | null>;
+  findAll(): Promise<T[]>;
+  save(entity: T): Promise<T>;
+  delete(id: number): Promise<void>;
+}
+
+// Usage
+interface User { id: number; name: string; }
+class UserRepository implements Repository<User> {
+  async findById(id: number): Promise<User | null> { /* ... */ }
+  async findAll(): Promise<User[]> { /* ... */ }
+  async save(user: User): Promise<User> { /* ... */ }
+  async delete(id: number): Promise<void> { /* ... */ }
+}
+```
+
+## Utility Types
+
+TypeScript ships built-in generic types for common transformations:
+
+```typescript
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  password: string;
+}
+
+// Partial<T> — makes all properties optional (great for update payloads)
+type UserUpdate = Partial<User>;
+// { id?: number; name?: string; email?: string; password?: string }
+
+// Required<T> — opposite: makes all required
+type StrictUser = Required<Partial<User>>;
+
+// Readonly<T> — prevents mutation
+const user: Readonly<User> = { id: 1, name: "Alice", email: "a@a.com", password: "x" };
+user.name = "Bob";  // ❌ Cannot assign to 'name' because it is a read-only property
+
+// Pick<T, K> — select specific properties
+type UserPreview = Pick<User, "id" | "name">;
+// { id: number; name: string }
+
+// Omit<T, K> — exclude specific properties
+type PublicUser = Omit<User, "password">;
+// { id: number; name: string; email: string }
+
+// Record<K, V> — object with keys of type K and values of type V
+type PageViews = Record<string, number>;
+const views: PageViews = { home: 100, about: 50 };
+
+// ReturnType<T> — extract return type of a function
+function createUser() { return { id: 1, name: "Alice" }; }
+type CreatedUser = ReturnType<typeof createUser>;  // { id: number; name: string }
+
+// Parameters<T> — extract parameter types of a function
+type CreateParams = Parameters<typeof createUser>;  // []
+```
+
+## Type Guards & Narrowing
+
+TypeScript **narrows** types based on conditional checks:
+
+```typescript
+// typeof — for primitives
+function process(val: string | number) {
+  if (typeof val === "string") {
+    val.toUpperCase();  // TS knows it's string here
+  } else {
+    val.toFixed(2);     // TS knows it's number here
+  }
+}
+
+// instanceof — for class instances
+function formatError(err: Error | string) {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return err;
+}
+
+// in — check if property exists
+type Dog = { bark: () => void };
+type Cat = { meow: () => void };
+function makeSound(animal: Dog | Cat) {
+  if ("bark" in animal) animal.bark();
+  else animal.meow();
+}
+
+// Custom type guards — function that returns a type predicate
+function isUser(val: unknown): val is User {
+  return typeof val === "object" && val !== null && "id" in val && "name" in val;
+}
+
+const data: unknown = JSON.parse(response);
+if (isUser(data)) {
+  console.log(data.name);  // ✅ TypeScript trusts isUser's return type
+}
+```
+
+## Enums
+
+```typescript
+// Numeric enum (values are 0, 1, 2...)
+enum Direction { North, South, East, West }
+const dir: Direction = Direction.North;  // 0
+
+// String enum (recommended — values are meaningful in logs/debugging)
+enum Status {
+  Active   = "ACTIVE",
+  Inactive = "INACTIVE",
+  Pending  = "PENDING",
+}
+const status: Status = Status.Active;  // "ACTIVE"
+
+// Const enum (erased at compile time — just numeric literals in output)
+const enum Flags { Read = 1, Write = 2, Execute = 4 }
+```
+
+**Prefer string enums** for readability. Or use `as const` objects instead:
+
+```typescript
+const STATUS = { Active: "ACTIVE", Inactive: "INACTIVE" } as const;
+type Status = typeof STATUS[keyof typeof STATUS];  // "ACTIVE" | "INACTIVE"
+```
+
+## TypeScript with React
+
+```typescript
+// Props typing
+interface ButtonProps {
+  label: string;
+  onClick: () => void;
+  variant?: "primary" | "secondary";
+  disabled?: boolean;
+  children?: React.ReactNode;
+}
+
+const Button: React.FC<ButtonProps> = ({ label, onClick, variant = "primary", disabled = false }) => (
+  <button className={`btn btn-${variant}`} onClick={onClick} disabled={disabled}>
+    {label}
+  </button>
+);
+
+// useState with type
+const [users, setUsers] = React.useState<User[]>([]);
+const [loading, setLoading] = React.useState<boolean>(false);
+
+// useRef with type
+const inputRef = React.useRef<HTMLInputElement>(null);
+```
+
+## Common Interview Questions
+
+<QA q="What's the difference between `interface` and `type` in TypeScript?">
+
+Both define type shapes. Key differences:
+- **Interfaces** can be merged (re-declaring the same name merges them) — useful when augmenting library types. They can only describe object shapes.
+- **Type aliases** can define unions, intersections, primitives, tuples — more flexible. They cannot be merged.
+
+For object types, both are largely interchangeable. The common convention is: interface for public API shapes and class contracts, type for unions, utility types, and computed types.
+
+</QA>
+
+<QA q="Explain generics and when to use them.">
+
+Generics are type parameters that let functions, classes, and interfaces work with any type while preserving type information. Use them when you have logic that works identically across types — data structures (Stack<T>), repositories (Repository<T>), utility functions (first<T>). Without generics, you'd return `any` and lose type safety downstream. The constraint syntax `T extends Something` lets you require certain properties on the generic type.
+
+</QA>
+
+<QA q="What is the difference between `any` and `unknown`?">
+
+Both can hold any value. The difference is how TypeScript treats them afterward:
+- `any` — TypeScript trusts you and disables type checking. You can call any method, access any property. It spreads the type unsafety.
+- `unknown` — you must narrow the type (via `typeof`, `instanceof`, or a type guard) before doing anything with it. It's the type-safe alternative.
+
+Use `unknown` when you genuinely don't know the type (API responses, user input, `JSON.parse`). Avoid `any` except when migrating JavaScript code.
+
+</QA>
+
+<QA q="What are discriminated unions and why are they powerful?">
+
+A discriminated union is a union type where each member has a common literal property (the discriminant) that TypeScript uses to narrow the type. They make exhaustive pattern matching possible — if you add a new case to the union, TypeScript will flag every switch statement that doesn't handle it. This is how you get compile-time safety on conditionals that branch on types, which is essential for state machines, action reducers, and API response types.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Type a `Stack<T>` class with `push(item: T)`, `pop(): T | undefined`, `peek(): T | undefined`, and `isEmpty(): boolean`.
+2. **Generics**: Implement a typed `groupBy<T, K>(items: T[], keyFn: (item: T) => K): Map<K, T[]>` utility.
+3. **Utility Types**: Given a `UserForm` interface with all required fields, derive `UserFormDraft = Partial<UserForm>` and `UserFormReadonly = Readonly<UserForm>`. Use them in a form component.
+4. **Discriminated Unions**: Model an API response type: `Success<T>` with data, `Loading`, and `Error` with message. Write a `renderState<T>(state: ApiState<T>): string` function that's exhaustive.
+
+Next: [React](/frontend/react) — building component-based UIs.

@@ -1,0 +1,404 @@
+---
+title: "Next.js"
+summary: "React for production — the App Router, server components, SSR vs SSG vs ISR, API routes, and how to deploy a full-stack Next.js app."
+order: 5
+difficulty: "Intermediate"
+tags: ["nextjs", "react", "ssr", "ssg", "app-router", "server-components"]
+---
+
+## What is Next.js?
+
+**Next.js** is a React framework built by Vercel that adds:
+- **Routing** — file-system based, no configuration
+- **Rendering strategies** — SSR, SSG, ISR, client-side
+- **Full-stack** — API routes co-located with frontend code
+- **Performance** — automatic code splitting, image optimization, font loading
+- **Deployment** — production-ready from day one
+
+```
+Analogy: React is a powerful engine; Next.js is the complete car —
+engine + chassis + steering + safety features, ready to drive.
+```
+
+React alone gives you components. You still need a router, a build system, API handling, and rendering strategy. Next.js makes all of these decisions for you — sensibly.
+
+---
+
+## App Router vs Pages Router
+
+Next.js 13+ introduced the **App Router** (the current default). The older **Pages Router** still exists and works, but new projects should use App Router.
+
+```
+src/
+  app/                    ← App Router (new)
+    layout.tsx            ← Root layout (shared UI wrapper)
+    page.tsx              ← Home route "/"
+    about/
+      page.tsx            ← "/about" route
+    blog/
+      [slug]/
+        page.tsx          ← "/blog/:slug" dynamic route
+    api/
+      users/
+        route.ts          ← API endpoint "/api/users"
+```
+
+Every file named `page.tsx` becomes a route. Every `layout.tsx` wraps its children.
+
+## Rendering Strategies
+
+The core decision in Next.js: **when** is this page's HTML generated?
+
+```
+┌─────────────────┬──────────────────┬────────────────────────────────────┐
+│ Strategy        │ HTML generated   │ Best for                           │
+├─────────────────┼──────────────────┼────────────────────────────────────┤
+│ SSG             │ At build time    │ Blogs, docs, marketing pages       │
+│ ISR             │ On demand, cache │ Product pages, large catalogs      │
+│ SSR             │ Per request      │ Dashboards, personalized content   │
+│ Client-side     │ In the browser   │ Interactive widgets, private data  │
+└─────────────────┴──────────────────┴────────────────────────────────────┘
+```
+
+### Server Components (Default in App Router)
+
+Every component in the App Router is a **Server Component** by default — it runs only on the server, never in the browser. Benefits:
+- Access databases, file system, secrets directly — no API layer needed
+- Smaller bundle (zero JS sent for the component)
+- Faster first load (HTML streamed from server)
+
+```tsx
+// app/users/page.tsx — Server Component (no "use client" directive)
+// Runs on the server. Can use fetch, database, fs — never in the browser.
+
+interface User { id: number; name: string; email: string; }
+
+async function getUsers(): Promise<User[]> {
+  const res = await fetch("https://api.example.com/users", {
+    next: { revalidate: 60 }  // ISR: revalidate every 60 seconds
+  });
+  if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+export default async function UsersPage() {
+  const users = await getUsers();  // await directly in the component!
+
+  return (
+    <main>
+      <h1>Users</h1>
+      <ul>
+        {users.map(user => (
+          <li key={user.id}>
+            <strong>{user.name}</strong> — {user.email}
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+### Client Components — Interactive UI
+
+Add `"use client"` at the top when you need browser APIs, event handlers, or hooks:
+
+```tsx
+// components/SearchBox.tsx
+"use client";
+
+import { useState } from "react";
+
+export function SearchBox({ onSearch }: { onSearch: (q: string) => void }) {
+  const [query, setQuery] = useState("");
+
+  return (
+    <input
+      value={query}
+      onChange={e => setQuery(e.target.value)}
+      onKeyDown={e => e.key === "Enter" && onSearch(query)}
+      placeholder="Search..."
+    />
+  );
+}
+```
+
+**Composing both**: Server Components can render Client Components as children. Client Components cannot directly render Server Components (pass them as props/children instead).
+
+```tsx
+// app/page.tsx (Server Component)
+import { SearchBox } from "@/components/SearchBox";
+import { UserList } from "@/components/UserList";
+
+export default function Home() {
+  return (
+    <div>
+      <SearchBox onSearch={/* ... */} />   {/* Client Component */}
+      <UserList />                          {/* Server Component */}
+    </div>
+  );
+}
+```
+
+## The Layout System
+
+Layouts wrap route segments and persist across navigations:
+
+```tsx
+// app/layout.tsx — Root layout, wraps every page
+import { Inter } from "next/font/google";
+import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata = {
+  title: { default: "PrepDeck", template: "%s | PrepDeck" },
+  description: "The ultimate FAANG prep platform",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <nav>/* Navigation */</nav>
+        <main>{children}</main>
+        <footer>/* Footer */</footer>
+      </body>
+    </html>
+  );
+}
+
+// app/dashboard/layout.tsx — nested layout for /dashboard/*
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="dashboard">
+      <Sidebar />
+      <div className="content">{children}</div>
+    </div>
+  );
+}
+```
+
+## Dynamic Routes
+
+```tsx
+// app/blog/[slug]/page.tsx
+interface Props { params: { slug: string } }
+
+export default async function BlogPost({ params }: Props) {
+  const post = await getPost(params.slug);
+  if (!post) notFound();   // renders the nearest not-found.tsx
+  return <article>{post.content}</article>;
+}
+
+// Generate static paths at build time (SSG)
+export async function generateStaticParams() {
+  const posts = await getAllPosts();
+  return posts.map(post => ({ slug: post.slug }));
+}
+
+// SEO metadata per page
+export async function generateMetadata({ params }: Props) {
+  const post = await getPost(params.slug);
+  return {
+    title: post?.title,
+    description: post?.excerpt,
+    openGraph: { title: post?.title, images: [post?.coverImage] },
+  };
+}
+```
+
+Catch-all routes: `[...slug]` matches `/a`, `/a/b`, `/a/b/c`. Optional: `[[...slug]]`.
+
+## API Routes
+
+API routes turn Next.js into a full-stack framework:
+
+```typescript
+// app/api/users/route.ts
+import { NextRequest, NextResponse } from "next/server";
+
+// GET /api/users
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const page = Number(searchParams.get("page") ?? 1);
+
+  const users = await db.user.findMany({
+    skip: (page - 1) * 20,
+    take: 20,
+    select: { id: true, name: true, email: true },
+  });
+
+  return NextResponse.json({ users, page });
+}
+
+// POST /api/users
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+
+  // Validate input
+  if (!body.name || !body.email) {
+    return NextResponse.json({ error: "Name and email required" }, { status: 400 });
+  }
+
+  const user = await db.user.create({ data: body });
+  return NextResponse.json(user, { status: 201 });
+}
+
+// app/api/users/[id]/route.ts
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const user = await db.user.findUnique({ where: { id: Number(params.id) } });
+  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(user);
+}
+```
+
+## Middleware
+
+Middleware runs before every request — authentication, redirects, A/B testing, geolocation:
+
+```typescript
+// middleware.ts (root of project)
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function middleware(request: NextRequest) {
+  const token = request.cookies.get("auth-token")?.value;
+
+  // Protect /dashboard routes
+  if (request.nextUrl.pathname.startsWith("/dashboard")) {
+    if (!token) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/dashboard/:path*", "/api/admin/:path*"],
+};
+```
+
+## Image Optimization
+
+The `next/image` component automatically:
+- Converts to WebP/AVIF
+- Lazy loads
+- Prevents layout shift (reserves space)
+- Generates responsive sizes
+
+```tsx
+import Image from "next/image";
+
+// Local image (TypeScript knows width/height from import)
+import heroImage from "@/public/hero.jpg";
+<Image src={heroImage} alt="Hero" priority />
+
+// Remote image (must configure domain in next.config.ts)
+<Image
+  src="https://example.com/user.jpg"
+  alt="User avatar"
+  width={64}
+  height={64}
+  className="rounded-full"
+/>
+```
+
+## Data Fetching Patterns
+
+```tsx
+// 1. Server Component fetch — simplest
+async function Page() {
+  const data = await fetch("/api/data").then(r => r.json());
+  return <div>{data.value}</div>;
+}
+
+// 2. Parallel data fetching with Promise.all
+async function Dashboard() {
+  const [user, stats, posts] = await Promise.all([
+    getUser(1),
+    getStats(),
+    getRecentPosts(),
+  ]);
+  return <DashboardView user={user} stats={stats} posts={posts} />;
+}
+
+// 3. Streaming with Suspense (show UI as data loads progressively)
+import { Suspense } from "react";
+
+export default function Page() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <Suspense fallback={<p>Loading stats...</p>}>
+        <Stats />          {/* Streams in when ready */}
+      </Suspense>
+      <Suspense fallback={<p>Loading posts...</p>}>
+        <RecentPosts />    {/* Streams in independently */}
+      </Suspense>
+    </div>
+  );
+}
+```
+
+## Error Handling
+
+```tsx
+// app/error.tsx — catches errors in its segment (must be Client Component)
+"use client";
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <div>
+      <h2>Something went wrong!</h2>
+      <p>{error.message}</p>
+      <button onClick={reset}>Try again</button>
+    </div>
+  );
+}
+
+// app/not-found.tsx
+export default function NotFound() {
+  return <h2>404 — Page Not Found</h2>;
+}
+```
+
+## Common Interview Questions
+
+<QA q="What's the difference between SSR, SSG, and ISR in Next.js?">
+
+- **SSG (Static Site Generation)**: HTML generated at build time, served from CDN. Fastest, but stale until next deployment. Best for content that doesn't change often.
+- **SSR (Server-Side Rendering)**: HTML generated on each request. Always fresh, but adds server latency per request. Best for personalized or real-time data.
+- **ISR (Incremental Static Regeneration)**: SSG with a revalidation window. Serves cached HTML, regenerates it in the background after a set time (`revalidate: 60`). Best of both: CDN speed + periodic freshness.
+
+In the App Router, you control this per-fetch with `cache: 'no-store'` (SSR), `next: { revalidate: N }` (ISR), or `force-cache` / no option (SSG).
+
+</QA>
+
+<QA q="What are Server Components and how do they differ from Client Components?">
+
+Server Components run exclusively on the server — they can access databases, read files, and use secrets directly without an API layer, and they send zero JavaScript to the browser. They cannot use browser APIs, hooks, or event handlers. Client Components (marked with `"use client"`) are interactive — they use hooks, event handlers, and browser APIs. They're hydrated in the browser. Server Components are the default in the App Router; they can render Client Components, but not the reverse.
+
+</QA>
+
+<QA q="How does Next.js handle SEO?">
+
+Next.js supports SEO through: (1) Server-rendered HTML (search engines get real content, not a blank JS shell), (2) the `metadata` export for title, description, OpenGraph, canonical URLs per page/layout, (3) `generateMetadata` for dynamic per-route metadata, (4) the `sitemap.ts` and `robots.ts` conventions for automatic sitemap/robots generation, and (5) `next/image` for optimized images with proper `alt` text. These together make Next.js applications highly indexable.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Create a blog with a home page listing posts (SSG from a JSON file) and dynamic `/blog/[slug]` pages for each post.
+2. **API Routes**: Build a `/api/todos` endpoint with GET (list), POST (create), and DELETE (by id). Persist to an in-memory array.
+3. **Auth**: Add cookie-based authentication — a `/api/login` route that sets a cookie, and middleware that protects `/dashboard/*` routes.
+4. **Full-stack**: Build a notes app — Server Component fetches notes from a DB (SQLite + Prisma), a Client Component form creates new notes via a Server Action (no API route needed).
+
+This section covers Level 8 — Frontend Development. Next: [Databases](/databases/sql-fundamentals) for Level 9.
