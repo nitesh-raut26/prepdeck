@@ -1,0 +1,263 @@
+---
+title: "String Algorithms"
+summary: "Finding patterns in text fast: rolling hashes and Rabin-Karp, KMP's failure function demystified, and when to just call the library."
+order: 20
+difficulty: "Advanced pattern"
+tags: ["strings", "kmp", "rabin-karp", "hashing", "pattern-matching"]
+---
+
+## The problem: find a needle in a haystack
+
+**Pattern matching** — does pattern `p` (length m) occur in text `t`
+(length n)? — is `"l".indexOf`, `in`, Ctrl-F, grep, plagiarism
+detection and DNA search. The naive approach tries every starting
+position and compares:
+
+```python
+def naive_find(t, p):
+    for i in range(len(t) - len(p) + 1):     # every start position
+        if t[i:i+len(p)] == p:               # compare m characters
+            return i
+    return -1
+```
+
+That's **O(n·m)** worst case — fine for everyday strings, painful at
+scale, and built on pure waste: after matching `"aaaab"` almost to the
+end and failing, it restarts from scratch one position over, *forgetting
+everything it just learned*. Both classic algorithms below are schemes
+for **never forgetting**.
+
+Calibration up front: these appear in interviews **occasionally** and
+at senior/competitive levels — far less often than
+[two pointers](/dsa/two-pointers) or [DP](/dsa/dp-patterns). The
+realistic goals: rolling hashes you can *use* (they generalize beyond
+strings), KMP's *idea* you can explain (deriving it live is rare), and
+the judgment to say "in production I'd call the library."
+
+## Rolling hash & Rabin-Karp — compare numbers, not strings
+
+Comparing two m-character windows costs O(m). Comparing two *numbers*
+costs O(1). So: [hash](/dsa/hash-tables) the pattern once, hash each
+text window, and only compare characters when the hashes match.
+
+The trick that makes it fast is the **rolling** hash: treat the window
+as a number in base B, and when the window slides one position, update
+the hash in O(1) instead of recomputing —
+
+```
+window "abc" → hash = a·B² + b·B + c          (everything mod a large prime M)
+
+slide to "bcd":
+   subtract a·B²       (drop the old left char)
+   multiply by B       (shift everything up)
+   add d               (bring in the new right char)
+```
+
+```python
+def rabin_karp(t, p):
+    n, m = len(t), len(p)
+    B, M = 256, (1 << 61) - 1                  # base, big prime modulus
+    if m > n: return -1
+
+    ph = th = 0
+    for i in range(m):                          # initial hashes, O(m)
+        ph = (ph * B + ord(p[i])) % M
+        th = (th * B + ord(t[i])) % M
+    power = pow(B, m - 1, M)                    # B^(m-1), for removals
+
+    for i in range(n - m + 1):
+        if ph == th and t[i:i+m] == p:          # verify on hash hit!
+            return i
+        if i + m < n:                           # roll the window
+            th = ((th - ord(t[i]) * power) * B + ord(t[i+m])) % M
+    return -1
+```
+
+Average **O(n + m)**; the character-comparison on hash hits guards
+against **collisions** (two different windows, same hash — rare with a
+big prime, but possible; skipping the verify step is the classic bug).
+
+Why this one earns its place even if you never search text:
+
+- **Many patterns at once** — hash all patterns into a set; one scan of
+  the text checks every window against all of them (the naive approach
+  multiplies by the number of patterns). This is how plagiarism
+  detectors and antivirus scanners work.
+- **The rolling idea generalizes** — it's a
+  [sliding window](/dsa/sliding-window) over *any* incremental
+  computation: rolling checksums in rsync (sync only changed file
+  blocks), chunking in backup systems and
+  [git's packfiles](/devops/ci-cd), duplicate-detection over data
+  streams. Saying "rolling hash" in a system-design room is often more
+  valuable than in a coding round.
+
+## KMP — never re-read the text
+
+**Knuth-Morris-Pratt** achieves guaranteed **O(n + m)** with zero
+hashing, via one observation: when a match fails partway, *the
+characters you already matched are known* — so you know exactly how far
+the pattern could shift without skipping a possible match.
+
+The precomputation: for each prefix of the *pattern*, the **failure
+function** `f[i]` = the length of the longest proper prefix of
+`p[:i+1]` that is also its suffix:
+
+```
+pattern:  a  b  a  b  c
+f:        0  0  1  2  0
+
+f[3] = 2 because "abab"’s longest prefix-that-is-also-suffix is "ab" (length 2)
+```
+
+Why *that* quantity: if you've matched `"abab"` and the next character
+fails, the text you just consumed *ends with* `"abab"` — and since its
+suffix `"ab"` equals the pattern's prefix `"ab"`, the pattern can jump
+to state 2 (as if `"ab"` were already matched) **without moving
+backward in the text**. The text pointer only ever advances → O(n)
+scanning; building `f` is O(m) by the same logic applied to the pattern
+against itself.
+
+```python
+def kmp_find(t, p):
+    # build failure table
+    f, k = [0] * len(p), 0
+    for i in range(1, len(p)):
+        while k and p[i] != p[k]:
+            k = f[k - 1]                  # fall back through shorter borders
+        if p[i] == p[k]:
+            k += 1
+        f[i] = k
+
+    # scan the text — the SAME loop shape
+    k = 0
+    for i, ch in enumerate(t):
+        while k and ch != p[k]:
+            k = f[k - 1]
+        if ch == p[k]:
+            k += 1
+        if k == len(p):
+            return i - k + 1              # full match ends here
+    return -1
+```
+
+The mental model that survives interviews: **KMP is a tiny state
+machine** — the state is "how many pattern characters currently
+match," each text character either advances the state or follows
+fallback arrows (the failure function), and the text is read exactly
+once, never backward. That sentence, plus the `"abab"` example, is the
+expected depth; reciting the table-building loop from memory is not.
+
+Two names to recognize, not implement: the **Z-algorithm** (computes,
+for each position, the length of the longest substring starting there
+that matches the string's own prefix — an alternative O(n) toolkit with
+the same applications), and **Aho-Corasick** (KMP generalized to many
+patterns simultaneously by building the failure links over a
+[trie](/dsa/tries) — the industrial-strength multi-pattern matcher).
+
+## Where the failure function sneaks into interviews
+
+The table itself answers questions, no searching involved — these are
+the *actual* KMP interview appearances:
+
+- **Shortest Palindrome** (LC 214) — longest palindromic prefix via the
+  failure function of `s + "#" + reverse(s)`.
+- **Repeated Substring Pattern** (LC 459) — `s` is a repetition iff
+  `n % (n − f[n−1]) == 0` with `f[n−1] > 0`; the failure function
+  exposes the period of the string.
+- **Longest happy prefix** (LC 1392) — literally "compute f[n−1]."
+
+## Common mistakes
+
+- **Rabin-Karp without the verification compare** — a hash collision
+  returns a phantom match; with adversarial input this is exploitable
+  ([hash flooding's cousin](/dsa/hash-tables)). Verify on hit, or use
+  double hashing.
+- **Modulus/overflow sloppiness** — in Java/C++ the rolling hash must
+  consciously use `long` and careful mod arithmetic; Python's big ints
+  hide the issue and then the same code fails in another language.
+- **Hand-rolling in production** — `str.find`, `indexOf`,
+  `std::search` are optimized (often SIMD-accelerated) and correct.
+  These algorithms are for *understanding* and for the cases libraries
+  don't cover (streams, many patterns, your own equality notion).
+- **Reaching for KMP when n is small** — naive matching's O(n·m) with
+  tiny constants beats clever algorithms below thousands of
+  characters. State the crossover, then write the simple thing.
+- **Confusing substring problems with subsequence problems** —
+  "substring" = contiguous → this page + [sliding
+  window](/dsa/sliding-window); "subsequence" = gaps allowed →
+  [DP](/dsa/dp-patterns). Misfiling wastes ten minutes.
+
+## Interview perspective
+
+<QA q="How does Rabin-Karp achieve average O(n+m), and what's its worst case?">
+
+It replaces the O(m) window-vs-pattern comparison with an O(1) hash
+comparison, using a rolling hash: the window's hash updates in constant
+time as it slides (subtract the departing character's contribution,
+multiply by the base, add the arriving character, all mod a large
+prime). One O(m) pass hashes the pattern, one O(n) pass rolls across
+the text → O(n+m) when hash hits are rare. On a hash match you must
+verify with a real character comparison, since distinct windows can
+collide; the worst case — adversarial input causing constant collisions
+(or a pathological pattern like all-a's matching everywhere) — degrades
+to O(n·m). Mitigations: large random prime modulus, double hashing.
+Its superpower over KMP: multi-pattern search (hash-set of patterns,
+one scan) and the rolling idea's reuse in rsync-style chunking and
+stream dedup.
+
+</QA>
+
+<QA q="Explain KMP's failure function to someone who's never seen it — what does it store and why does that make the search linear?">
+
+For every prefix of the pattern, it stores the length of the longest
+proper prefix that is also a suffix of that prefix — the pattern's
+self-overlap structure. Why that's the magic quantity: when a mismatch
+occurs after matching k characters, the text just consumed ends with
+those k pattern characters; the longest prefix-suffix of length f tells
+you the pattern can be slid so that its first f characters align with
+the end of what's already matched — the largest safe shift that can't
+skip a match. So instead of moving the text pointer back, you drop the
+match-state from k to f and continue. The text pointer only ever moves
+forward, each character is examined O(1) amortized times, giving
+O(n + m) guaranteed. Compact framing: KMP compiles the pattern into a
+state machine; the failure function is its fallback edges.
+
+</QA>
+
+<QA q="You're scanning a 10 GB log stream for 50,000 known malicious signatures. Which algorithm family, and why not the others?">
+
+Aho-Corasick: build a trie of all 50,000 patterns with KMP-style
+failure links (one-time cost proportional to total pattern length),
+then scan the stream once — each input character advances the
+automaton, reporting every pattern that ends at that position;
+O(stream + matches), independent of the number of patterns. Naive or
+single-pattern KMP would scan once *per pattern* (50,000 passes — dead
+on arrival). Rabin-Karp with a hash set of pattern hashes is the
+honorable mention — viable when all patterns share one length, awkward
+across 50,000 varied lengths (one rolling window per distinct length).
+Also worth saying: this is streaming, so the
+[file-handling rule](/programming/file-handling) applies — constant
+memory, never load the 10 GB. This exact shape (IDS/antivirus/content
+filtering) is why Aho-Corasick is the one multi-pattern name worth
+knowing.
+
+</QA>
+
+## Practice
+
+1. **Build Rabin-Karp** from this page; test on a text where naive
+   matching is visibly slow (`"a"*10**6` searching `"a"*10**3 + "b"`),
+   and time both.
+2. **Failure-function reps:** compute f by hand for `"aabaaab"` and
+   `"abcabcab"`, then verify with the code. (Hand-computing two tables
+   teaches more than reading ten explanations.)
+3. **The canon:** Implement strStr (LC 28 — any method, then KMP);
+   Repeated Substring Pattern (LC 459) via the period trick — and prove
+   the trick to yourself on `"abab"` and `"aba"`.
+4. **Generalize the roll:** use a rolling hash to find the longest
+   substring that appears at least twice (binary search the length +
+   hash-set of window hashes — a beautiful
+   [binary-search-on-answer](/dsa/binary-search) combo).
+
+That completes the Level 3 pattern arc. On to applying everything:
+the [problem bank](/dsa/problem-bank) and [Blind 75](/dsa/blind-75).

@@ -1,0 +1,264 @@
+---
+title: "How Code Runs"
+summary: "From `int a = 5` to electricity: compilers vs interpreters, virtual machines, processes and threads, and the stack vs the heap — the machine model every engineer carries."
+order: 8
+difficulty: "Level 0"
+tags: ["basics", "compiler", "process", "thread", "memory", "stack-heap"]
+---
+
+## The missing link
+
+[How Computers Work](/basics/how-computers-work) told you a CPU executes
+billions of tiny instructions. [Level 1](/programming/choosing-a-language)
+will have you writing code in human-friendly languages. This page is the
+bridge between them — *what actually happens* between you typing
+`int a = 5;` and electrons doing your bidding. Every later concept
+(recursion, performance, threads, why Python is "slow") rests on this
+mental model.
+
+## From source code to machine code
+
+A CPU understands only **machine code** — raw numbers encoding tiny
+operations ("copy this to register 3", "add registers 1 and 2"). Nobody
+writes that by hand anymore. So every language needs a **translator**, and
+there are two grand strategies:
+
+### Compilers — translate everything first
+
+A **compiler** reads your *entire* program and translates it into a
+machine-code file (an **executable**) *before* anything runs:
+
+```
+your_code.cpp  →  [ compiler ]  →  program.exe  →  run it (no compiler needed)
+   (text)          translates        (machine          runs at full
+                   ALL of it          code)            hardware speed
+```
+
+Analogy: translating a whole book before publishing. Slow to prepare,
+but readers (the CPU) then read at full speed in their native language —
+and the translator isn't needed at reading time. This is **C++**'s model:
+maximum speed, and you can hand anyone the executable.
+
+The compiler also *checks* the whole book first — type errors, missing
+declarations — which is why compiled languages catch a whole class of
+bugs before the program ever runs
+([static typing](/programming/choosing-a-language)).
+
+### Interpreters — translate while running
+
+An **interpreter** is a program that reads your source code and executes
+it on the fly, statement by statement:
+
+```
+your_code.py  →  [ interpreter, running NOW ]  →  effects happen directly
+   (text)          reads a line, does the thing,
+                   reads the next line...
+```
+
+Analogy: a live human interpreter at a conference — no preparation, the
+talk starts instantly, but everything flows through the middleman, so
+it's slower per sentence. This is **Python**'s model: type, run, see
+results immediately — at the cost of the interpreter's overhead on every
+single operation (a big part of why Python is 10–100× slower than C++
+for raw computation).
+
+### Virtual machines — the hybrid
+
+**Java** does both. The compiler translates source into **bytecode** —
+machine code for a CPU that *doesn't physically exist*. A program called
+the **JVM (Java Virtual Machine)** then *pretends to be that CPU*: it
+reads bytecode and executes it, while secretly compiling the
+frequently-run parts into *real* machine code as it goes (**JIT** —
+just-in-time compilation).
+
+```
+Code.java → [compiler] → Code.class (bytecode) → [JVM on Windows] ─┐
+                              same file!       → [JVM on Mac]     ─┼─ identical
+                                               → [JVM on Linux]   ─┘   behavior
+```
+
+Why bother with the fictional CPU? **Portability** — the same bytecode
+runs anywhere a JVM exists ("write once, run anywhere"), and after JIT
+warm-up it runs near compiled speed. A **runtime**, by the way, is the
+umbrella word for "everything that supports your program while it runs" —
+the JVM is a runtime; Python's interpreter is a runtime; even C++ has a
+small one (it handles program startup and memory requests).
+
+## What is a process? What is a thread?
+
+Double-click a program (or run `python app.py`) and the
+[operating system](/basics/how-computers-work) creates a **process**:
+a running instance of the program, with its **own private memory**.
+Chrome, Spotify and your Python script are separate processes; the OS
+guarantees none can read or scribble over another's memory. Run the same
+program twice → two processes, two separate memories.
+
+A **thread** is an execution lane *inside* a process. Every process
+starts with one thread — one worker walking through the instructions.
+A process can start more threads, and they all **share the same memory**:
+
+```
+PROCESS (one program running, one private memory space)
+├── thread 1:  walking through instructions...
+├── thread 2:  walking through OTHER instructions, same memory
+└── thread 3:  ...
+```
+
+- Processes = separate houses (isolation; talking requires "mail" —
+  pipes, sockets).
+- Threads = roommates in one house (instant sharing of everything — and
+  therefore the ability to trip over each other; two threads modifying
+  one variable simultaneously is the **race condition**, the bug family
+  behind [the double-booking problem](/fundamentals/concurrency)).
+
+This is also where multi-core CPUs cash in: 8 cores can genuinely run 8
+threads *at the same instant*. With more threads than cores, the OS
+**schedules** — slicing CPU time so fast everything appears simultaneous
+([the OS's job](/basics/how-computers-work), now with vocabulary).
+
+## Stack vs heap — where your data lives
+
+When a process starts, its memory is organized into regions. Two matter
+for the rest of your life as an engineer:
+
+```
+PROCESS MEMORY
+├── CODE      the program's instructions (read-only)
+├── STACK     function calls & their local variables   ← fast, automatic, small
+│               grows/shrinks as functions are called/return
+└── HEAP      data created on demand at runtime        ← big, flexible, managed
+                lists, objects, anything that outlives a function
+```
+
+**The stack** is the [call stack you met with functions](/programming/functions):
+each function call pushes a **frame** holding its local variables; each
+return pops it. Allocation is instant (move one pointer) and cleanup is
+automatic (the frame vanishes on return). The costs: it's small
+(megabytes — recurse too deep and it overflows: the literal
+**stack overflow**), and data dies with its function.
+
+**The heap** is the big open warehouse for everything else: data whose
+size isn't known upfront, or that must outlive the function that created
+it — every Python list, Java object, C++ `new`. Allocation is slower
+(find a free slot in the warehouse), and *someone* must clean up:
+
+- **C++:** the programmer — manual `delete`. Forget = **memory leak**
+  (warehouse fills with garbage); free too early and use it = crash or
+  security hole. Power and peril ([Level 1's framing](/programming/choosing-a-language)).
+- **Java/Python:** a **garbage collector (GC)** — part of the runtime
+  that periodically finds unreachable data and frees it. Safe and
+  automatic, at the cost of CPU time and occasional pauses.
+
+## The payoff: what `int a = 5;` actually does
+
+Walk it end to end, in C++ (the most transparent case):
+
+1. **Compile time:** the compiler sees the declaration, decides `a` is a
+   4-byte integer, and reserves a 4-byte slot *in the current function's
+   stack frame* — say, "12 bytes below the frame's base." No memory
+   moves yet; it's a plan.
+2. **Run time, the function is called:** a stack frame is pushed —
+   the stack pointer slides down enough bytes for all locals at once
+   (allocation = one subtraction; this is why stack allocation is
+   essentially free).
+3. **The assignment executes:** one machine instruction —
+   *"store the constant 5 into the slot at frame-base − 12"* — copies
+   the bit pattern `00000000 00000000 00000000 00000101` into those four
+   bytes of RAM ([binary](/basics/how-computers-work), now load-bearing).
+4. **The function returns:** the frame pops; `a`'s bytes are abandoned
+   (not erased — just up for reuse). This is *why* locals die at return
+   ([scope](/programming/functions), now mechanical).
+
+In Python, `a = 5` does more: the interpreter creates (or reuses) an
+**integer object on the heap** and makes the name `a` point to it — a
+[reference](/programming/variables-and-data-types). One line, two
+worlds: C++ stores 4 bytes in a stack slot; Python binds a name to a
+heap object. That difference *is* the speed gap, and you now understand
+both sides of it.
+
+## Common beginner mistakes
+
+- **"Compiled languages are always better."** Compilation buys speed and
+  early error-catching; interpretation buys instant iteration and
+  flexibility. Tools, not ranks — and JITs blur the line anyway.
+- **Confusing process and program.** A program is the file on disk; a
+  process is one *running instance* — Chrome (program) vs your 47 Chrome
+  processes (look at your task manager).
+- **"Threads make everything faster."** Threads help when work can
+  genuinely proceed in parallel (or overlaps waiting); they add
+  race-condition risk always. More threads than cores doing pure CPU
+  work = overhead, not speedup.
+- **Hearing "stack overflow" as just a website.** It's a real crash:
+  too-deep recursion exhausting the stack region —
+  [recursion](/programming/recursion) shows you how close it always is.
+- **Thinking the GC means "memory doesn't matter."** Leaks still exist in
+  Java/Python (hold a reference forever — say, an ever-growing list —
+  and the GC *can't* free it).
+
+## Interview perspective
+
+<QA q="Compiler vs interpreter vs JIT — explain the trade-offs like an engineer, not a textbook.">
+
+A compiler translates the whole program to machine code ahead of time:
+maximum runtime speed, whole-program error checking, but a build step and
+per-platform binaries. An interpreter executes source directly: zero
+build step, instant iteration, perfect portability — paying interpreter
+overhead on every operation. JIT compilation is the hybrid that powers
+the JVM and modern JavaScript engines: start interpreting (fast startup),
+*measure* which code runs hot, compile exactly that to machine code at
+runtime — often beating naive ahead-of-time compilation because the JIT
+optimizes using live information (actual types seen, actual branches
+taken). Practical mapping: C++ ahead-of-time for systems; Python
+interpreted for iteration speed with hot paths delegated to compiled
+libraries; Java/JS JIT for long-running servers where warm-up amortizes.
+
+</QA>
+
+<QA q="Process vs thread — definitions, trade-offs, and when you'd choose multiple processes over multiple threads.">
+
+A process is a running program instance with isolated memory; a thread is
+an execution stream within a process sharing that memory. Threads are
+cheaper to create and communicate instantly through shared data — which
+is also their danger: shared mutable state means race conditions and
+locks. Processes are heavier and communicate explicitly (pipes, sockets),
+but a crash or corruption in one can't touch another. Choose multiple
+processes for fault isolation (browser tabs, [Node cluster
+mode](/backend/nodejs) — one render crash shouldn't kill the browser),
+for bypassing per-process limits (Python's GIL), or for security
+sandboxing; choose threads for fine-grained parallel work on shared data
+(a server handling requests against one in-memory cache). Real systems
+mix: N processes × M threads.
+
+</QA>
+
+<QA q="Stack vs heap — why are stack allocations 'free' and what actually limits each?">
+
+Stack allocation is pointer arithmetic: entering a function moves the
+stack pointer once to reserve all its locals; returning moves it back —
+no searching, no bookkeeping, automatic cleanup, and great cache locality
+since frames are contiguous. Its limits: size (typically single-digit
+megabytes — deep recursion overflows it) and lifetime (data dies with
+its frame). Heap allocation must find and track a suitably-sized free
+block among constantly churning allocations — slower, fragmentable, and
+requiring cleanup: manual in C++ (leaks/use-after-free when wrong),
+garbage-collected in Java/Python (safe, but costs CPU and pause time).
+Rule of thumb engineers actually use: small, fixed-size,
+function-lifetime data → stack; everything dynamic or outliving its
+creator → heap — and in GC languages the compiler/runtime makes most of
+that call for you.
+
+</QA>
+
+## Check yourself
+
+1. Trace `int a = 5;` from compile time to the function's return, naming
+   where the 4 bytes live and when they're reclaimed.
+2. Open your task manager: find one *program* running as multiple
+   *processes*, and explain why its developers chose that.
+3. Python and C++ both run `x = x + 1` in a loop a billion times. Using
+   this page's vocabulary (interpreter, machine code, heap objects),
+   explain the speed difference *mechanically*.
+
+This completes the machine model. It pays off immediately in
+[Recursion](/programming/recursion) (the stack, live) and
+[Memory Management](/programming/memory-management) (the heap, managed).

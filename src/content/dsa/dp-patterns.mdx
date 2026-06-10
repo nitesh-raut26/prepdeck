@@ -1,0 +1,291 @@
+---
+title: "DP Patterns in Depth"
+summary: "The six families that cover ~90% of DP interviews — knapsack, LIS, LCS, grid, interval and bitmask — each with its state, recurrence and tell."
+order: 19
+difficulty: "Core pattern"
+tags: ["dynamic-programming", "knapsack", "lis", "lcs", "patterns"]
+---
+
+## How to use this page
+
+The [DP fundamentals doc](/dsa/dynamic-programming) gave you the
+machinery: spot overlapping subproblems, define a state, write the
+recurrence, memoize or tabulate. This page is the field guide — the
+**six families** that nearly every interview DP belongs to. For each:
+the *tell* (how to recognize it), the *state* (what dp[i] means — always
+say this sentence first), the recurrence, and the canonical problems.
+
+Learning DP by family beats learning it by problem: 20 memorized
+solutions evaporate under pressure; 6 recurrences you can re-derive
+don't.
+
+## Family 1 — 0/1 Knapsack (take it or leave it)
+
+**Tell:** items with values/weights/costs, a capacity or budget, each
+item usable **once**, maximize/minimize or "can you hit exactly X?"
+
+**State:** `dp[i][w]` = best value using the first `i` items within
+capacity `w`. **The choice at every cell is binary: take item i, or
+don't.**
+
+```python
+def knapsack(values, weights, cap):
+    n = len(values)
+    dp = [[0] * (cap + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        for w in range(cap + 1):
+            dp[i][w] = dp[i-1][w]                       # skip item i
+            if weights[i-1] <= w:                       # take item i (once!)
+                dp[i][w] = max(dp[i][w],
+                               dp[i-1][w - weights[i-1]] + values[i-1])
+    return dp[n][cap]
+```
+
+The family's disguises are the point — none of these say "knapsack":
+
+- **Partition Equal Subset Sum** — "can you split into two equal
+  halves?" = knapsack with capacity total/2, values irrelevant.
+- **Target Sum** (+/− signs) — algebra reduces it to subset-sum.
+- **Coin Change** — the **unbounded** variant: items reusable. The
+  *entire* code change is iterating `w` with `dp[i][...]` referring to
+  the same row (or, in 1-D form: loop coins outer, amounts inner). Know
+  precisely why [greedy fails here](/dsa/greedy) — it's the classic
+  pairing question.
+
+Space note worth saying aloud: row `i` only reads row `i−1`, so 2-D
+collapses to 1-D — iterate `w` *downward* for 0/1 (so you don't reuse
+item i twice), *upward* for unbounded. That direction detail is a
+favorite probe.
+
+## Family 2 — LIS (longest increasing subsequence)
+
+**Tell:** "longest/best subsequence with an ordering condition" —
+increasing numbers, envelopes that nest, chains that link.
+
+**State:** `dp[i]` = length of the best increasing subsequence **ending
+exactly at i**. The "ending at" is the trick — it makes the recurrence
+local:
+
+```python
+def lis(nums):                          # O(n²)
+    dp = [1] * len(nums)
+    for i in range(len(nums)):
+        for j in range(i):              # any earlier, smaller element
+            if nums[j] < nums[i]:       # ...can precede nums[i]
+                dp[i] = max(dp[i], dp[j] + 1)
+    return max(dp)
+```
+
+The O(n log n) upgrade — *patience sorting*: keep `tails[k]` = the
+smallest possible tail of any increasing subsequence of length k+1; for
+each number, [binary-search](/dsa/binary-search) its slot and replace.
+Worth knowing as a concept + library call; deriving it live is rarely
+demanded.
+
+Disguises: **Russian Doll Envelopes** (sort by width asc, height *desc*
+for ties — the desc breaks same-width chains; then LIS on heights),
+**longest divisible subset**, **maximum chain of pairs**.
+
+## Family 3 — LCS (two sequences aligned)
+
+**Tell:** **two** strings/arrays compared — longest common anything,
+edit distance, "make these equal with minimum operations."
+
+**State:** `dp[i][j]` = answer for *prefixes* `a[:i]` and `b[:j]`. The
+recurrence forks on whether the current characters match:
+
+```python
+def lcs(a, b):
+    dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i-1] == b[j-1]:
+                dp[i][j] = dp[i-1][j-1] + 1          # match: extend the diagonal
+            else:
+                dp[i][j] = max(dp[i-1][j],           # drop a char from a...
+                               dp[i][j-1])           # ...or from b
+    return dp[-1][-1]
+```
+
+**Edit distance** (Levenshtein) is the same grid with three transitions
+(insert/delete/replace, each cost 1) — and the family's production
+celebrity: spell-checkers, `git diff`, DNA alignment, fuzzy search
+(your ⌘K palette's cousin). Other members: shortest common
+supersequence, delete-operations-to-make-equal, longest palindromic
+*subsequence* (LCS of s and reversed s — a lovely reduction to state
+out loud).
+
+## Family 4 — Grid paths
+
+**Tell:** a 2-D grid, moving right/down (or 4-directionally with no
+cycles), count paths or optimize a path cost.
+
+**State:** `dp[r][c]` = answer arriving at cell (r, c); transition pulls
+from top and left. **Unique Paths**, **Minimum Path Sum**, obstacle
+variants — the gentlest family, and the one where bottom-up tabulation
+feels most natural. (You met the idea in
+[Level 1's nested loops](/programming/control-flow); this is it grown
+up.) Watch the edges: first row/column have only one incoming
+direction.
+
+## Family 5 — Interval DP
+
+**Tell:** the answer for a range depends on answers for *sub-ranges*,
+and the decision is "where do I split / what happens last in this
+interval?" — burst balloons, matrix-chain multiplication, palindrome
+partitioning, stone games.
+
+**State:** `dp[i][j]` = best for the interval i…j; iterate by
+**increasing interval length** so sub-intervals are ready:
+
+```python
+# Burst Balloons skeleton: dp[i][j] = max coins from bursting all in (i, j)
+for length in range(2, n + 1):
+    for i in range(0, n - length + 1):
+        j = i + length
+        for k in range(i + 1, j):            # k = the LAST balloon burst in (i,j)
+            dp[i][j] = max(dp[i][j],
+                           dp[i][k] + a[i]*a[k]*a[j] + dp[k][j])
+```
+
+The mind-bender that unlocks the family: think about the **last**
+decision in the interval, not the first — the last balloon burst, the
+outermost matrix multiplication — because *that* choice cleanly splits
+the interval into independent subproblems. O(n³) is normal here, and
+saying "interval DP, cubic, iterate by length" identifies you as
+someone who's met it before.
+
+## Family 6 — Bitmask DP (small n, subsets as states)
+
+**Tell:** **n ≤ ~20** (the constraint *is* the hint), and the state is
+"which items have I already used" — assignment problems, traveling
+salesman, minimum cost to visit all.
+
+**State:** `dp[mask]` = best answer having used exactly the set of items
+encoded in `mask`'s bits (bit i set = item i used). 2ⁿ states ×
+O(n) transitions:
+
+```python
+# Assign n tasks to n people, minimize total cost: dp over "tasks taken"
+dp = [inf] * (1 << n)
+dp[0] = 0
+for mask in range(1 << n):
+    person = bin(mask).count("1")            # next person to assign
+    for task in range(n):
+        if not mask & (1 << task):           # task still free
+            new = mask | (1 << task)
+            dp[new] = min(dp[new], dp[mask] + cost[person][task])
+```
+
+This family is where [Level 0's binary](/basics/how-computers-work)
+becomes an algorithm tool: a 20-bit integer *is* a set, `&`/`|` are
+intersection/union. Rare in product-company loops, standard in
+competitive programming and quant interviews.
+
+## The decision tree (pin this)
+
+```
+Two sequences compared?            → LCS family
+One sequence, order condition?     → LIS family
+Budget/capacity + take-or-skip?    → knapsack (once = 0/1, reuse = unbounded)
+2-D grid, directional movement?    → grid paths
+Range splitting / "last action"?   → interval DP
+n ≤ 20 and subsets matter?         → bitmask DP
+None of the above?                 → back to first principles:
+                                     define the state in one sentence
+                                     (the fundamentals doc's recipe)
+```
+
+## Common mistakes
+
+- **Skipping the state sentence.** "dp[i][w] is the best value using
+  the first i items with capacity w" — if you can't say it, the code
+  is guesswork. Interviewers listen for exactly this sentence.
+- **Wrong loop direction in 1-D knapsack** — upward iteration silently
+  converts 0/1 into unbounded. Test with one item, capacity 2× its
+  weight.
+- **LIS without "ending at i"** — defining dp[i] as "best in the first
+  i elements" breaks the recurrence; the locality comes from the
+  ending-at anchor.
+- **Interval DP by start index instead of length** — sub-intervals
+  aren't computed yet; iterate lengths outward.
+- **Forcing DP onto greedy problems** (intervals by end time!) or
+  greedy onto DP problems (0/1 knapsack by ratio) — the
+  [greedy doc's fence](/dsa/greedy) runs both ways.
+- **Memorizing 40 problems instead of 6 recurrences** — the families
+  exist because variations are infinite and tells aren't.
+
+## Interview perspective
+
+<QA q="Coin Change: why does greedy fail, which family is it, and what changes between 'minimum coins' and 'count the ways'?">
+
+Greedy fails because coin systems aren't generally canonical: with
+{1, 3, 4} and target 6, largest-first gives 4+1+1 (three coins) but
+3+3 wins — local best blocks global best, the exact structure greedy
+can't survive. It's unbounded knapsack: items (coins) reusable,
+capacity = amount. "Minimum coins" uses dp[a] = min over coins of
+dp[a−c] + 1. "Count the ways" changes two things: the combine becomes a
+*sum*, and — the subtle one — loop order now matters: coins outer /
+amounts inner counts each *combination* once; amounts outer counts
+*permutations* (1+3 and 3+1 separately). Explaining that loop-order
+distinction is the difference between knowing the answer and knowing
+the family.
+
+</QA>
+
+<QA q="You suspect a problem is DP. Give your protocol from suspicion to working code.">
+
+First confirm the signature: optimal/count over choices, with
+subproblems that overlap (a brute-force tree would re-solve states).
+Then the state sentence — one sentence, what dp[...] *means*, with the
+fewest dimensions that capture "what the future needs to know about the
+past." Then the recurrence as a case analysis over the last decision
+(take/skip, match/no-match, split point), plus base cases. Sanity-check
+by hand on the smallest nontrivial input. Implement top-down memoized
+first (closest to the recurrence, hardest to get loop-order wrong);
+convert to bottom-up only if needed (stack depth, or space optimization
+to rolling rows). Close with complexity = number of states ×
+transition cost, stated unprompted. The protocol matters because
+interviewers probe the *state definition* — it's where DP actually
+lives.
+
+</QA>
+
+<QA q="Edit distance between two strings — set up the DP and name two places it runs in production.">
+
+State: dp[i][j] = minimum operations converting a[:i] into b[:j]. Base
+cases: dp[i][0] = i (delete everything), dp[0][j] = j (insert
+everything). Transition: if the current characters match, dp[i][j] =
+dp[i−1][j−1]; otherwise 1 + min(dp[i−1][j] delete, dp[i][j−1] insert,
+dp[i−1][j−1] replace). O(nm) time; O(min(n, m)) space with a rolling
+row. Production: spell-check and search-query "did you mean" (rank
+candidate words by distance), fuzzy string matching in editors and in
+tools like fzf, diff algorithms conceptually (git uses LCS-family
+machinery to find minimal edits), and bioinformatics sequence
+alignment (Needleman–Wunsch is weighted edit distance). One follow-up
+worth pre-empting: for ranking candidates you usually bound the
+distance and bail early — the full table is overkill when distance > 2
+means "irrelevant."
+
+</QA>
+
+## Practice
+
+1. **One per family, from memory:** Partition Equal Subset Sum
+   (knapsack), LIS at O(n²) then via `bisect` (LIS), Edit Distance
+   (LCS), Minimum Path Sum (grid), Palindrome Partitioning II or Burst
+   Balloons (interval), and the task-assignment sketch above (bitmask).
+2. **The state drill:** for five random DP problems from the
+   [problem bank](/dsa/problem-bank), write *only* the state sentence
+   and recurrence — no code. Five minutes each. This is the highest-ROI
+   DP exercise that exists.
+3. **Direction proof:** break 1-D knapsack on purpose (iterate upward),
+   find the smallest input that exposes it, fix it, and explain why in
+   one sentence.
+4. **Reduce:** show that Longest Palindromic Subsequence = LCS(s,
+   reverse(s)) — then say which family *Longest Palindromic Substring*
+   belongs to instead, and why the difference matters
+   ([hint](/dsa/blind-75): expand-around-center, not DP).
+
+Next: [String Algorithms](/dsa/string-algorithms) — pattern matching
+beyond what the naive scan can do.

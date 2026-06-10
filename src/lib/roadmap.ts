@@ -37,6 +37,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "What is an API?", doc: "basics/what-is-an-api" },
       { label: "What is a database?", doc: "basics/what-is-a-database" },
       { label: "What is the cloud?", doc: "basics/what-is-the-cloud" },
+      { label: "How code runs", doc: "basics/how-code-runs" },
     ],
   },
   {
@@ -52,6 +53,8 @@ export const ROADMAP: RoadmapLevel[] = [
       },
       { label: "Control flow", doc: "programming/control-flow" },
       { label: "Functions", doc: "programming/functions" },
+      { label: "Recursion", doc: "programming/recursion" },
+      { label: "Memory management", doc: "programming/memory-management" },
       { label: "OOP basics", doc: "programming/oop-basics" },
       { label: "Exceptions & errors", doc: "programming/exceptions" },
       { label: "Collections", doc: "programming/collections" },
@@ -73,6 +76,10 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Tries", doc: "dsa/tries" },
       { label: "Graphs", doc: "dsa/graphs-bfs-dfs" },
       { label: "Union-Find", doc: "dsa/union-find" },
+      {
+        label: "Segment & Fenwick trees",
+        doc: "dsa/segment-and-fenwick-trees",
+      },
     ],
   },
   {
@@ -88,6 +95,8 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Backtracking", doc: "dsa/backtracking" },
       { label: "Greedy", doc: "dsa/greedy" },
       { label: "Dynamic programming", doc: "dsa/dynamic-programming" },
+      { label: "DP patterns in depth", doc: "dsa/dp-patterns" },
+      { label: "String algorithms", doc: "dsa/string-algorithms" },
     ],
   },
   {
@@ -100,6 +109,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Problem bank", doc: "dsa/problem-bank" },
       { label: "Algorithms in your projects", doc: "dsa/project-algorithms" },
       { label: "Blind 75 walkthrough", doc: "dsa/blind-75" },
+      { label: "NeetCode 150 walkthrough", doc: "dsa/neetcode-150" },
       { label: "Mock-interview drills", doc: "dsa/mock-drills" },
     ],
   },
@@ -118,6 +128,12 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Elevator system", doc: "lld/elevator" },
       { label: "Splitwise", doc: "lld/splitwise" },
       { label: "BookMyShow", doc: "lld/bookmyshow" },
+      { label: "Patterns in depth (creational/structural)", doc: "lld/patterns-in-depth" },
+      { label: "Library system", doc: "lld/library" },
+      { label: "ATM", doc: "lld/atm" },
+      { label: "Notification system", doc: "lld/notification-system" },
+      { label: "Chat system (WhatsApp LLD)", doc: "lld/chat-system" },
+      { label: "Uber (LLD)", doc: "lld/uber" },
     ],
   },
   {
@@ -137,6 +153,12 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Case: realtime pricing", doc: "hld/case-realtime-pricing" },
       { label: "Design WhatsApp", doc: "hld/design-whatsapp" },
       { label: "Design Netflix", doc: "hld/design-netflix" },
+      { label: "Design Instagram", doc: "hld/design-instagram" },
+      { label: "Design YouTube", doc: "hld/design-youtube" },
+      { label: "Design Uber", doc: "hld/design-uber" },
+      { label: "Design Twitter/X", doc: "hld/design-twitter" },
+      { label: "Design Google Drive", doc: "hld/design-google-drive" },
+      { label: "Scaling journey: 100 → 1B users", doc: "hld/scaling-journey" },
     ],
   },
   {
@@ -152,6 +174,10 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "REST & GraphQL", doc: "backend/rest-and-graphql" },
       { label: "WebSockets", doc: "backend/websockets" },
       { label: "Microservices", doc: "backend/microservices" },
+      { label: "Kafka & RabbitMQ", doc: "backend/kafka" },
+      { label: "API gateway & service discovery", doc: "backend/api-gateway" },
+      { label: "Distributed locks", doc: "backend/distributed-locks" },
+      { label: "DDD & modular monoliths", doc: "backend/ddd" },
     ],
   },
   {
@@ -179,6 +205,9 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Indexing & optimization", doc: "databases/indexing" },
       { label: "Transactions & locks", doc: "databases/transactions" },
       { label: "DBMS for interviews", doc: "fundamentals/databases" },
+      { label: "MVCC", doc: "databases/mvcc" },
+      { label: "The query optimizer", doc: "databases/query-optimizer" },
+      { label: "Event sourcing & CQRS", doc: "databases/event-sourcing-cqrs" },
     ],
   },
   {
@@ -192,6 +221,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Kubernetes", doc: "devops/kubernetes" },
       { label: "CI/CD", doc: "devops/ci-cd" },
       { label: "Terraform", doc: "devops/terraform" },
+      { label: "Observability", doc: "devops/observability" },
     ],
   },
   {
@@ -201,7 +231,10 @@ export const ROADMAP: RoadmapLevel[] = [
     sections: ["aiml"],
     topics: [
       { label: "AI vs ML vs deep learning", doc: "aiml/ai-ml-dl" },
+      { label: "Math foundations", doc: "aiml/math-foundations" },
+      { label: "Classical ML", doc: "aiml/classical-ml" },
       { label: "Neural networks", doc: "aiml/neural-networks" },
+      { label: "Transformers", doc: "aiml/transformers" },
       { label: "LLMs", doc: "aiml/llms" },
       { label: "RAG", doc: "aiml/rag" },
       { label: "Agents", doc: "aiml/agents" },
@@ -221,6 +254,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Common questions", doc: "behavioral/common-questions" },
       { label: "Mock interviews", doc: "career/mock-interviews" },
       { label: "Salary negotiation", doc: "career/salary-negotiation" },
+      { label: "The engineering ladder", doc: "career/engineering-ladder" },
     ],
   },
 ];

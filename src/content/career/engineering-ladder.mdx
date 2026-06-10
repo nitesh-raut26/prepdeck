@@ -1,0 +1,245 @@
+---
+title: "The Engineering Ladder"
+summary: "SDE-1 to CTO: what actually changes at each level, the same problem seen through eight pairs of eyes, and how promotions really work."
+order: 4
+difficulty: "Career"
+tags: ["career", "engineering-ladder", "leadership", "growth"]
+---
+
+## The one idea behind every level
+
+Career ladders look like lists of titles. Underneath, exactly one
+variable changes: **the size of the problem you're trusted to own
+without supervision** — a function, a feature, a system, a team's
+architecture, an organization's technology, a company's direction.
+Skills accumulate; *scope* is what gets promoted.
+
+This page does two things: defines each level by what changes (not by
+years served), then runs **one problem through every level's eyes** —
+because seeing the same situation reframed is how the ladder actually
+makes sense.
+
+## The levels, honestly
+
+**SDE-1 / Junior (≈0–2 yrs).** Unit of ownership: a **task**. You're
+given a well-scoped ticket; success = correct, tested, reviewed code,
+delivered without someone re-explaining it twice. The skill being
+graded: *learning velocity* — turning feedback into changed behavior.
+Everything in Levels 0–4 of this roadmap is your toolbox.
+
+**SDE-2 / Mid (≈2–5 yrs).** Unit: a **feature**, end to end. The ticket
+is vaguer ("add bulk export"); you decompose it, find the edge cases,
+ask the product questions, ship it, and own its bugs. The skill:
+*independence* — your manager stops checking your work and starts
+checking your direction. This is the [LLD](/lld/oop-and-solid) level —
+modules with clean boundaries.
+
+**SDE-3 / Senior (≈5–8 yrs).** Unit: a **system**. You own the design
+docs, the [trade-offs](/hld/approach), the on-call story, the tech debt
+ledger. New here, and non-optional: **multiplying others** — reviews
+that teach, designs others can build on, unblocking juniors faster than
+you could do their work yourself. Senior is the first level where "I
+wrote great code" stops being enough — and the level most engineers
+retire at, which is fine and respectable.
+
+**Staff.** Unit: **problems spanning teams**. Nobody assigns them — you
+*find* the cross-cutting issue (three teams building three auth
+systems), articulate why it matters, and align people you don't manage
+to fix it. The work shifts to documents, prototypes that de-risk
+decisions, and meetings where the artifact is *agreement*. The
+hard-won lesson: **influence without authority** — your title compels
+no one; your written reasoning must.
+
+**Principal / Distinguished.** Unit: **the organization's technical
+direction** — bets like "we migrate to event-driven over three years"
+or "we build vs buy our ML platform." Wrong calls at this level waste
+hundreds of engineer-years, so the core skill is judgment under
+irreducible uncertainty, plus the patience to socialize a decision
+until it's everyone's idea.
+
+**Engineering Manager (the parallel track).** Not a promotion *from*
+engineering — a profession *change*: your output becomes the team's
+output. Hiring, growing people, removing obstacles, translating between
+business and engineering. The IC (individual contributor) track —
+Staff/Principal — exists precisely so that "grow in seniority" doesn't
+force "stop engineering." Know which energizes you; switching back is
+allowed and common.
+
+**CTO.** Unit: **technology as business strategy**. Should we build on
+LLMs now or wait? Is our architecture a moat or a liability? Can
+engineering deliver what sales just promised? The CTO translates
+between board language (risk, cost, opportunity) and engineering
+language (latency, debt, headcount) — both directions, losslessly.
+
+**CEO / Founder.** Technology is now one input among many — market,
+money, people, timing. The founder-engineer's classic trap is loving
+the build more than the customer; the [project
+analyses](/projects/praxivo) in this platform exist partly to train
+the other lens: *what should exist, for whom, paid for how?*
+
+## One problem, eight pairs of eyes
+
+> Production incident: checkout latency spiked; orders are dropping.
+
+- **SDE-1:** *Fix the bug.* Reproduce, bisect the deploy, find the
+  unindexed query the ORM generated, add the index, verify p99
+  recovers. ([Levels 7–9](/backend/nodejs) are this person's tools.)
+- **SDE-2:** *Fix the class of bug.* Why did this reach prod? Add the
+  missing load test, a query-time alert, a lint rule for the ORM
+  pattern. The incident closes with the system harder to hurt.
+- **SDE-3:** *Fix the system.* Checkout has no
+  [bulkhead](/backend/microservices) — one slow dependency stalls the
+  whole flow. Writes the design doc for timeouts + circuit breakers +
+  a degraded-checkout mode; runs the review; owns the rollout.
+- **Staff:** *Fix the pattern across teams.* This is the fourth
+  one-slow-dependency incident in three quarters, in three different
+  teams. Writes the org RFC: standard resilience defaults in the
+  shared service framework, paved-road observability, incident-review
+  themes feeding a platform backlog.
+- **Principal:** *Question the architecture.* The incidents cluster
+  because the monolith's checkout path has 14 synchronous
+  dependencies. Proposes the two-year decomposition strategy — or
+  argues *against* it because the migration risk exceeds the incident
+  cost. Either way, in writing, with numbers.
+- **EM:** *Fix the team conditions.* Was on-call staffed and sane? Did
+  pressure to ship skip the load test? Is one burned-out person the
+  only one who understands checkout? Runs the blameless retro; changes
+  staffing, not just software.
+- **CTO:** *Price the risk for the business.* Checkout reliability is
+  revenue reliability. Decides what the company invests: a platform
+  team? An SLA commitment to the board? This quarter's feature
+  roadmap traded against resilience work, explicitly.
+- **CEO:** *Decide what the company learns.* If reliability is now a
+  competitive differentiator, that changes positioning, hiring, and
+  what sales promises. The incident becomes strategy or it becomes
+  noise — that's a choice someone makes.
+
+Same pager alert. Eight different jobs. **That's the whole ladder in
+one incident** — and in interviews, answering one level above your
+target is exactly how you demonstrate readiness.
+
+## How promotion actually works
+
+Three mechanics nobody tells juniors:
+
+1. **You're promoted for already operating at the next level** —
+   sustained, visibly, for two-plus quarters. The promotion *confirms*
+   scope you already took; it doesn't grant it. Corollary: ask your
+   manager "what next-level work am I not yet doing?" — not "when am I
+   due?"
+2. **Invisible work doesn't exist.** The [behavioral
+   skills](/behavioral/framework) aren't interview theater — writing
+   down your impact, presenting designs, making your reasoning legible
+   *is* the senior+ job. The engineer who fixed the incident and the
+   engineer who fixed it *and wrote the RFC everyone now follows* did
+   different jobs.
+3. **Scope must be available.** A brilliant engineer on a tiny, stable
+   product has nowhere to demonstrate Staff scope; sometimes the
+   promotion move is a team change, not more effort. Recognizing this
+   honestly beats two years of frustration.
+
+And the trap at every single rung: **doing your last job harder.** The
+SDE-2 who codes faster instead of designing better; the senior who
+designs alone instead of multiplying; the new EM who out-codes their
+team. Each level requires *dropping* something you're good at — that's
+why it's hard, and why people who can't let go plateau.
+
+## Common mistakes
+
+- **Chasing titles instead of scope** — job-hopping for a "senior"
+  card without senior scope produces title-skill gaps that brutal
+  interview loops expose.
+- **Believing the ladder is linear coding skill** — past SDE-3, the
+  differentiators are judgment, writing and influence; LeetCode
+  excellence stops correlating.
+- **Treating EM as the only growth path** — the IC track is real;
+  managing humans badly because it "was the next step" hurts everyone,
+  you included.
+- **Hiding from ambiguity** — every level transition is an ambiguity
+  increase. If you only take well-defined work, you're choosing your
+  ceiling.
+- **Confusing visibility with politics** — a design doc that prevents
+  three teams from re-solving a problem isn't self-promotion; it's the
+  deliverable. Senior+ work that nobody can see didn't happen.
+- **Sprinting** — the ladder is a 20-year game. Burning out at year
+  four to make senior at year three is a catastrophically bad trade.
+
+## Interview perspective
+
+<QA q="In a senior/staff interview: 'Tell me about a time you influenced a decision outside your team.' What is this question actually measuring, and what does a strong answer contain?">
+
+It's the Staff-scope litmus test: can you create change where you have
+no authority? Strong answers contain: a cross-cutting problem *you
+identified* (not were assigned); how you built the case — data
+gathered, a written doc or prototype, trade-offs honestly stated
+including what your proposal costs; how you handled disagreement
+(listening that changed your design earns more points than winning);
+and the durable outcome (the standard adopted, the incidents that
+stopped). Weak answers stay inside "I convinced my manager" or rely on
+escalation — escalating *is* authority, not influence. Structure it as
+a [STAR story](/behavioral/stories), but the senior-specific tell is
+the *artifact*: staff influence almost always ships as a document
+others could follow without you in the room.
+
+</QA>
+
+<QA q="How should interview answers differ when targeting SDE-2 vs senior for the same system-design question?">
+
+Same architecture, different center of gravity. SDE-2 target: show you
+can decompose the feature and own it end to end — clean
+[API design](/lld/api-design), data model, the happy path plus edge
+cases, working knowledge of the building blocks
+([cache, queue, replication](/hld/scalability)). Senior target: lead
+with requirements interrogation and *trade-offs* — name two viable
+architectures, choose with reasons tied to the constraints, quantify
+([estimation](/hld/approach)), and cover the operational story:
+failure modes, monitoring, migration path, what you'd cut under
+deadline. The tell interviewers calibrate on: SDE-2 answers *the
+question asked*; senior answers also question the question ("do we
+actually need real-time here? Polling halves this design"). Practice
+both registers deliberately — and in a real loop, answer half a level
+above your target.
+
+</QA>
+
+<QA q="You've been a strong senior for three years; promotion to staff isn't happening. Diagnose like an engineer.">
+
+Three hypotheses, in testable order. (1) **Scope gap:** you're doing
+senior work excellently rather than staff work at all — check: can you
+name a cross-team problem you drove uninvited to resolution this year?
+If not, that's the work to go find (or the evidence the role isn't
+what you want). (2) **Visibility gap:** staff-shaped work happened but
+exists only in your memory — no design docs with your name, no RFCs,
+no one outside your team who'd vouch. Fix: write things down, present
+them, build the paper trail that promo committees literally require.
+(3) **Opportunity gap:** the org is too small/stable to need another
+staff engineer — no available scope, however good you are. Fix:
+change teams or companies; effort can't manufacture scope that doesn't
+exist. Ask your manager which gap it is *with examples*; a manager who
+can't name one is itself diagnostic. The meta-lesson: debug your
+career with the same hypothesis-evidence loop you'd use on
+[an incident](/backend/microservices).
+
+</QA>
+
+## Practice
+
+1. **Re-run the incident:** take a real outage or bug from your own
+   work and write its eight-level analysis like the checkout example.
+   (This is also direct prep for behavioral rounds — one story, eight
+   framings.)
+2. **Scope audit:** list your last quarter's work; label each item
+   with the level whose definition it matches. The distribution *is*
+   your current level — and the gap to the next one is now a to-do
+   list.
+3. **Write one artifact:** pick a recurring problem around you and
+   write the one-page RFC — problem, evidence, proposal, trade-offs,
+   cost of doing nothing. Whether or not it's adopted, you've
+   practiced the staff deliverable.
+4. **Calibrate your target:** before your next loop, decide which
+   level you're interviewing for and rehearse answering *half a level
+   up* — using the [mock-drill rubric](/dsa/mock-drills) plus this
+   page's register shift.
+
+This closes Level 12 — and the roadmap. The ladder above is climbed by
+doing, with the [projects](/projects/landai) as your proving ground.

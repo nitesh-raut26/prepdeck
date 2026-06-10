@@ -1,0 +1,242 @@
+---
+title: "Segment & Fenwick Trees"
+summary: "Range queries on changing data: why prefix sums break, how segment trees answer any range in O(log n), and the Fenwick tree's beautiful bit trick."
+order: 11
+difficulty: "Advanced structure"
+tags: ["segment-tree", "fenwick-tree", "range-queries", "advanced"]
+---
+
+## The problem both trees solve
+
+[Prefix sums](/dsa/arrays-and-strings) answer "sum of elements i…j" in
+O(1) — *as long as the array never changes*. One update breaks them:
+change `a[3]` and every prefix from index 3 onward is stale — O(n) to
+rebuild. So you're stuck choosing:
+
+| | Query range | Update element |
+| --- | --- | --- |
+| Plain array | O(n) — walk the range | **O(1)** |
+| Prefix sums | **O(1)** | O(n) — rebuild |
+| **Segment / Fenwick tree** | **O(log n)** | **O(log n)** |
+
+When *both* operations are frequent — live leaderboards, counting
+inversions, range-minimum over a changing series — the logarithmic
+middle ground wins. That's the entire reason these structures exist:
+**range queries interleaved with point updates.**
+
+## Segment tree — divide the array like a tournament
+
+A **segment tree** is a binary tree where each node owns an interval of
+the array and stores an *aggregate* (sum, min, max — anything
+combinable) of that interval. The root owns everything; children split
+the parent's interval in half; leaves own single elements:
+
+```
+array: [2, 5, 1, 4, 9, 3]                 node = sum of its interval
+
+                 [0..5]=24
+               /          \
+        [0..2]=8          [3..5]=16
+        /     \           /      \
+    [0..1]=7  [2]=1   [3..4]=13  [5]=3
+    /    \            /     \
+  [0]=2 [1]=5      [3]=4  [4]=9
+```
+
+**Query "sum of 1…4":** walk down, and at each node take one of three
+exits — interval fully inside the query (use its stored value, stop),
+fully outside (contribute 0, stop), or partial (recurse both children).
+Here: `[1]=5 + [2]=1 + [3..4]=13 = 19`. Because the query range
+"fragments" into at most ~2 nodes per level, the walk touches **O(log
+n)** nodes.
+
+**Update `a[4] = 6`:** change the leaf, then recompute the aggregates on
+the single root-to-leaf path above it — also **O(log n)** (here:
+`[4]`, `[3..4]`, `[3..5]`, root).
+
+The implementation everyone actually writes stores the tree in a flat
+array ([the heap trick](/dsa/heaps-and-intervals): children of `i` at
+`2i` and `2i+1`):
+
+```python
+class SegmentTree:
+    def __init__(self, a):
+        self.n = len(a)
+        self.t = [0] * (2 * self.n)
+        self.t[self.n:] = a                      # leaves sit at n..2n-1
+        for i in range(self.n - 1, 0, -1):       # build parents bottom-up
+            self.t[i] = self.t[2*i] + self.t[2*i + 1]
+
+    def update(self, i, value):                  # point update: O(log n)
+        i += self.n                              # jump to the leaf
+        self.t[i] = value
+        while i > 1:
+            i //= 2                              # climb to the root
+            self.t[i] = self.t[2*i] + self.t[2*i + 1]
+
+    def query(self, lo, hi):                     # sum of [lo, hi): O(log n)
+        s, lo, hi = 0, lo + self.n, hi + self.n
+        while lo < hi:
+            if lo & 1: s += self.t[lo]; lo += 1  # lo is a right child: take it
+            if hi & 1: hi -= 1; s += self.t[hi]  # hi is a right edge: take it
+            lo //= 2; hi //= 2                   # climb one level
+        return s
+```
+
+Swap `+` for `min`/`max`/`gcd` and the same skeleton answers
+range-minimum, range-max — the only requirement on the operation is
+**associativity** (grouping doesn't matter), because the tree combines
+partial answers in chunks.
+
+One name to know, not implement, at interview level: **lazy
+propagation** — the extension for *range* updates ("add 5 to elements
+2…900"): store pending updates at high nodes and push them down only
+when a query actually descends, keeping range-update *and* range-query
+at O(log n).
+
+## Fenwick tree (BIT) — the same power, 10 lines
+
+The **Fenwick tree** (Binary Indexed Tree) handles the most common case
+— prefix sums with point updates — in a fraction of the code, using a
+trick on the *binary representation of indices*. Each position `i` is
+responsible for a block of `lowbit(i) = i & (-i)` elements (the value of
+`i`'s lowest set bit):
+
+```
+index (1-based):  1    2    3    4    5    6    7    8
+covers:          [1] [1-2] [3] [1-4] [5] [5-6] [7] [1-8]
+lowbit:           1    2    1    4    1    2    1    8
+```
+
+A prefix sum strips lowest bits to jump between blocks; an update adds
+lowest bits to touch every block containing `i`:
+
+```python
+class Fenwick:
+    def __init__(self, n):
+        self.t = [0] * (n + 1)               # 1-based!
+
+    def update(self, i, delta):              # a[i] += delta, O(log n)
+        while i < len(self.t):
+            self.t[i] += delta
+            i += i & (-i)                    # next block that contains i
+
+    def prefix(self, i):                     # sum of a[1..i], O(log n)
+        s = 0
+        while i > 0:
+            s += self.t[i]
+            i -= i & (-i)                    # previous block
+        return s
+
+    def query(self, lo, hi):                 # sum of [lo, hi]
+        return self.prefix(hi) - self.prefix(lo - 1)
+```
+
+Choosing between them, honestly: **Fenwick** when the operation is
+sums/counts (invertible — you can subtract prefixes) — shorter, faster
+constants, harder to get wrong under pressure. **Segment tree** when you
+need min/max (not invertible: knowing min(1..8) and min(1..4) doesn't
+give min(5..8)), range updates, or anything exotic stored per node.
+
+## Where they show up
+
+- **Interview classics:** count inversions / "count of smaller elements
+  to the right" (Fenwick over values: walk right-to-left, query how
+  many smaller values already seen — turning an O(n²) count into
+  O(n log n)); range-sum-with-updates (LeetCode 307, literally this
+  page); sliding-window extremes when the window math gets exotic.
+- **Competitive programming:** these are bread and butter — if that's
+  your route, fluency is assumed.
+- **Production:** order-book analytics ("volume between price levels x
+  and y, updating per trade" — [StockVision's](/projects/stockvision)
+  domain), live leaderboards ("how many players score below X?"),
+  monitoring percentiles over rolling counters. Databases solve their
+  version of the same problem with [B-tree aggregates](/databases/indexing).
+- **Calibration:** in product-company interviews these are
+  *senior/optional* — asked occasionally, never as the opener. Master
+  the [core structures](/dsa/study-plan) first; this page is the
+  cherry, not the cake.
+
+## Common mistakes
+
+- **Reaching for a segment tree when prefix sums suffice** — no updates?
+  Precompute prefixes, O(1) queries, 3 lines. The fancy structure must
+  earn its complexity.
+- **Off-by-one soup** — half-open `[lo, hi)` vs closed `[lo, hi]`,
+  0-based array vs 1-based Fenwick. Pick conventions *out loud*, write
+  them in a comment, test with a 3-element array.
+- **Forgetting Fenwick is 1-based** — index 0 has `lowbit(0) = 0` and
+  loops forever. The `+1` shift is load-bearing.
+- **Using Fenwick for min/max** — prefix-min can't be subtracted into
+  range-min; that's segment-tree territory.
+- **Rebuilding per query in disguise** — recomputing the tree because
+  "the array changed a lot": batch updates are still O(log n) each;
+  full rebuild is O(n) — know which regime you're in.
+
+## Interview perspective
+
+<QA q="You need range-sum queries and point updates, both frequent, on a 10⁷-element array. Walk through the options and pick.">
+
+Plain array: O(1) update but O(n) query — 10⁷ work per query, dead on
+arrival at frequency. Prefix sums: O(1) query but O(n) per update —
+symmetric failure. Sqrt decomposition (block sums): O(√n) ≈ 3000 per
+op — sometimes acceptable, rarely optimal. Fenwick tree: O(log n) ≈ 23
+operations for both query and update, ~40 MB for the auxiliary array —
+the right answer, and preferred over a segment tree here because sums
+are invertible and Fenwick's constants and code size are smaller. I'd
+mention the upgrade path: if requirements later add range *updates* or
+range-min, that's the cue to move to a segment tree with lazy
+propagation. Closing the loop with "and if there were no updates at
+all, plain prefix sums win" shows the decision is principled, not
+memorized.
+
+</QA>
+
+<QA q="Why is a segment-tree range query O(log n) and not O(n)? Make the argument.">
+
+At each level of the tree, the query range can only partially overlap
+at most two nodes — its left edge and its right edge; everything
+between those edges is either fully inside (answered by one stored
+aggregate, no descent) or fully outside (pruned). So the recursion only
+stays "open" along two root-to-leaf paths, touching at most ~4 nodes
+per level across O(log n) levels. The deeper insight worth stating: any
+contiguous range decomposes into O(log n) *canonical* intervals — the
+node intervals — the same way any number decomposes into O(log n)
+powers of two; the tree just precomputes the aggregate of every
+canonical interval. (That framing also explains Fenwick: its blocks
+*are* the binary decomposition, indexed by lowest set bit.)
+
+</QA>
+
+<QA q="Count, for each element, how many smaller elements appear to its right — efficiently.">
+
+Brute force compares all pairs: O(n²). The structure insight: walk the
+array right-to-left maintaining a Fenwick tree indexed *by value*
+(coordinate-compress values to ranks 1…n first if they're large or
+arbitrary). For each element x: query prefix(rank(x) − 1) — how many
+already-seen (i.e., to-the-right) values are smaller — record it, then
+update(rank(x), +1) to insert x. Each step is O(log n), total
+O(n log n) plus the O(n log n) sort for compression. The same skeleton
+counts inversions, solves "reverse pairs," and powers
+order-statistics-over-a-stream — which is why this single pattern is
+the most common place Fenwick trees appear in real interviews.
+
+</QA>
+
+## Practice
+
+1. **Build both** from this page's code, then verify against brute
+   force on 1,000 random operations (the standard way to trust any
+   advanced structure you write).
+2. **The canon:** Range Sum Query – Mutable (LC 307) with each
+   structure; Count of Smaller Numbers After Self (LC 315) with
+   Fenwick + coordinate compression.
+3. **Swap the operation:** convert the segment tree to range-*minimum*;
+   explain in one sentence why Fenwick couldn't follow you.
+4. **Calibrate:** for your next mock, decide in advance the one
+   sentence you'd say if range-queries-with-updates appears: name the
+   structure, the complexity, and the Fenwick-vs-segment choice — then
+   move on. Fluency, not ceremony.
+
+That rounds out the data-structure toolkit. Next in the pattern arc:
+[Sorting & Searching](/dsa/sorting-and-searching).

@@ -1,0 +1,277 @@
+---
+title: "Recursion"
+summary: "Functions that call themselves: the leap of faith, base cases, the call stack made visible, and the bridge to trees, backtracking and DP."
+order: 5
+difficulty: "Level 1"
+tags: ["programming", "recursion", "call-stack"]
+---
+
+## The idea that feels like cheating
+
+**Recursion** is a function calling *itself* to solve a smaller copy of
+its own problem. First contact universally feels illegal — "how can it
+use itself before it's finished?" — and then it becomes one of the most
+natural tools you own. Entire areas of the roadmap
+([trees](/dsa/trees-and-bsts), [backtracking](/dsa/backtracking),
+[DP](/dsa/dynamic-programming)) are recursion wearing different hats, so
+this page earns its keep many times over.
+
+Start with the classic, factorial (`5! = 5 × 4 × 3 × 2 × 1`):
+
+```python
+def factorial(n):
+    if n <= 1:               # BASE CASE: smallest problem, answered directly
+        return 1
+    return n * factorial(n - 1)   # RECURSIVE CASE: shrink, delegate, combine
+```
+
+```java
+static long factorial(int n) {
+    if (n <= 1) return 1;
+    return n * factorial(n - 1);
+}
+```
+
+```cpp
+long long factorial(int n) {
+    if (n <= 1) return 1;
+    return n * factorial(n - 1);
+}
+```
+
+Every correct recursive function has exactly these two parts:
+
+1. **Base case** — an input so small you can answer *without recursing*.
+   This is the exit; without one (or with one you never reach), the
+   function calls itself forever.
+2. **Recursive case** — do a small piece of work, delegate a *strictly
+   smaller* version of the problem to yourself, and combine the result.
+
+The analogy that sticks: you're in a cinema queue and want to know your
+position. Instead of counting everyone, ask the person in front: "what's
+your position?" They ask the person in front of them… until someone at
+the front says "I'm first" (*base case*). Answers then flow backwards,
+each person adding 1 (*combine*). Nobody counted the whole queue; each
+person did O(1) work.
+
+## The leap of faith (how to actually think recursively)
+
+The mental trick that separates people who "get" recursion: **when
+writing the recursive case, assume the recursive call already works.**
+Don't trace into it. Just ask three questions:
+
+1. *What's the smallest input? Answer it directly.* → base case
+2. *If a magic helper could solve the problem for `n-1` (or the left
+   half, or the rest of the list), how would I build the answer for
+   `n`?* → recursive case
+3. *Does every call move toward the base case?* → termination
+
+Trying to mentally simulate five levels of nesting is how beginners
+drown. Trusting the abstraction — [the same move as calling any
+function](/programming/functions) — is how everyone else swims.
+
+Worked from scratch with the three questions — sum a list:
+
+```python
+def total(items):
+    if not items:                       # Q1: empty list sums to 0
+        return 0
+    return items[0] + total(items[1:])  # Q2: first item + (sum of the rest)
+                                        # Q3: list shrinks by 1 each call ✓
+```
+
+## What the machine does (the stack, live)
+
+[How Code Runs](/basics/how-code-runs) gave you the call stack; recursion
+is where you *watch it work*. Each call pushes a new frame **with its own
+`n`** — that's the entire mechanism, no magic:
+
+```
+factorial(4)                     the stack, growing then unwinding:
+
+CALL  f(4) → needs f(3)          │ f(1)=1 │ ← base case answers
+CALL  f(3) → needs f(2)          │ f(2)   │ ← 2 × 1 = 2
+CALL  f(2) → needs f(1)          │ f(3)   │ ← 3 × 2 = 6
+CALL  f(1) → BASE CASE: 1        │ f(4)   │ ← 4 × 6 = 24
+                                 └────────┘
+RETURN back up, multiplying as the frames pop
+```
+
+Two consequences you'll meet for real:
+
+- **Depth costs memory.** Each frame occupies stack space, so recursion
+  depth n uses O(n) memory *even if the function allocates nothing* —
+  and past ~10⁴–10⁵ frames you hit the **stack overflow** (Python guards
+  it with `RecursionError` at ~1000 by default). A million-element list
+  through `total()` above will crash; a loop won't.
+- **Any recursion can become iteration.** A loop with an explicit
+  [stack data structure](/dsa/stacks-and-queues) replicates exactly what
+  the call stack was doing — the standard escape hatch when depth is
+  dangerous. (Conversely: every loop can be recursion. They're equally
+  powerful; they differ in *clarity* per problem.)
+
+## When recursion is the right tool
+
+The honest rule: **recursion shines when the problem is self-similar** —
+when the structure itself nests:
+
+- **Trees & nested data** — a folder contains folders; a
+  [JSON object](/basics/what-is-an-api) contains objects; an HTML page
+  nests elements. A recursive function mirrors the shape perfectly,
+  while the iterative version needs a manual stack and reads worse:
+
+```python
+def total_size(folder):
+    size = sum(f.size for f in folder.files)
+    for sub in folder.subfolders:
+        size += total_size(sub)        # same problem, one level down
+    return size
+```
+
+- **Divide and conquer** — [merge sort](/dsa/sorting-and-searching) and
+  [binary search](/dsa/binary-search): split, solve halves, combine.
+- **"All possibilities" exploration** — permutations, subsets, maze
+  paths: [backtracking](/dsa/backtracking) is recursion + undo.
+- **Problems defined recursively** — Fibonacci, grammars, expression
+  parsing: the *definition* is recursive; the code just transcribes it.
+
+For linear "do this n times" work (sum a flat list, count items), a loop
+is simpler, faster, and can't overflow — `factorial` and `total` above
+are teaching vehicles, not production code. Knowing *which* shape you're
+holding is the actual skill.
+
+## The efficiency trap (and the bridge to DP)
+
+Transcribing Fibonacci's definition directly produces a famous disaster:
+
+```python
+def fib(n):                 # fib(5) calls fib(4) and fib(3);
+    if n <= 1:              # fib(4) calls fib(3) AGAIN and fib(2)...
+        return n
+    return fib(n - 1) + fib(n - 2)
+```
+
+The call tree re-solves the same subproblems exponentially many times —
+`fib(50)` makes ~40 *billion* calls. The fix — remember answers you've
+already computed (**memoization**) — collapses it to 50:
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=None)        # cache results by argument
+def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+```
+
+That one decorator is your first step into
+[dynamic programming](/dsa/dynamic-programming): *recursion +
+remembering = DP*. Park the thought; Level 3 builds on it.
+
+## Common beginner mistakes
+
+- **No base case / unreachable base case** — `factorial(-3)` above
+  recurses forever (well, until the stack dies). Define behavior for
+  *every* path toward the bottom, including hostile inputs.
+- **Not shrinking the problem** — `return total(items)` instead of
+  `items[1:]`: same input, infinite recursion. Every call must move
+  measurably toward the base case.
+- **Tracing instead of trusting** — trying to hold five frames in your
+  head. Verify the three questions, then believe.
+- **Forgetting each frame has its own variables** — `n` in `f(4)` and
+  `n` in `f(3)` are different slots in different frames
+  ([scope](/programming/functions), mechanically). Mutating *shared*
+  data across frames (passing a list and modifying it) is where
+  surprises live — that's deliberate in backtracking, accidental
+  everywhere else.
+- **Recursion for flat iteration in production** — a recursive
+  list-walker that works in tests and stack-overflows on the
+  million-row file ([streaming](/programming/file-handling) + loops
+  exist for that).
+- **Python-specific:** `items[1:]` copies the list every call — elegant
+  for learning, O(n²) in total; pass an index instead for real work.
+
+## Interview perspective
+
+<QA q="What happens in memory during recursion, and why does deep recursion crash?">
+
+Each call pushes a stack frame holding that call's parameters, locals
+and return address. Recursive calls stack frames until the base case,
+then unwind as each returns — so depth d costs O(d) stack memory
+independent of any heap allocation. The stack region is small and fixed
+(single-digit megabytes typically; Python additionally enforces a
+~1000-frame default limit), so linear recursion over large inputs
+exhausts it: a stack overflow / RecursionError. Mitigations: convert to
+iteration with an explicit stack (mechanical and always possible),
+bound the depth by problem structure (balanced-tree recursion is only
+O(log n) deep — usually fine), or in some languages rely on tail-call
+optimization — which Python and Java deliberately don't provide, a
+worthwhile detail to volunteer.
+
+</QA>
+
+<QA q="Walk me through designing a recursive solution from a blank page — what's your protocol?">
+
+Three questions, in order. First: what's the smallest/simplest instance,
+and what's its direct answer? That's the base case — I write it first.
+Second: assuming a working solver for a strictly smaller instance (the
+leap of faith — I do not trace into it), how do I combine its answer
+with one unit of local work to solve the full instance? That's the
+recursive case. Third: does every recursive call provably move toward
+the base case (smaller n, shorter list, narrower range)? That's
+termination. Then I sanity-check the two smallest inputs by hand, state
+the complexity (calls × work per call — and whether subproblems repeat,
+which signals memoization), and only then code. Interviewers reward
+hearing the protocol; it shows the solution wasn't memorized.
+
+</QA>
+
+<QA q="Naive recursive Fibonacci is exponential — explain precisely why, and what memoization changes.">
+
+Each call branches into two more (n−1, n−2), forming a binary call tree
+of depth n, and crucially the *same* subproblems recur in different
+branches — fib(n−2) is computed independently inside both fib(n−1) and
+fib(n)'s direct call, and so on combinatorially: ~φⁿ ≈ 1.6ⁿ total calls.
+The work isn't inherent to the problem — there are only n *distinct*
+subproblems — it's pure recomputation. Memoization caches each result
+by argument on first computation; every later request is an O(1)
+lookup, collapsing the tree to n calls: O(n) time, O(n) space (cache +
+stack). That gap — exponential paths over a linear number of distinct
+states — is the exact signature dynamic programming exploits, top-down
+(memo) or bottom-up (table).
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Write `countdown(n)` printing n…1 recursively; then flip one line to
+   print 1…n and explain *why* the position of `print` relative to the
+   recursive call is the whole difference.
+2. `sum_digits(n)` (e.g., 482 → 14) — three questions, then code, in two
+   languages.
+
+**Intermediate**
+
+3. `reverse_string(s)` recursively; then state its hidden cost in Python
+   and write the index-based version.
+4. Walk a real nested structure: count every file in a folder tree
+   (`os.scandir`), or every value in arbitrarily-nested JSON. Notice the
+   code is shorter than the iterative version — this is recursion's home
+   turf.
+5. Implement binary search recursively, then iteratively. Which reads
+   better? (Opinions differ — have one, with a reason.)
+
+**Advanced**
+
+6. `fib` three ways: naive (time it at n=35), memoized, and with an
+   explicit loop + two variables. Measure all three; write one sentence
+   per variant on time *and* space.
+7. Print all subsets of `[1,2,3]` — your first
+   [backtracking](/dsa/backtracking) problem, three pages early. Hint:
+   each element is either in or out; recurse both ways.
+
+Next: [Memory Management](/programming/memory-management) — the heap
+half of the story: who cleans up, and what it costs.

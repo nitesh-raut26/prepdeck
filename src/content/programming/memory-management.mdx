@@ -1,0 +1,237 @@
+---
+title: "Memory Management"
+summary: "Who frees the memory: manual C++ vs garbage-collected Java/Python, leaks in every language, RAII, and what GC pauses cost in production."
+order: 6
+difficulty: "Level 1"
+tags: ["programming", "memory", "garbage-collection", "raii"]
+---
+
+## The problem, stated plainly
+
+[How Code Runs](/basics/how-code-runs) split a process's memory into the
+**stack** (automatic — frames vanish when functions return) and the
+**heap** (everything dynamic: your lists, objects, strings). The stack
+cleans itself. The heap raises the central question of this page:
+
+> Memory you allocate on the heap stays allocated until *someone* frees
+> it. **Who?** And what happens when they get it wrong?
+
+Hotel analogy: the heap is a hotel, allocations are check-ins. Stack
+guests auto-checkout when their function ends. Heap guests need an
+explicit checkout — and a hotel where guests never leave eventually has
+no rooms (**out of memory**), while a hotel that re-rents an occupied
+room has two guests fighting over one bed (**use-after-free**). Every
+language picks one of three strategies for running this hotel.
+
+## Strategy 1 — Manual: the programmer frees (C)
+
+The raw deal, shown in C++'s C-flavored core:
+
+```cpp
+int* data = new int[1000];   // check in: reserve 4000 bytes on the heap
+process(data);
+delete[] data;               // check out: YOU must remember this line
+data = nullptr;              // and forget the old key
+```
+
+Get it wrong and you meet the three classic bugs — worth knowing by name
+because they've caused decades of crashes and security holes:
+
+- **Memory leak** — never call `delete`. The block stays reserved
+  forever; a server leaking 1 KB per request dies in hours. Symptom:
+  memory climbs steadily until the process is killed.
+- **Use-after-free** — `delete`, then use the pointer anyway. The block
+  may now hold *something else's data*; you read garbage or corrupt a
+  stranger. The #1 source of serious security vulnerabilities in
+  C/C++ software ([security](/fundamentals/security) builds on this).
+- **Double free** — `delete` twice. Corrupts the allocator's own
+  bookkeeping; crashes at some *later, unrelated* line — the worst kind
+  of bug to hunt.
+
+## Strategy 2 — RAII: tie cleanup to scope (modern C++)
+
+C++'s actual answer isn't "be careful" — it's **RAII** (Resource
+Acquisition Is Initialization), the idea you met with
+[files](/programming/file-handling): wrap the resource in an object
+whose **destructor** (a method that runs automatically when the object
+leaves scope) does the freeing. Cleanup stops being a thing you
+remember and becomes a thing the *language guarantees*:
+
+```cpp
+void work() {
+    std::vector<int> data(1000);          // heap memory, owned by the vector
+    auto user = std::make_unique<User>(); // heap object, owned by the pointer
+    process(data, *user);
+}   // ← scope ends: BOTH free automatically, even if process() threw
+```
+
+`std::unique_ptr` ("exactly one owner; frees when the owner dies") and
+`std::shared_ptr` ("freed when the *last* of several owners dies",
+via reference counting) are the **smart pointers** — and "in modern C++
+I use smart pointers and containers; raw `new`/`delete` only at library
+boundaries" is precisely the sentence interviews want. Rust took this
+idea and made the compiler *enforce* it (the borrow checker) — same
+philosophy, mechanically verified.
+
+## Strategy 3 — Garbage collection: the runtime frees (Java, Python, JS, Go)
+
+A **garbage collector (GC)** is part of the
+[runtime](/basics/how-code-runs) that periodically finds heap data your
+program *can no longer reach* and frees it for you:
+
+```
+The reachability rule:
+
+  roots (stack variables, globals) ──→ objectA ──→ objectB     reachable: KEEP
+                                       objectC ──→ objectD     unreachable: FREE
+  (nothing points to objectC anymore)
+
+If you can't reach it by following references from live variables,
+you can never use it again — so it's garbage, by definition.
+```
+
+How collectors find it, in one breath each:
+
+- **Reference counting** (Python's first line of defense): every object
+  carries a count of references to it; hitting zero frees it instantly.
+  Cheap and prompt — but two objects referencing *each other* never hit
+  zero (a **cycle**), so Python runs a cycle-detector as backup.
+- **Mark and sweep / generational** (Java, modern everything):
+  periodically start from the roots, *mark* everything reachable,
+  *sweep* the rest. Generational refinement: most objects die young
+  (request data, temporaries), so collect the "nursery" of new objects
+  often and cheaply, the old generation rarely.
+
+The price: the GC consumes CPU, and some designs **pause** your program
+briefly while collecting. For most apps the pauses are invisible
+(modern Java collectors target under a millisecond); for a trading
+system or a game rendering at 16 ms/frame, a surprise 100 ms pause is an
+outage — which is why latency-critical systems either tune GC
+carefully, pre-allocate and reuse objects, or use C++/Rust. This single
+trade-off — *safety and productivity vs control and predictability* —
+is [the language-choice story](/programming/choosing-a-language) told
+at the memory level.
+
+## Leaks in GC languages (yes, really)
+
+The GC frees what's *unreachable* — it cannot free what you're still
+(pointlessly) holding. The classic, in any language:
+
+```python
+cache = {}                      # module-level, lives forever
+
+def handle_request(req):
+    result = expensive(req)
+    cache[req.id] = result      # grows forever: every request, forever
+    return result
+```
+
+Reachable (the dict holds it) → never collected → memory climbs for
+days → process dies. GC-language leaks are *logical* leaks: long-lived
+collections that only grow, listeners never unregistered, closures
+capturing big objects. Fixes: bounded caches with eviction (you built
+one — the [LRU cache](/lld/lru-cache)), TTLs, weak references (a
+reference the GC is allowed to ignore — made for caches). Finding them:
+heap profilers / heap dumps — "take two snapshots ten minutes apart,
+diff what grew" is the universal production recipe.
+
+## What this looks like per language (the summary table)
+
+| | C++ | Java | Python |
+| --- | --- | --- | --- |
+| Who frees the heap | you / RAII | GC (generational) | refcount + cycle GC |
+| Classic failure | leak, use-after-free | logical leaks, GC pauses | logical leaks, surprise cycles |
+| The idiom | smart pointers, containers | bounded caches, profilers | `with` blocks, weak refs |
+| You'd pick it when | latency must be *predictable* | huge codebases, safety | iteration speed |
+
+## Common beginner mistakes
+
+- **"GC means I can't leak."** You can — by staying reachable. The
+  ever-growing dict above is the most common production memory bug in
+  Java and Python.
+- **Manual `close()`/`delete` calls on the happy path only** — an
+  exception skips them. Scope-tied cleanup (`with`,
+  try-with-resources, RAII) [exists precisely for this](/programming/exceptions).
+- **Holding references "just in case"** — every long-lived collection
+  is a contract: *something must eventually remove entries*. Write the
+  eviction story when you write the insert.
+- **Premature GC fear** — beginners hearing "pauses" and avoiding
+  Java/Python for a CRUD app. Modern GCs are superb; the trade-off only
+  bites in genuinely latency-critical paths.
+- **In C++: mixing owners** — two raw pointers both `delete`-ing, or a
+  `unique_ptr` plus a raw `delete`. Decide ownership *first*; the smart
+  pointer type documents the decision.
+
+## Interview perspective
+
+<QA q="How does a garbage collector decide what to free, and what do 'generational' collectors exploit?">
+
+Reachability: starting from the roots — stack variables, globals,
+registers — follow every reference; whatever is never reached can never
+be used again and is freed. Mark-and-sweep does exactly that in two
+phases. Generational collectors add the empirical *weak generational
+hypothesis*: most objects die young (per-request temporaries), so the
+heap splits into a small nursery collected frequently and cheaply
+(surviving objects get promoted) and an old generation collected
+rarely. This concentrates effort where garbage actually is, shrinking
+pause times dramatically. Python is the contrast worth volunteering:
+reference counting frees most objects *immediately* at refcount-zero,
+with a cycle collector as backup for self-referencing structures that
+counting alone can never free.
+
+</QA>
+
+<QA q="Your Java service's memory climbs for three days then OOMs. The GC is running. Diagnose.">
+
+The GC running but memory climbing means the objects are *reachable* —
+a logical leak, not a GC failure. Process: confirm with GC logs/metrics
+that old-generation usage ratchets up after every full collection
+(sawtooth with rising floor = leak; flat floor = just load). Take a heap
+dump near-OOM (or two snapshots an hour apart) and diff dominator trees:
+the leak announces itself as one collection owning gigabytes — typically
+an unbounded cache or map keyed by something unbounded (session id,
+request id), a listener list never pruned, or a ThreadLocal in a thread
+pool (threads live forever, so their locals do too — a classic). Fix
+the contract, not the symptom: bounded cache with LRU/TTL eviction,
+weak references where appropriate, unregister listeners. Raising the
+heap size just reschedules the outage — say that sentence; it's the
+senior signal.
+
+</QA>
+
+<QA q="Why do latency-critical systems (trading, games) often avoid GC languages, and what do teams do when they can't?">
+
+GC pauses are *unpredictable* tail latency: the collector may stop or
+slow the world at a moment it chooses, and a 50 ms pause inside a 1 ms
+trading decision or a 16 ms frame budget is a failure regardless of
+average performance. C++/Rust trade away safety/convenience for
+deterministic deallocation — memory is freed exactly where the code
+says. When teams must stay on a GC runtime, the playbook: minimize
+allocation on the hot path (object pools, reuse, primitive arrays
+instead of object graphs), pick/tune low-pause collectors (modern Java
+collectors like ZGC target sub-millisecond pauses), and isolate the
+latency-critical core into its own process or a native component.
+Meta-point worth closing on: this is the same engineering move as
+[caching or sharding](/hld/scalability) — buy predictability by
+spending design effort where the percentiles matter.
+
+</QA>
+
+## Practice
+
+1. **See a leak:** write the unbounded-cache server sketch in Python,
+   loop a million "requests," and watch RSS memory grow (Task Manager /
+   `top`). Then cap it with an LRU (`functools.lru_cache` or your
+   [own](/lld/lru-cache)) and watch it plateau.
+2. **C++ ownership reps:** write a function returning a heap-allocated
+   object three ways — raw pointer, `unique_ptr`, by value — and write
+   one sentence on who frees what, when, in each.
+3. **Refcount detective (Python):** `import sys; sys.getrefcount(x)` —
+   create an object, alias it, put it in a list, delete names, and
+   predict the count at each step before printing.
+4. **Connect:** explain in three sentences why
+   [Node's event loop](/backend/nodejs) plus GC made it a fine choice
+   for API gateways but a risky one for a game server's physics loop.
+
+Next: [OOP Basics](/programming/oop-basics) — organizing all this
+well-managed memory into objects.
