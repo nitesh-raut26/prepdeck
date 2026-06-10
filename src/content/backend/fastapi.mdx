@@ -1,0 +1,223 @@
+---
+title: "Python FastAPI"
+summary: "Type hints as the framework: Pydantic validation, async endpoints, dependency injection, and free OpenAPI docs — plus where Django fits."
+order: 3
+difficulty: "Level 7"
+tags: ["backend", "python", "fastapi", "pydantic"]
+---
+
+## What FastAPI is
+
+**FastAPI** (2018) is Python's modern API framework, built on one elegant
+bet: **Python's type hints can drive everything**. Declare your types
+once and the framework derives request parsing, validation, error
+responses, serialization, *and* interactive documentation from them.
+It rode the AI wave to ubiquity — it's the default way Python models get
+an HTTP face ([Level 11](/aiml/llms) serves models through exactly this) —
+and it's what [StockVision](/projects/stockvision) runs.
+
+## Types as the framework
+
+```python
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+
+class CreateOrder(BaseModel):                  # Pydantic model = the schema
+    item: str = Field(min_length=1)
+    quantity: int = Field(gt=0, le=100)        # validation IS the declaration
+    coupon: str | None = None                  # optional, explicitly
+
+class OrderOut(BaseModel):
+    id: int
+    item: str
+    quantity: int
+    status: str
+
+@app.post("/api/orders", response_model=OrderOut, status_code=201)
+async def create_order(req: CreateOrder,                  # body: parsed+validated
+                       user: User = Depends(current_user)):  # ← DI, see below
+    order = await orders.create(user, req)                # async I/O
+    return order                                          # filtered to OrderOut
+
+@app.get("/api/orders/{order_id}", response_model=OrderOut)
+async def get_order(order_id: int,                        # path param: typed
+                    user: User = Depends(current_user)):
+    order = await orders.find(order_id, user)
+    if order is None:
+        raise HTTPException(404, "order not found")
+    return order
+```
+
+What the type hints bought, with zero extra code:
+
+- **Parsing + validation** — a request with `quantity: "lots"` or
+  `quantity: 0` is rejected with a structured **422** explaining exactly
+  which field failed. Your handler *never sees invalid data* — the
+  [validate-at-the-boundary rule](/basics/frontend-and-backend) becomes
+  free instead of disciplined.
+- **Response filtering** — `response_model=OrderOut` strips anything not
+  declared (no accidental `password_hash` leaks — the
+  [DTO-at-the-boundary rule](/backend/spring-boot), enforced by types).
+- **Live documentation** — visit `/docs`: an auto-generated, *clickable*
+  OpenAPI UI for every endpoint, always in sync because it's derived from
+  the code. Teams stop maintaining stale API wikis.
+
+**Pydantic** is the validation engine: `BaseModel` classes that parse,
+coerce, and validate — Python's
+[dynamic-typing trade-off](/programming/choosing-a-language) patched at
+runtime, exactly where it matters most (untrusted input).
+
+## async, and the honest version
+
+`async def` endpoints run on an event loop (uvicorn) — **the same model
+as [Node](/backend/nodejs)**, same superpower (huge I/O concurrency on
+one thread), same iron rule (CPU work freezes everyone), same caveat
+(your DB driver must be async — SQLAlchemy's async mode in StockVision's
+case). FastAPI adds a pragmatic escape hatch: declare an endpoint with
+plain `def` and it runs on a **threadpool** instead — blocking code stays
+safe, at thread-per-request economics. Knowing *which to choose per
+endpoint* is the FastAPI-specific skill:
+
+- `async def` + async libraries → I/O-bound, high concurrency
+- `def` + classic libraries → blocking dependencies, moderate load
+- Neither → CPU-bound: hand it to a [queue](/hld/messaging-and-queues)
+  worker
+
+## Dependency injection, Python-style
+
+`Depends()` is [Spring's DI](/backend/spring-boot) reimagined as plain
+functions — composable, testable, no container:
+
+```python
+async def current_user(authorization: str = Header(...)) -> User:
+    user = await verify_token(authorization)        # next page: JWT
+    if user is None:
+        raise HTTPException(401, "unauthenticated")
+    return user
+
+async def require_admin(user: User = Depends(current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(403, "forbidden")       # 401 vs 403 — know the difference
+    return user
+
+@app.delete("/api/orders/{order_id}", status_code=204)
+async def delete_order(order_id: int, admin: User = Depends(require_admin)):
+    await orders.delete(order_id)
+```
+
+Dependencies declare dependencies (`require_admin` needs `current_user`);
+FastAPI resolves the graph per request and caches within it. Tests
+override any dependency with one line
+(`app.dependency_overrides[current_user] = fake_user`) — the same
+swap-the-implementation win as Spring, in five lines of mechanism instead
+of a container.
+
+## Where Django fits
+
+The other Python heavyweight deserves its placement sentence: **Django**
+(2005) is the batteries-included *full-site* framework — ORM, admin
+panel, auth, templates, migrations in one box. It excels when you're
+building a database-backed *product* fast (newsrooms, marketplaces,
+internal tools): the auto-generated **admin interface** alone justifies
+it for CRUD-heavy apps. FastAPI excels at *APIs*: leaner, async-native,
+type-driven. Many shops run both — Django for the admin-and-content
+side, FastAPI for the public API and model serving. (Flask, the older
+minimal option, now mostly cedes new projects to FastAPI.)
+
+## Production perspective
+
+- **The AI-industry default:** OpenAI-style APIs, Hugging Face spaces,
+  internal model servers — Python owns ML
+  ([Level 11](/aiml/ai-ml-dl)), and FastAPI is how ML gets an endpoint.
+  Pattern to know: FastAPI receives, [queues](/hld/messaging-and-queues)
+  heavy inference, streams results back.
+- **Deployment shape:** uvicorn workers × CPU cores behind a load
+  balancer ([same as Node](/backend/nodejs)), containerized in
+  [Level 10](/basics/what-is-the-cloud).
+- **Performance honesty:** "Fast" means fast *for Python* — fine for
+  I/O-bound APIs (where waiting dominates), still Python for CPU. The
+  language choice discussion from
+  [Level 1](/programming/choosing-a-language) applies unchanged.
+
+## Common mistakes
+
+- **`async def` + blocking library** — calling classic `requests` or sync
+  SQLAlchemy inside an async endpoint blocks the loop
+  ([Node's disease](/backend/nodejs), Python edition). Async all the way
+  down, or use `def`.
+- **One model for everything** — sharing a Pydantic model across create/
+  update/output leaks fields and tangles validation; define per-purpose
+  models (CreateOrder vs OrderOut above).
+- **Validating manually** — `if not isinstance(...)` walls inside
+  handlers re-implement, worse, what Field constraints give free.
+- **422 confusion** — FastAPI's validation errors return 422, not 400;
+  know it before the interviewer asks why.
+- **Skipping `response_model`** — returning ORM objects raw serializes
+  whatever's on them today, and whatever migration adds tomorrow.
+
+## Interview perspective
+
+<QA q="How does FastAPI use Python's type system, and what do you get from it?">
+
+Type hints on endpoint parameters declare the contract: path/query
+params coerce to their annotated types, the Pydantic-model parameter
+defines the request body's schema with field-level constraints, and
+`response_model` defines the output shape. From that single source the
+framework derives parsing, validation with structured 422 errors,
+response filtering, and a live OpenAPI spec (`/docs`). The deeper point:
+it moves input validation from a discipline (every handler remembering to
+check) to a guarantee (handlers can't receive invalid data) — boundary
+validation enforced by construction, with documentation that can't drift
+because it's generated from the same types the code runs on.
+
+</QA>
+
+<QA q="In FastAPI, when do you write `async def` vs `def`, and what goes wrong if you choose badly?">
+
+`async def` runs on the event loop: maximum concurrency for I/O-bound
+work, but every library you await must be genuinely async — one blocking
+call (sync DB driver, `requests`, heavy CPU) freezes the entire process's
+loop, spiking latency on all endpoints. Plain `def` runs in a threadpool:
+blocking libraries are safe, isolation is better, but concurrency is
+bounded by threads. Choose per endpoint: async + async drivers for
+high-fan-out I/O; def for legacy/blocking dependencies; neither for
+real CPU work — that belongs in a background worker via a queue. The
+failure modes are asymmetric: blocking-in-async degrades everyone;
+def merely caps throughput — when unsure, def is the safer wrong answer.
+
+</QA>
+
+<QA q="FastAPI vs Django vs Flask — how do you choose?">
+
+Django when the product is a database-backed site needing the kitchen
+sink fast: ORM, migrations, auth, and especially the auto-admin —
+unbeatable for CRUD products and content systems. FastAPI when the
+product is an API: async-native, type-driven validation, OpenAPI free —
+the modern default for service backends and ML serving. Flask for tiny
+services or teams with existing investment, though FastAPI has largely
+absorbed its niche. Real organizations mix: Django for internal admin,
+FastAPI for the public API edge. The anti-pattern is choosing by
+fashion — the workload (site vs API), team, and ecosystem fit decide.
+
+</QA>
+
+## Practice
+
+1. **Build:** the orders API above with an in-memory dict store; explore
+   `/docs` and watch validation reject bad bodies (`quantity: -1`,
+   missing `item`) with field-precise 422s.
+2. **DI reps:** implement `current_user` reading a fake token header,
+   then `require_admin` on the delete route; verify the 401 vs 403 split.
+   In tests, override `current_user` and hit endpoints without auth.
+3. **Feel the loop:** add `time.sleep(2)` (sync!) to an `async def`
+   endpoint and load-test two endpoints in parallel; then switch to
+   `asyncio.sleep(2)` and watch the difference. Same lesson as
+   [Node practice #2](/backend/nodejs) — internalize it in both stacks.
+4. **Connect:** skim the [StockVision deep-dive](/projects/stockvision):
+   identify where its async SQLAlchemy choice was forced by `async def`
+   endpoints, and which endpoint would justify a queue instead.
+
+Next: [REST & GraphQL](/backend/rest-and-graphql) — designing the
+contract itself, whichever framework serves it.

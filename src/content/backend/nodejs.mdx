@@ -1,0 +1,229 @@
+---
+title: "Node.js & Express"
+summary: "JavaScript on the server — the event loop explained properly, a real Express API, and the one rule that keeps Node fast: never block."
+order: 1
+difficulty: "Level 7"
+tags: ["backend", "nodejs", "express", "event-loop"]
+---
+
+## What Node.js is
+
+**Node.js** (2009) took Chrome's JavaScript engine (V8) out of the browser
+and gave it server powers: files, sockets, processes. Result: the language
+of the [frontend](/basics/frontend-and-backend) now runs backends — one
+language across the stack, one hiring pool, shared code.
+
+But Node's real identity isn't "JS on servers." It's an **execution
+model**: a single thread plus an **event loop**, built for workloads that
+spend their time *waiting*.
+
+## The event loop — the concept this page exists for
+
+A traditional server (classic Java, [next page](/backend/spring-boot))
+dedicates a **thread per request**: request comes in, a thread walks it
+through, *blocking* — sitting idle — during every database call or API
+call. Threads are expensive (~1 MB stack each), so concurrency tops out
+around thousands.
+
+Node runs **one thread** executing a loop:
+
+<Mermaid chart={`flowchart LR
+  Q[Event queue<br/>callbacks ready to run] --> L{Event loop}
+  L -->|run to completion| CB[Your JS code]
+  CB -->|starts I/O, registers callback| OS[OS / thread pool<br/>does the waiting]
+  OS -->|I/O done → enqueue callback| Q`} />
+
+Your code *never waits*. It starts the database query, hands over a
+callback ("run this when results arrive"), and returns to the loop —
+which immediately serves the next request. The *waiting* happens in the
+operating system, which is superb at watching thousands of sockets at
+once. When data arrives, the callback joins the queue.
+
+Recall [the speed gap](/basics/how-computers-work): a database round trip
+is ~milliseconds, during which a CPU can do ~millions of operations.
+Thread-per-request wastes that time sleeping; the event loop spends it
+serving other requests. That's why one Node process handles tens of
+thousands of concurrent connections — and why Node was the natural
+first home for [WebSocket-heavy apps](/backend/websockets).
+
+Modern syntax hides callbacks behind `async/await`, but the model is
+unchanged — `await` means "park me, loop, carry on; resume me when
+ready":
+
+```js
+app.get("/orders/:id", async (req, res) => {
+  const order = await db.orders.findById(req.params.id); // parked, not blocking
+  res.json(order);
+});
+```
+
+### The one rule: never block the loop
+
+One thread means **any CPU-heavy synchronous work freezes every request
+in the process**. A 200 ms image resize = 200 ms where *nobody* gets a
+response:
+
+```js
+app.get("/report", (req, res) => {
+  const stats = crunchTenMillionRows();   // ❌ synchronous CPU work:
+  res.json(stats);                        // the whole server is frozen
+});
+```
+
+Fixes: push CPU work to a **worker thread** or a separate service behind a
+[queue](/hld/messaging-and-queues); use the async version of every API
+(never `fs.readFileSync` in a handler). The interview phrasing: **Node is
+superb for I/O-bound workloads, wrong for CPU-bound ones** — know which
+your endpoint is.
+
+One core busy ≠ machine busy: production runs one Node process **per CPU
+core** (cluster mode / PM2 / containers,
+[Level 10](/basics/what-is-the-cloud)) behind a load balancer.
+
+## Express — the minimal framework
+
+**Express** is Node's classic web framework: tiny, unopinionated, and the
+vocabulary every other framework borrows.
+
+```js
+import express from "express";
+const app = express();
+
+app.use(express.json());                       // middleware: parse JSON bodies
+
+const requireAuth = (req, res, next) => {      // middleware: runs BEFORE handlers
+  const user = verifyToken(req.headers.authorization);
+  if (!user) return res.status(401).json({ error: "unauthenticated" });
+  req.user = user;                             // enrich the request
+  next();                                      // pass to the next layer
+};
+
+app.get("/api/orders", requireAuth, async (req, res) => {
+  const orders = await db.orders.forUser(req.user.id);
+  res.json(orders);                            // 200 + JSON
+});
+
+app.post("/api/orders", requireAuth, async (req, res, next) => {
+  try {
+    const order = await createOrder(req.user, req.body);   // validate inside!
+    res.status(201).json(order);
+  } catch (err) {
+    next(err);                                 // forward to the error middleware
+  }
+});
+
+app.use((err, req, res, next) => {             // error middleware: catch high
+  console.error(err);                          // log once (with a real logger)
+  res.status(500).json({ error: "internal error" });
+});
+
+app.listen(3000);
+```
+
+The load-bearing idea is **middleware**: a pipeline of functions each
+seeing `(req, res, next)` — parsing, logging, auth, rate limiting, then
+your handler, then error handling. It's the
+[Chain of Responsibility pattern](/lld/design-patterns) as a framework,
+and the same shape appears in Spring's filters and FastAPI's dependencies.
+Notice also [throw low, catch high](/programming/exceptions) — handlers
+throw, one error middleware translates to a clean
+[500](/basics/what-is-an-api).
+
+## Production perspective
+
+- **Who runs Node:** Netflix's API layer, PayPal, LinkedIn's mobile
+  backend, Uber's dispatch edges — overwhelmingly the I/O-bound,
+  fan-out-to-services tier. This very site's tooling (Next.js dev server,
+  bundlers) is Node.
+- **The ecosystem is the superpower and the liability:** npm is the
+  largest package registry on earth; `left-pad` and supply-chain attacks
+  are the cautionary tales. Lock your dependencies
+  ([security](/fundamentals/security)).
+- **TypeScript is the default in serious codebases** — the
+  [static-typing seatbelt](/programming/choosing-a-language) retrofitted;
+  you'll meet it properly in [Level 8](/frontend/typescript).
+- Express alternatives you'll hear: **Fastify** (faster Express),
+  **NestJS** (Spring-flavored structure for Node). Concepts transfer
+  one-to-one.
+
+## Common mistakes
+
+- **Blocking calls in handlers** — `readFileSync`, heavy JSON parsing,
+  crypto loops, unbounded `for` over millions of rows. The whole process
+  stalls.
+- **Forgetting `await`** — `const user = db.findUser(id)` (no await)
+  gives you a Promise object, not a user; the bug surfaces two lines
+  later as `user.name === undefined`.
+- **Unhandled promise rejections** — an async error nobody caught crashes
+  the process (modern Node). Error middleware + a process-level handler.
+- **Trusting `req.body`** — it's user input
+  ([never trust the client](/basics/frontend-and-backend)); validate with
+  a schema library (zod/joi) before it touches logic.
+- **One process on an 8-core box** — 7 cores idle; cluster it.
+
+## Interview perspective
+
+<QA q="Node is single-threaded — how does it handle 10,000 concurrent requests?">
+
+The single thread runs only *JavaScript*; it never waits on I/O. Each
+request's handler starts its I/O (database, HTTP, disk), registers a
+continuation, and yields the thread back to the event loop, which serves
+other requests. The OS (via epoll/kqueue, plus a small thread pool for
+some operations) watches all pending I/O and queues callbacks as results
+arrive. Since typical API work is ~95% waiting, one thread's actual CPU
+time is enough to interleave thousands of in-flight requests. The model
+breaks exactly where the assumption breaks: CPU-bound work hogs the only
+thread and freezes everyone — that's what worker threads, clustering, and
+job queues are for.
+
+</QA>
+
+<QA q="What does it mean to 'block the event loop', and how do you find and fix it in production?">
+
+Any synchronous work that takes meaningful time — big loops, sync file or
+crypto APIs, huge JSON.parse — runs on the only JS thread, so every other
+request's callback waits behind it; p99 latency spikes across *unrelated*
+endpoints, which is the telltale symptom. Find it: event-loop-lag metrics
+(monitor loop delay), CPU profiles/flame graphs, `--prof`. Fix it: replace
+sync APIs with async versions, chunk large computations, move CPU work to
+worker threads or a separate worker service behind a queue, and cluster
+per core so one stall doesn't take the whole box. The senior framing: in
+Node, latency isolation between requests simply doesn't exist within a
+process — you must engineer it.
+
+</QA>
+
+<QA q="When would you choose Node for a backend, and when would you argue against it?">
+
+For: I/O-bound services — API gateways and BFFs fanning out to other
+services, real-time/WebSocket-heavy apps (chat, live dashboards —
+[WhatsApp's gateway tier](/hld/design-whatsapp) is this shape),
+high-concurrency endpoints with light per-request CPU; plus the team
+reality of sharing one language with the frontend. Against: CPU-bound
+work — media processing, ML inference, heavy report generation — where
+the event loop becomes a liability rather than an asset; or domains
+wanting heavy compile-time guarantees and mature concurrency primitives
+(JVM's structured threading). The honest answer names the *workload*, not
+a favorite tool — most real systems mix tiers.
+
+</QA>
+
+## Practice
+
+1. **Build:** the Express API above, plus `GET /api/orders/:id` returning
+   404 when missing. Test with `curl`; watch status codes
+   ([Level 0's families](/basics/what-is-an-api)).
+2. **See the loop:** add `app.get("/block", ...)` that runs a 2-second
+   synchronous loop, and `/fast` that returns instantly. Hit `/block`
+   then `/fast` in parallel — observe `/fast` stall. Now move the work to
+   a worker thread and watch it not.
+3. **Middleware reps:** write a logging middleware (method, path,
+   duration) and a naive per-IP rate limiter (a
+   [dict](/programming/collections) of counters) — then read
+   [rate limiting](/hld/rate-limiting) for the real algorithms.
+4. **Connect:** read the [StockVision deep-dive](/projects/stockvision)
+   and identify which of its endpoints are I/O-bound vs CPU-bound, and
+   what that implies for runtime choice.
+
+Next: [Java Spring Boot](/backend/spring-boot) — the opposite philosophy:
+maximum structure, thread-per-request, and the enterprise standard.

@@ -1,0 +1,217 @@
+---
+title: "WebSockets & Real-Time"
+summary: "When request/response is the wrong shape: polling vs SSE vs WebSocket, the upgrade handshake, and the pub/sub backplane that makes it scale."
+order: 6
+difficulty: "Level 7"
+tags: ["backend", "websocket", "sse", "real-time"]
+---
+
+## The shape mismatch
+
+HTTP is **client-asks, server-answers** — perfect for "get my orders,"
+structurally wrong for "tell me *when* something happens": chat
+messages, live prices, collaborative cursors, notifications. The server
+has news; the protocol only lets it speak when spoken to.
+
+The escalation ladder every realtime feature climbs:
+
+| Technique | How | Latency | Cost | Use when |
+| --- | --- | --- | --- | --- |
+| **Short polling** | ask every N seconds | up to N | mostly wasted requests | N of minutes is fine (cron-ish) |
+| **Long polling** | server *holds* the request until news (or timeout), client immediately re-asks | near-real-time | one parked connection per client; reconnect churn | WebSockets blocked (legacy infra) |
+| **SSE** | one HTTP response that never ends; server streams events down it | real-time | one connection; **server→client only** | feeds, notifications, LLM token streams |
+| **WebSocket** | full **bidirectional** socket over one connection | real-time | one connection + protocol machinery | chat, games, collab editing — client talks too |
+
+**SSE (Server-Sent Events)** deserves its underdog respect: it's plain
+HTTP (proxies/load balancers just work), auto-reconnects natively, and
+covers every "server pushes, client just watches" case — which is *most*
+cases. The interview-grade instinct: **reach for SSE first; pay for
+WebSocket only when the client needs to send continuously too.** (Every
+LLM chat UI streaming tokens at you — [Level 11](/aiml/llms) — is SSE.)
+
+## The WebSocket handshake
+
+A WebSocket *starts life as an HTTP request* and upgrades:
+
+```
+GET /chat HTTP/1.1
+Upgrade: websocket            ← "let's switch protocols"
+Connection: Upgrade
+Sec-WebSocket-Key: x3JJh...   ← anti-accident nonce
+
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Sec-WebSocket-Accept: HSmrc...
+```
+
+After the `101`, the TCP connection stops being HTTP entirely — it's a
+persistent, two-way **frame** pipe (text/binary, with ping/pong
+heartbeats to detect dead peers). Starting as HTTP is the genius bit:
+it traverses firewalls, ports and TLS (`wss://`) like any web traffic.
+
+```js
+// client — the entire API surface
+const ws = new WebSocket("wss://api.example.com/chat");
+ws.onopen    = () => ws.send(JSON.stringify({ type: "join", room: "dsa" }));
+ws.onmessage = (e) => render(JSON.parse(e.data));
+ws.onclose   = () => reconnectWithBackoff();        // YOUR job — see below
+```
+
+```python
+# server (FastAPI — same idea in every framework)
+@app.websocket("/chat")
+async def chat(ws: WebSocket):
+    await ws.accept()                  # authenticate HERE, at upgrade time
+    rooms.join(ws, "dsa")
+    try:
+        while True:
+            msg = await ws.receive_json()      # client → server
+            await rooms.broadcast("dsa", msg)  # server → everyone
+    except WebSocketDisconnect:
+        rooms.leave(ws)
+```
+
+Note which runtime this wants: thousands of mostly-idle connections is
+*the* [event-loop workload](/backend/nodejs) — Node, FastAPI/uvicorn, or
+[WebFlux](/backend/spring-boot) (StockStump's choice, for exactly its
+[live-pricing fan-out](/hld/case-realtime-pricing)).
+
+## What you now own (that HTTP gave free)
+
+Adopting WebSockets means *leaving* HTTP's safety net. The checklist of
+what you're signing up to rebuild:
+
+- **Reconnection** — mobile networks drop constantly; clients need
+  auto-reconnect with **jittered exponential backoff** (everyone
+  reconnecting at once after a server restart = thundering herd), plus
+  resync of missed state ("what did I miss?" — a sequence number or a
+  re-fetch on reconnect, [WhatsApp's offline-inbox
+  drain](/hld/design-whatsapp) in miniature).
+- **Heartbeats** — TCP can die silently; ping/pong every ~30 s detects
+  zombie connections on both ends.
+- **Auth** — there's no per-request header anymore: authenticate at
+  upgrade (cookie/token, [previous page](/backend/auth)), and decide a
+  policy for token *expiry mid-connection*.
+- **Message framing** — no verbs/paths/status codes; you design the
+  envelope (`{type, payload, seq}`) and its versioning
+  ([contract rules](/backend/rest-and-graphql) apply to it too).
+- **Backpressure** — a slow phone on a fast feed: the server must drop,
+  coalesce (send latest price, not every tick), or disconnect — unbounded
+  send buffers are a memory leak with a timer.
+
+## Scaling: the pub/sub backplane
+
+The architecture question this topic exists for. One process holding all
+sockets works until it doesn't; the moment you run **two** servers,
+user A (on server 1) messages user B (on server 2) — and server 1 *has
+no socket to B*.
+
+<Mermaid chart={`flowchart LR
+  A[Client A] --- G1[WS server 1]
+  B[Client B] --- G2[WS server 2]
+  C[Client C] --- G2
+  G1 ---|publish room.dsa| BUS[(Pub/sub backplane<br/>Redis / Kafka)]
+  BUS ---|deliver to subscribers| G2
+  G2 --> B
+  G2 --> C`} />
+
+The standard answer: servers are **stateless-ish socket holders**; all
+cross-server delivery flows through a **pub/sub backplane** (Redis
+pub/sub, Kafka). Server 1 publishes to channel `room:dsa`; every server
+subscribed to that room delivers to *its own* local sockets. Add a
+**session registry** (`user → server`,
+[the WhatsApp routing table](/hld/design-whatsapp)) for direct messages.
+Load balancers need **sticky-ish** behavior only insofar as a connection
+lives on one box; new connections can land anywhere.
+
+This is [StockStump's pricing fan-out](/hld/case-realtime-pricing) and
+WhatsApp's gateway tier — the same three-piece kit: *socket holders +
+registry + backplane*. Learn it once, recognize it everywhere.
+
+## Common mistakes
+
+- **WebSocket-by-default** — for a notifications bell that updates
+  server→client only, SSE (or even 30 s polling) ships in a tenth of the
+  code. Match the tool to the arrow directions.
+- **No reconnect/resync design** — works on office Wi-Fi, drops state on
+  every elevator ride. The disconnect path *is* the feature.
+- **Broadcasting by looping over a DB query of connections** —
+  connections are in-memory objects on *some server*; that's why the
+  backplane exists.
+- **Skipping heartbeats** — zombie sockets accumulate until memory or
+  file-descriptor exhaustion ([the unclosed-file lesson](/programming/file-handling)
+  at scale).
+- **Unbounded per-client queues** — one slow consumer OOMs the server;
+  coalesce or cut.
+- **Auth only at connect, forever** — an 8-hour socket outlives a
+  10-minute token; re-verify on a timer or on sensitive actions.
+
+## Interview perspective
+
+<QA q="Polling vs long polling vs SSE vs WebSocket — pick for: a stock dashboard, a chat app, a CI status badge, an LLM streaming reply.">
+
+Stock dashboard: server→client only, frequent updates → SSE (or
+WebSocket if the same channel also takes orders —
+[StockStump does](/hld/case-realtime-pricing)); coalesce ticks for slow
+clients. Chat: bidirectional, low-latency, presence → WebSocket — the
+canonical case. CI badge: changes every few minutes, freshness
+non-critical → short polling every 30–60 s; anything fancier is
+over-engineering. LLM reply: a single response streamed token-by-token,
+one direction → SSE, which is exactly what production LLM APIs use. The
+meta-answer interviewers want: classify by *update frequency* ×
+*direction(s)* × *connection cost*, and take the cheapest tool that fits
+— not WebSockets everywhere.
+
+</QA>
+
+<QA q="Your chat works on one server. You scale to ten. What breaks and what's the fix?">
+
+Sockets are in-process state: a sender on server 3 has no connection to
+a recipient on server 7, so cross-server messages silently go nowhere —
+the system *appears* to work whenever both parties happen to share a
+box. Fix: (1) a pub/sub backplane — every server subscribes to relevant
+channels (rooms, or user-ids it hosts); senders publish, the bus fans out
+to subscribed servers, each delivers down its local sockets; (2) a
+session registry (user → server, in Redis with TTL/heartbeat) to target
+direct messages instead of broadcasting everything everywhere; (3)
+durable queues/offline inboxes so recipients with no live socket get
+messages on reconnect — at which point you've re-derived the
+[WhatsApp architecture](/hld/design-whatsapp), which is the point.
+
+</QA>
+
+<QA q="Design the reconnection story for a mobile realtime client.">
+
+Client side: on close, reconnect with exponential backoff plus jitter
+(1s, 2s, 4s… ×random) to avoid thundering herds after a server deploy;
+reset backoff on success; heartbeat (ping/pong ~30 s) so half-dead
+connections fail fast rather than hang. State resync: every server
+message carries a per-channel sequence number; the client tracks the
+last seen and, on reconnect, requests "everything after seq N" — the
+server keeps a short replay buffer (or falls back to a full snapshot
+re-fetch when the gap exceeds it). Server side: treat any send failure
+as disconnect, clean registry entries via TTL, and make message handling
+idempotent ([dedupe by id](/hld/design-whatsapp)) since replays
+guarantee duplicates. The principle: design the *offline→online
+transition* as the primary path, not the exception — mobile networks
+make it the common case.
+
+</QA>
+
+## Practice
+
+1. **Build the ladder:** a live counter page four ways — 5 s polling,
+   long polling, SSE, WebSocket. Watch the network tab; feel each
+   trade-off you read above.
+2. **Chat room:** FastAPI/Node WebSocket server with rooms, join/leave,
+   broadcast; add ping/pong and kill zombie sockets. Then kill the server
+   mid-chat and implement client backoff + resync-by-sequence-number.
+3. **Scale it:** run two instances behind nginx; break cross-instance
+   chat, then fix it with Redis pub/sub. (You will never forget the
+   backplane after seeing the silent failure.)
+4. **Connect:** trace [StockStump's](/projects/stockstump) flow —
+   feed → engine → Redis pub/sub → WebSocket gateways — and annotate
+   which piece of this page each component is.
+
+Next: [Microservices](/backend/microservices) — what happens when the
+backend itself splits apart.

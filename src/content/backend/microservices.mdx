@@ -1,0 +1,233 @@
+---
+title: "Microservices"
+summary: "Splitting the backend honestly: what microservices buy, the distributed problems they import, sagas, and why monolith-first is the senior answer."
+order: 7
+difficulty: "Level 7"
+tags: ["backend", "microservices", "distributed-systems", "architecture"]
+---
+
+## The actual definition
+
+A **monolith** is one deployable: all features in one codebase, one
+process, one database. **Microservices** split the backend into
+independently deployable services — each owning one business capability
+*and its own data* — talking over the network.
+
+The crucial honesty up front: microservices are **not** a performance
+technique or a modernity badge. They are an **organizational scaling
+technique** that *costs* technical complexity. Every "should we?"
+conversation is really about that trade.
+
+## What they buy — and the price
+
+| You gain | You pay |
+| --- | --- |
+| **Independent deploys** — checkout team ships 20×/day without coordinating with search team | Every function call you split becomes a **network call**: latency, timeouts, retries, [partial failure](/hld/cap-consistency) |
+| **Independent scaling** — 50 instances of search, 2 of invoicing ([scalability](/hld/scalability)) | **No more ACID across features** — the [transaction](/basics/what-is-a-database) that updated orders + inventory together is gone |
+| **Fault isolation** — recommendations down ≠ checkout down | Debugging crosses machines: **distributed tracing** or blindness |
+| **Tech freedom per service** — [the right runtime per workload](/backend/nodejs) | Operational surface × N: deploys, monitoring, on-call, versioned contracts between teams |
+| **Team autonomy** — Amazon's "two-pizza teams," each owning services end-to-end | A platform tax you pay before the first feature: service discovery, CI/CD per service, [Level 10](/basics/what-is-the-cloud) machinery |
+
+The rule that survives contact with reality: **split when team
+coordination costs exceed distributed-system costs** — rarely before
+several teams are stepping on each other's deploys. "Monolith-first"
+(build modular inside one deployable; extract services along the seams
+that *prove* painful) is not a junior compromise; it's what Amazon,
+Shopify and Stack Overflow stories actually teach.
+
+## Boundaries: the design problem
+
+Wrong splits are worse than no splits. The unit is a **business
+capability** (orders, payments, inventory, notifications) — not a layer
+(controllers-service! database-service!) and not a table. Two tests for
+a proposed boundary:
+
+1. **Does it own its data?** Each service gets its *own* database —
+   others may never reach in; they ask via API/events. Shared databases
+   recreate the coupling you split to escape, minus the transactions.
+2. **Can it change alone?** If every feature touches three services,
+   you've built a **distributed monolith** — all of the costs, none of
+   the autonomy. (This is the modal failure, and naming it is interview
+   gold.)
+
+The [encapsulation principle](/lld/oop-and-solid), at organization
+scale: services are objects, APIs/events are their public methods,
+databases are their private fields.
+
+## Communication: sync vs async
+
+<Mermaid chart={`flowchart LR
+  subgraph sync [Synchronous — ask and wait]
+    GW[API gateway] --> O[Order svc]
+    O -->|REST/gRPC: reserve| I[Inventory svc]
+    O -->|charge| P[Payment svc]
+  end
+  subgraph async [Asynchronous — announce and move on]
+    O2[Order svc] -->|OrderPlaced event| BUS[[Event bus / Kafka]]
+    BUS --> N[Notification svc]
+    BUS --> A[Analytics svc]
+    BUS --> W[Warehouse svc]
+  end`} />
+
+- **Synchronous (REST/gRPC):** caller needs the answer *now* — checkout
+  must know payment succeeded. Simple to reason about; couples uptime
+  (callee down = caller failing) and adds latency per hop. gRPC is the
+  internal-call standard: binary, typed contracts
+  ([the API-contract discipline](/backend/rest-and-graphql), compiled).
+- **Asynchronous (events via [queues](/hld/messaging-and-queues)):**
+  caller announces a fact — `OrderPlaced` — and moves on; interested
+  services react on their own time. Decouples uptime and teams (adding a
+  consumer requires *zero* changes upstream); costs you eventual
+  consistency and harder reasoning.
+
+Default that earns senior nods: **sync for queries and
+must-know-now commands; async events for everything that's a
+consequence.** Most "service A calls B calls C calls D" latency chains
+were consequences wearing sync clothing.
+
+### Surviving sync failure
+
+Network calls fail; the patterns are vocabulary now:
+**timeouts** (always, on everything), **retries with backoff + jitter**
+(only on idempotent calls —
+[idempotency keys](/backend/rest-and-graphql) exist for this),
+**circuit breakers** (after K failures, fail fast for a cooldown instead
+of hammering a dying service — preventing cascade failure), and
+**fallbacks** (recommendations down → show bestsellers, not a 500).
+
+## The hard part: transactions across services
+
+Order placement must: create order, charge payment, reserve inventory —
+three services, three databases, **no shared transaction**. If inventory
+fails after payment charged?
+
+The **saga pattern**: a sequence of local transactions, each publishing
+an event that triggers the next — and for every step, a defined
+**compensating action** that undoes it on later failure:
+
+```
+OrderCreated → PaymentCharged → InventoryReserved → OrderConfirmed
+                     ↑                  ✗ fails
+              RefundPayment  ←  ReservationFailed     (compensation flows back)
+              CancelOrder    ←
+```
+
+Two flavors: **choreography** (services react to each other's events —
+no coordinator, but the flow lives nowhere and is hard to follow) vs
+**orchestration** (an order-saga coordinator commands each step — the
+flow is explicit, the coordinator is a dependency). Either way you've
+traded ACID's automatic rollback for *explicit, designed* rollback —
+and accepted **eventual consistency**: for a few seconds, the system is
+mid-saga. ([CAP & consistency](/hld/cap-consistency) is the theory;
+this is where it bites.)
+
+Idempotency is the saga's load-bearing wall: events get redelivered
+([at-least-once](/hld/design-whatsapp)), so every handler must tolerate
+duplicates — *process-once semantics built from dedupe keys*.
+
+## Seeing anything: observability
+
+A request now crosses 6 services; "it's slow" means *where?* Three
+pillars, non-negotiable at this scale: **structured logs** with a
+**correlation id** propagated through every hop (the one header that
+turns 6 services' logs into one story), **metrics** per service
+(rate/errors/duration — the load balancer's
+[health checks](/hld/scalability) plus dashboards), and **distributed
+tracing** (OpenTelemetry/Jaeger: one waterfall showing the request's
+path and where the 800 ms went). [Level 10](/basics/what-is-the-cloud)
+operationalizes all three.
+
+## Common mistakes
+
+- **Microservices at product-search time** — a two-person startup
+  paying Amazon's coordination tax with nobody to coordinate. Modular
+  monolith first.
+- **Shared database "just for now"** — the distributed monolith's
+  origin story.
+- **Splitting by noun-table instead of capability** — UserService,
+  OrderService, and every request visiting both.
+- **Sync chains five deep** — availability multiplies down: five
+  99.9% services in series ≈ 99.5%, and p99 latency stacks
+  ([estimation instincts](/hld/approach)).
+- **No timeouts/circuit breakers** — one slow dependency exhausts your
+  thread pool and the cascade takes the platform down.
+- **Events without idempotent consumers** — duplicate `PaymentCharged`,
+  duplicate refund, real money.
+
+## Interview perspective
+
+<QA q="When would you split a monolith into microservices — and when would you refuse?">
+
+Split on *organizational* evidence: multiple teams blocked on each
+other's deploys and test suites; clearly divergent scaling needs
+(search needs 50 boxes, billing needs 2); a component needing different
+risk/compliance treatment (payments); a proven seam where one capability
+changes at a different cadence. Refuse when: one team (the coordination
+cost being solved doesn't exist), no platform maturity (no CI/CD,
+tracing, on-call to support N services), unclear domain boundaries
+(you'll freeze wrong seams into network contracts), or the motivation is
+fashion/performance (a function call is a million times cheaper than an
+RPC). The strong answer: modular monolith with enforced internal
+boundaries, then extract the seam that *hurts*, one service at a time —
+boundaries are cheap to refactor in-process and brutal to refactor
+across networks.
+
+</QA>
+
+<QA q="Order placement spans order, payment and inventory services. There's no distributed transaction. Design it.">
+
+Saga: a sequence of local transactions with compensations.
+Orchestrated version: an order-saga coordinator (itself stateful and
+crash-recoverable) creates the order PENDING, commands payment to
+charge, then inventory to reserve, then marks CONFIRMED; on failure at
+any step it runs compensations backwards — release reservation, refund
+charge, mark order FAILED. Every command/event carries the order id as
+an idempotency key, since the bus delivers at-least-once; every handler
+dedupes. The user sees PENDING until the saga completes — eventual
+consistency made visible as order status rather than hidden. Mention
+the outbox pattern for the "write DB + publish event atomically"
+sub-problem (write the event to an outbox table in the same local
+transaction; a relay publishes it), and you've covered the question's
+full depth.
+
+</QA>
+
+<QA q="A checkout request is slow. It touches gateway → orders → payments → inventory → notifications. How do you find the problem?">
+
+Distributed tracing first: the trace for that request (found via its
+correlation id) shows a waterfall of spans per hop — read where the
+time concentrates: one slow span = that service's problem (then its
+logs/DB metrics); time *between* spans = network/queueing; many fast
+spans serially = an N+1-style chatty design needing batching or async.
+If tracing doesn't exist (the real answer at many companies): correlate
+timestamps via the correlation id across services' structured logs, and
+check each service's RED metrics (rate, errors, duration) to find the
+outlier. Then the classic culprits in order: a missing DB index
+([Level 9](/fundamentals/databases)), a sync call that should be an
+event, retry storms from a flapping dependency without a circuit
+breaker. The meta-point: in microservices, *observability is a feature
+you build, not a tool you install later* — without correlation ids, this
+question has no answer.
+
+</QA>
+
+## Practice
+
+1. **Paper-split BookMyShow** ([the LLD](/lld/bookmyshow)): propose
+   services, mark each arrow sync or event, and find the saga (booking =
+   seat-lock + payment + ticket + notification). Where does the
+   compensation flow run when payment fails?
+2. **Build a mini-saga:** two FastAPI/Express services (orders,
+   payments) + Redis as a bus: OrderPlaced → charge → PaymentResult →
+   confirm/cancel. Kill the payment service mid-flow; make recovery
+   work; then send a duplicate event and watch idempotency save you (or
+   not).
+3. **Break a chain:** add a 5 s sleep to one downstream service and
+   watch the caller's latency without a timeout; add timeout + fallback;
+   then a counter-based circuit breaker. Three patterns, one afternoon.
+4. **Connect:** [Praxivo's deep-dive](/projects/praxivo) — argue
+   *against* microservices for it in three sentences. (Knowing when not
+   to is the Level 7 graduation exam.)
+
+**Level 7 complete.** The roadmap turns to what the user sees:
+[Level 8 — Frontend Development](/roadmap).

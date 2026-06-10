@@ -1,0 +1,225 @@
+---
+title: "AuthN & AuthZ — Sessions, JWT, OAuth"
+summary: "Who are you, and what may you do: password storage done right, sessions vs JWT honestly, the OAuth dance, and RBAC."
+order: 5
+difficulty: "Level 7"
+tags: ["backend", "auth", "jwt", "oauth", "security"]
+---
+
+## Two questions, never one
+
+- **Authentication (AuthN):** *who are you?* — verifying identity.
+  Failure → **401**.
+- **Authorization (AuthZ):** *what may you do?* — verifying permission.
+  Failure → **403**.
+
+Conflating them is both a vocabulary failure in interviews and a bug
+class in code ("logged in" ≠ "allowed"). Every request answers both, in
+that order — and always [on the server](/basics/frontend-and-backend).
+
+## Passwords: storage is the whole game
+
+Rule zero: **you never store passwords — you store proof you could
+recognize one.**
+
+```python
+# registration
+hash = bcrypt.hashpw(password, bcrypt.gensalt())   # store THIS, never the password
+# login
+ok = bcrypt.checkpw(attempt, stored_hash)           # re-hash and compare
+```
+
+Why each piece exists:
+
+- **Hashing** (one-way — [hash functions](/dsa/hash-tables), weaponized):
+  a database leak reveals hashes, not passwords.
+- **Salt** (random per-user value mixed in): identical passwords get
+  different hashes, killing precomputed "rainbow table" lookups and
+  exposing nothing when two users share `hunter2`.
+- **Slow by design**: bcrypt/argon2 are deliberately expensive (~100 ms)
+  so offline brute-force costs attackers centuries, not afternoons.
+  **Fast hashes (SHA-256, MD5) are disqualifying answers for passwords** —
+  speed is the vulnerability.
+
+## The real problem: staying logged in
+
+HTTP is **stateless** ([Level 0](/basics/what-is-an-api)) — every request
+arrives a stranger. Logging in once and being remembered requires the
+client to present *something* on every request. Two architectures:
+
+### Sessions — the server remembers
+
+Login → server creates a record (`session_id → user, expiry`) in
+Redis/DB → sends the id in an **httpOnly cookie** → every request carries
+the cookie → server looks the session up.
+
+- ✅ **Revocation is trivial** — delete the record; logout/ban is
+  instant.
+- ✅ The token itself is meaningless — nothing to decode if stolen
+  *from the database*.
+- ❌ Every request costs a session-store lookup; the store must scale
+  with you ([a hash table at datacenter scale](/hld/caching)).
+
+### JWT — the client carries the proof
+
+A **JWT (JSON Web Token)** is a *signed* claim document:
+`header.payload.signature` (base64). The payload carries claims
+(`{"sub": 42, "role": "user", "exp": 1718000000}`); the **signature** —
+computed with the server's secret — makes it tamper-evident: alter one
+claim and verification fails. Login → server signs a token → client
+sends `Authorization: Bearer <jwt>` → server **verifies the signature
+and trusts the claims, zero lookups**.
+
+- ✅ **Stateless** — any server (or [microservice](/backend/microservices))
+  verifies independently; nothing to look up, nothing to replicate.
+- ❌ **Revocation is the famous weakness** — a signed token is valid
+  until `exp`, period. Ban a user and their token *keeps working*.
+- ⚠️ **Signed ≠ encrypted** — anyone can *read* the payload
+  (base64-decode it live and lose your innocence); it only can't be
+  *modified*. No secrets in claims, ever.
+
+### The production pattern: both
+
+**Short-lived access JWT (5–15 min) + long-lived refresh token
+(stored server-side, revocable).** API calls verify the JWT statelessly;
+every few minutes the client redeems the refresh token for a fresh JWT —
+*that* exchange hits the database, making it the revocation checkpoint.
+Ban a user → their access dies within minutes, with stateless
+verification 99% of the time. This compromise answers the interview
+question "JWT or sessions?" — *both, at different timescales.*
+
+Where the client keeps it: **httpOnly, Secure cookie** beats localStorage
+(any injected script can read localStorage — XSS = stolen token; httpOnly
+is invisible to JS). Cookies need **CSRF defenses** (SameSite + tokens);
+the full XSS/CSRF story is in [security](/fundamentals/security).
+
+## OAuth 2.0 — "Login with Google"
+
+OAuth answers a different question: **delegation** — letting users prove
+identity (or grant access to *their* data elsewhere) **without giving
+your app their password**.
+
+<Mermaid chart={`sequenceDiagram
+  participant U as User
+  participant A as Your app
+  participant G as Google
+  U->>A: "Login with Google"
+  A->>G: redirect (client_id, scope, redirect_uri, state)
+  U->>G: authenticates WITH GOOGLE (password never touches A)
+  G->>A: redirect back with one-time CODE
+  A->>G: exchange code + client_secret (server-to-server)
+  G-->>A: access token (+ id token = user identity)
+  A->>U: logged in — issue YOUR session/JWT`} />
+
+Why the **code dance** instead of handing the token through the browser:
+the redirect travels through URLs (logged, leaked, shoulder-surfed) — so
+the browser only ever carries a worthless one-time code; the real token
+exchange happens server-to-server, authenticated by `client_secret`,
+which the browser never sees. (`state` blocks CSRF on the redirect;
+**OIDC** — OpenID Connect — is the thin identity layer on top that
+standardizes "who is this user" as a JWT `id_token`.)
+
+After OAuth completes, you're back to the previous section: issue *your
+own* session/JWT. OAuth authenticates; it doesn't replace your auth
+architecture.
+
+## Authorization: RBAC
+
+The 80% answer: **roles** on the identity (`user`, `support`, `admin`),
+**permission checks at the boundary** —
+[FastAPI's `require_admin`](/backend/fastapi) dependency, Spring
+Security's `@PreAuthorize`, Express middleware. Two rules carry the
+interview:
+
+1. **Check ownership, not just role.** `GET /orders/42` must verify the
+   order *belongs to the requester* — forgetting this is **IDOR**
+   (insecure direct object reference), the most common real-world API
+   vulnerability: enumerate ids, read strangers' data.
+2. **Deny by default.** New endpoints require auth unless explicitly
+   public, not vice versa.
+
+## Common mistakes
+
+- Fast hashes or — career-ending — plaintext passwords.
+- **Secrets in JWT payloads** (it's readable!) or tokens in localStorage.
+- **No token expiry**, or 30-day access tokens "for convenience" —
+  convenience for attackers too.
+- **Building login forms before knowing OAuth exists** — for most apps,
+  "login with Google + email magic link" outships a password system and
+  deletes the breach risk.
+- **401/403 confusion** — in code *and* in answers: not-identified vs
+  identified-but-forbidden.
+- **Rolling your own crypto** — use bcrypt/argon2, a maintained JWT
+  library, and an OAuth library; the bugs you'd write are the ones
+  attackers scan for.
+
+## Interview perspective
+
+<QA q="Sessions vs JWT — make the real trade-off, not the blog-post version.">
+
+Sessions: server-side record per login, cookie carries an opaque id —
+revocation is a row delete (instant logout/ban), but every request pays a
+session-store lookup and that store must be fast, shared and replicated
+across your fleet. JWT: signed claims verified locally — zero lookups,
+perfect for stateless horizontal scale and cross-service auth in
+microservices, but irrevocable until expiry and bigger per-request. The
+production answer is the hybrid: short-lived access JWT (minutes) +
+server-side refresh token (revocable) — stateless verification for
+nearly all traffic, a database-backed revocation checkpoint every few
+minutes. Tie-breakers worth naming: monolith with Redis already in place
+→ sessions are simpler; service mesh → JWT wins; either way, httpOnly
+cookies over localStorage.
+
+</QA>
+
+<QA q="Walk through the OAuth authorization-code flow and explain why the code exists at all.">
+
+App redirects the browser to the provider with client_id, requested
+scopes, redirect_uri and a random `state`. The user authenticates with
+the provider directly — credentials never touch the app. Provider
+redirects back to redirect_uri with a one-time authorization code (and
+the `state`, which the app verifies to block CSRF). The app's *server*
+exchanges code + client_secret with the provider for tokens; with OIDC,
+an id_token (JWT) asserts the user's identity. The code's purpose:
+front-channel redirects leak (URLs hit logs, history, referrers), so the
+browser only ever carries a short-lived, single-use code that's useless
+without the client_secret — the real token moves server-to-server on the
+back channel. (PKCE extends this to mobile/SPA clients that can't hold a
+secret — name it for bonus depth.)
+
+</QA>
+
+<QA q="A user reports their account was 'hacked'. Your JWTs expire in 24h. What went wrong in the design and what do you ship this week?">
+
+The design flaw: long-lived, irrevocable bearer tokens — anyone holding
+the JWT *is* the user for 24 hours, and you have no kill switch. Ship:
+(1) cut access-token TTL to ~10 minutes and add refresh tokens stored
+server-side; (2) build revocation on the refresh path — invalidate all of
+a user's refresh tokens on password change/logout/ban; (3) move tokens
+out of localStorage into httpOnly SameSite cookies if XSS was the theft
+vector, and audit for injection; (4) stopgap for the incident: a small
+denylist of compromised token ids (jti) checked on each request until
+expiry — accepting that it reintroduces a lookup, which is exactly the
+trade. Then rate-limit login and add anomaly alerts. The meta-answer:
+bearer tokens demand short lives *because* possession is proof.
+
+</QA>
+
+## Practice
+
+1. **Hash reps:** register/login against a dict store with bcrypt;
+   verify two users with the same password store different hashes; time
+   1,000 verifications and explain why that slowness is a feature.
+2. **JWT from scratch (once, to demystify):** HMAC-sign
+   `base64(header).base64(payload)` yourself; tamper with one payload
+   byte and watch verification fail; then base64-decode a real JWT from
+   any site and inventory its claims.
+3. **Build the hybrid:** add 10-minute access JWTs + refresh-token
+   rotation to your [FastAPI/Express API](/backend/fastapi); demonstrate
+   that banning a user locks them out within one refresh window.
+4. **Break an IDOR:** make `GET /orders/{id}` skip the ownership check,
+   fetch another user's order as user A — then fix it and write the test
+   that would have caught it.
+
+Next: [WebSockets](/backend/websockets) — when request/response itself is
+the wrong shape.

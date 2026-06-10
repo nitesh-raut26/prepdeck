@@ -1,0 +1,231 @@
+---
+title: "Java Spring Boot"
+summary: "The enterprise standard: dependency injection as a framework, the controller→service→repository layering, JPA, and what @Transactional really does."
+order: 2
+difficulty: "Level 7"
+tags: ["backend", "java", "spring-boot", "dependency-injection"]
+---
+
+## What Spring Boot is
+
+**Spring** (2003) is Java's dominant application framework; **Spring
+Boot** (2014) is Spring with the configuration agony removed — sensible
+defaults, embedded server, one `main()` and you have a production-grade
+service. It is *the* employment heavyweight: most banks, most enterprises,
+most of Amazon-scale Java runs on it.
+
+Where [Node](/backend/nodejs) gives you a minimal toolkit, Spring gives
+you an **architecture**. Its core idea is worth learning even if you
+never write Java again.
+
+## The big idea: Inversion of Control / Dependency Injection
+
+You learned in [Functions](/programming/functions) and
+[OOP & SOLID](/lld/oop-and-solid) that hidden dependencies make code
+untestable. Scale that to an app with 400 classes: who constructs what,
+in what order, with which config?
+
+Spring's answer: **you don't construct anything**. You declare classes as
+components and *what they need*; the framework builds the object graph —
+the **IoC container** — and hands each class its dependencies
+(**dependency injection**):
+
+```java
+@Service                                        // "Spring, manage this class"
+public class OrderService {
+    private final OrderRepository repo;         // what I need
+    private final PaymentClient payments;
+
+    public OrderService(OrderRepository repo, PaymentClient payments) {
+        this.repo = repo;                       // Spring calls this constructor
+        this.payments = payments;               // with real instances — DI
+    }
+}
+```
+
+Why it matters beyond convenience: every class depends on **interfaces it
+asks for**, never on construction details — which is
+[Dependency Inversion](/lld/oop-and-solid) enforced by a framework. Tests
+inject mocks through the same constructor. Swapping Postgres for a stub,
+or a real payment client for a fake, touches zero business code.
+([StockStump](/projects/stockstump) is this architecture live — Spring
+WebFlux flavor.)
+
+## The standard layering
+
+Spring codebases follow one shape so universally that interviews assume
+it — **controller → service → repository**:
+
+<Mermaid chart={`flowchart LR
+  C[Controller<br/>HTTP in/out, no logic] --> S[Service<br/>business rules, transactions]
+  S --> R[Repository<br/>data access only]
+  R --> DB[(PostgreSQL)]`} />
+
+```java
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {                       // HTTP ↔ objects, nothing else
+    private final OrderService service;
+    public OrderController(OrderService service) { this.service = service; }
+
+    @GetMapping("/{id}")
+    public OrderDto get(@PathVariable long id) {
+        return service.find(id);                     // 404 via exception handler
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public OrderDto create(@Valid @RequestBody CreateOrderRequest req) {
+        return service.create(req);                  // @Valid: schema-check input
+    }
+}
+
+@Service
+public class OrderService {                          // the rules live here
+    @Transactional                                   // ← see below
+    public OrderDto create(CreateOrderRequest req) {
+        Order order = new Order(req);
+        inventory.reserve(order.items());            // both succeed
+        return OrderDto.from(repo.save(order));      // or neither does
+    }
+}
+
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    List<Order> findByUserId(long userId);           // Spring WRITES this query
+}
+```
+
+That repository interface with no implementation is **Spring Data JPA**:
+it generates the SQL from the method name. **JPA/Hibernate** is the
+**ORM** (Object-Relational Mapper) — `Order` objects map to an `orders`
+table, and you mostly stop writing SQL. The
+[Level 9 warning](/fundamentals/databases) applies: ORMs hide queries,
+and hidden queries become the N+1 problem — know what SQL your method
+names generate.
+
+### `@Transactional` — the annotation that earns its interview question
+
+One annotation wraps the method in a
+[database transaction](/basics/what-is-a-database): everything inside
+commits together or rolls back together on exception. The reserve-and-save
+above can never half-happen. Mechanism worth knowing: Spring wraps your
+bean in a **proxy** that opens/commits the transaction around the call —
+which is why *internal* calls (`this.create(...)`) bypass it. That gotcha
+is a famous mid-level interview question.
+
+## Annotations, magic, and the trade
+
+Spring is driven by annotations: `@Service`, `@GetMapping`,
+`@Transactional`, `@Valid`. The trade-off is honest: enormous leverage,
+at the cost of **magic** — behavior that happens *around* your code where
+you can't see it. The framework's learning curve *is* learning what each
+annotation actually does (proxies, filters, the request pipeline — the
+same [middleware idea](/backend/nodejs), with more machinery).
+
+**Threading model:** classic Spring MVC is **thread-per-request** — the
+model [Node defined itself against](/backend/nodejs). Modern JVMs changed
+the economics: **virtual threads** (Java 21+) make threads cheap enough
+to have both the simple blocking style *and* high concurrency. The
+reactive alternative — **WebFlux**, Spring's event-loop flavor — is what
+[StockStump](/projects/stockstump) uses; same concepts as Node's loop,
+Java syntax.
+
+## Production perspective
+
+- **Why enterprises choose it:** 20 years of hardening, security/metrics/
+  transactions as integrated modules (Actuator's `/health` endpoint is the
+  industry's de-facto [load-balancer probe](/hld/scalability)), an
+  inexhaustible hiring pool, and a structure 100 engineers can share
+  without negotiation.
+- **Spring Boot specifically** = embedded Tomcat (the JAR *is* the
+  server, perfect for [containers, Level 10](/basics/what-is-the-cloud)),
+  auto-configuration, starters per concern (`web`, `data-jpa`,
+  `security`).
+- The cost, honestly: startup seconds and memory hunger vs Node/Go —
+  which is why serverless/edge tiers rarely use it, and why GraalVM
+  native images exist.
+
+## Common mistakes
+
+- **Business logic in controllers** — untestable without HTTP, unusable
+  from jobs/queues. Controllers translate; services decide.
+- **Field injection (`@Autowired` on fields)** — hides dependencies,
+  breaks plain-Java testing. Constructor injection (above) is the
+  standard; it makes [god objects](/lld/oop-and-solid) *visible* (a
+  constructor with nine arguments is a design smell you can see).
+- **`@Transactional` on private/internal calls** — silently no-ops
+  through the proxy gotcha.
+- **Returning JPA entities from controllers** — leaks schema, triggers
+  lazy-loading surprises mid-serialization. Map to DTOs at the boundary.
+- **Ignoring the SQL** — `findAll()` then filtering in Java; N+1 lazy
+  loads in a loop. The ORM is a convenience, not an excuse
+  ([Level 9](/fundamentals/databases) makes you read query plans).
+
+## Interview perspective
+
+<QA q="What problem does dependency injection solve, and what does an IoC container actually do?">
+
+Without DI, classes construct their own dependencies — wiring is
+scattered, swapping implementations means editing business code, and
+testing requires the real database. DI inverts it: classes declare needs
+(ideally as interfaces) via constructors; an IoC container scans for
+components, topologically sorts the dependency graph, constructs
+singletons in order, and injects them. Benefits: Dependency Inversion
+enforced at scale, one place for cross-cutting config, mock-injection for
+tests, and lifecycle management (scopes, lazy init, proxies for things
+like @Transactional). The container is "just" automated composition —
+which is why small programs don't need one and 400-class services really
+do.
+
+</QA>
+
+<QA q="Explain @Transactional — semantics, mechanism, and the classic gotcha.">
+
+Semantics: the annotated method runs inside a database transaction —
+commit on normal return, rollback on (by default, unchecked) exception;
+all-or-nothing for every DB operation inside, exactly the
+[transfer guarantee](/basics/what-is-a-database). Mechanism: Spring wraps
+the bean in a proxy; callers actually invoke the proxy, which opens the
+transaction, delegates to your method, then commits/rolls back. Gotchas
+that interviews probe: self-invocation (`this.method()`) bypasses the
+proxy so the annotation silently does nothing; checked exceptions don't
+roll back by default (`rollbackFor` to change); and long transactions
+holding locks across remote calls are a performance landmine — keep
+transactional scope tight and never call slow external services inside
+one.
+
+</QA>
+
+<QA q="Compare Spring MVC's thread-per-request with Node's event loop. When does each model win?">
+
+Thread-per-request: each request owns a thread; blocking I/O just parks
+that thread. Simple mental model, real stack traces, per-request
+isolation (one slow request doesn't stall others) — at the cost of
+threads being heavy, capping concurrency at thousands. Event loop: one
+thread interleaves everything via non-blocking I/O — tens of thousands of
+connections cheaply, but zero isolation (CPU work freezes all) and
+trickier debugging. Wins: event loop for massive idle-connection fan-out
+(chat, streaming, gateways); thread-per-request for CPU-mixed workloads
+and team simplicity. The modern footnote that scores points: Java's
+virtual threads deliver event-loop-like density under thread-per-request
+code, and Spring WebFlux offers the loop on the JVM — the models are
+converging.
+
+</QA>
+
+## Practice
+
+1. **Build:** the three-layer Order API above via start.spring.io (web +
+   data-jpa + H2). Verify 201/404/400 paths with curl.
+2. **Prove DI to yourself:** write a `FakePaymentClient` and unit-test
+   `OrderService` with no Spring and no database — constructor injection
+   makes it plain Java.
+3. **Trigger the gotcha:** make a method call `this.transactionalMethod()`
+   internally, throw inside, and observe the missing rollback. Fix it by
+   extracting the bean.
+4. **Connect:** read [StockStump's deep-dive](/projects/stockstump) and
+   map its WebFlux choice to the threading discussion above — why does a
+   trading app with WebSocket fan-out pick the reactive flavor?
+
+Next: [Python FastAPI](/backend/fastapi) — the third philosophy: type
+hints as the framework.

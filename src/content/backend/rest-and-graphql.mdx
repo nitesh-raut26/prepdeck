@@ -1,0 +1,224 @@
+---
+title: "REST & GraphQL"
+summary: "Designing the contract: REST conventions that actually matter (idempotency, pagination, versioning), GraphQL's trade, and how to choose."
+order: 4
+difficulty: "Level 7"
+tags: ["backend", "rest", "graphql", "api-design"]
+---
+
+## Two answers to one question
+
+[Level 0](/basics/what-is-an-api) gave you APIs as menus;
+[LLD](/lld/api-design) covered interview-grade endpoint design. This page
+is the production layer: the REST conventions that separate amateur APIs
+from professional ones, and GraphQL — the philosophically opposite
+answer — honestly compared.
+
+## REST — resources, uniformly
+
+**REST** models your API as **resources** (nouns, in URLs) manipulated
+through HTTP's **uniform verbs** — the grammar everyone already knows:
+
+```
+GET    /api/v1/orders            list (filterable: ?status=paid&limit=20)
+POST   /api/v1/orders            create one          → 201 + Location
+GET    /api/v1/orders/42         read one            → 200 | 404
+PATCH  /api/v1/orders/42         partial update      → 200
+DELETE /api/v1/orders/42         remove              → 204
+GET    /api/v1/orders/42/items   nested resource
+```
+
+The conventions that actually matter in production (and interviews):
+
+### Idempotency — the property you'll be asked about
+
+An operation is **idempotent** if doing it twice equals doing it once.
+`GET`, `PUT`, `DELETE` are; `POST` is not. Why it's not trivia: **clients
+retry** — timeouts, flaky mobile networks
+([Level 0](/basics/the-internet)) — and a retried non-idempotent request
+double-charges a card. The production fix: clients send an
+**idempotency key** (`Idempotency-Key: <uuid>`) with POSTs; the server
+remembers keys it has processed and returns the *original* result for
+duplicates. Stripe's API made this pattern famous; it's the same
+dedupe-by-id move as [WhatsApp's messages](/hld/design-whatsapp) —
+at-least-once delivery tamed by idempotent receipt.
+
+### Pagination — never return everything
+
+`GET /orders` over a million rows is an outage, not an endpoint. Two
+schemes:
+
+- **Offset** (`?page=3&size=20` → `OFFSET 40 LIMIT 20`) — simple,
+  jump-to-page; but deep offsets scan-and-discard (page 50,000 reads a
+  million rows — [Level 9](/fundamentals/databases)), and concurrent
+  inserts shift items between pages.
+- **Cursor** (`?after=order_8842&limit=20`) — "the 20 after this id":
+  stable under inserts, O(1) deep via the index, infinite-scroll-shaped.
+  The standard for feeds; the trade is no random page jumps.
+
+### Versioning & evolution
+
+The [contract promise](/basics/what-is-an-api), operationalized:
+**additive changes are free** (new optional fields — clients must
+tolerate unknown fields), **breaking changes need a new version**
+(`/v2/`, or header-based). Rule of thumb that earns nods: version from
+day one, break never, deprecate loudly with sunset dates.
+
+### Status codes as API design
+
+Get the [families](/basics/what-is-an-api) *specific*: `200` vs `201`
+(+`Location`) vs `204`; `400` malformed vs `401` unauthenticated vs `403`
+forbidden vs `404` (also the polite "exists but you can't know that") vs
+`409` conflict (duplicate, version clash) vs `422` semantic validation vs
+`429` rate-limited ([with Retry-After](/hld/rate-limiting)). Errors carry
+a machine-readable body: `{"error": {"code": "INSUFFICIENT_FUNDS", ...}}`.
+
+## GraphQL — the client writes the query
+
+**GraphQL** (Facebook, 2015) inverts REST's premise. One endpoint
+(`POST /graphql`), a typed **schema** on the server, and **the client
+specifies exactly what it wants**:
+
+```graphql
+query {                              # one request…
+  user(id: 42) {
+    name
+    orders(last: 3) {                # …traversing relationships…
+      id
+      items { title price }          # …choosing exact fields
+    }
+  }
+}
+```
+
+The response mirrors the query's shape — no more, no less. This kills
+REST's two chronic ailments in one stroke:
+
+- **Over-fetching** — REST's `/users/42` returns all 40 user fields when
+  the mobile screen needs two.
+- **Under-fetching** — that screen needed user + orders + items =
+  **three round trips** (or a custom `/user-with-orders-and-items`
+  endpoint, multiplied by every screen, forever).
+
+Why mobile teams love it: screens evolve weekly, and with GraphQL the
+*client* evolves its queries without waiting for backend endpoint work.
+The schema is typed and introspectable — autocomplete and codegen for
+free ([static typing's win](/programming/choosing-a-language), again, at
+the API boundary).
+
+### What GraphQL costs (the half people omit)
+
+- **The N+1 problem, industrialized.** A query traversing 100 users →
+  their orders naively fires 1 + 100 resolver queries. The fix —
+  **DataLoader** — batches a tick's lookups into one
+  `WHERE id IN (...)`. Mandatory vocabulary; the
+  [ORM N+1](/backend/spring-boot) reborn at the API layer.
+- **Caching gets harder.** REST GETs cache by URL — browsers, CDNs
+  ([the entire Netflix design](/hld/design-netflix)) understand them.
+  POST /graphql with arbitrary bodies opts out of all that; you rebuild
+  caching app-side (persisted queries help).
+- **Unbounded query risk.** Clients can write pathologically deep/wide
+  queries — production servers enforce depth limits and query cost
+  budgets ([rate limiting](/hld/rate-limiting), per-query-shape).
+- **Operational opacity.** Every request is `POST /graphql 200` — your
+  [status-code dashboards](/basics/what-is-an-api) and access logs need
+  rethinking.
+
+## Choosing (the interview answer)
+
+| Situation | Lean |
+| --- | --- |
+| Public API, third-party consumers | REST — universal, cacheable, curl-able |
+| Many client shapes (iOS/Android/web) over a rich graph | GraphQL — clients self-serve |
+| Heavy read traffic wanting CDN caching | REST |
+| Internal service-to-service | REST/gRPC — fixed shapes don't need query flexibility ([microservices](/backend/microservices)) |
+| Aggregating several backends for frontends | GraphQL as a **BFF** layer over REST services — the common hybrid |
+
+The senior framing: GraphQL moves complexity, it doesn't remove it —
+from "many endpoints to maintain" to "one endpoint to operate carefully."
+Most real architectures are hybrids: REST at the edges and between
+services, GraphQL where client diversity earns its keep.
+
+## Common mistakes
+
+- **Verbs in URLs** (`POST /createOrder`) — the verb is the method;
+  RPC-style naming forfeits every HTTP convention.
+- **200-for-everything** with `{"success": false}` bodies — breaks
+  clients, caches, monitoring; status codes *are* the protocol.
+- **Unpaginated lists** — works in the demo, pages the on-call at 100 K
+  rows.
+- **Retry-unsafe POSTs** — no idempotency keys on anything
+  money-shaped.
+- **GraphQL without DataLoader** — the N+1 ships to production
+  invisibly fast.
+- **Breaking changes in place** — renaming a field is an outage you
+  scheduled for someone else.
+
+## Interview perspective
+
+<QA q="What is idempotency, which HTTP methods have it, and how do you make payment POSTs retry-safe?">
+
+Idempotent = repeating the request leaves the same end state as once:
+GET (reads), PUT (full replace to the same value), DELETE (gone is
+gone) — but not POST (each call creates). It matters because distributed
+clients *must* retry on timeout, and a timeout is ambiguous: the server
+may have processed the request and lost only the response. Fix: client
+generates a unique Idempotency-Key per logical operation; server
+atomically records key→result on first processing and replays the stored
+result for duplicates (with a TTL). Now retries are safe by construction.
+Bonus depth: the key store is itself a
+[check-then-act](/lld/bookmyshow) — record-before-execute atomically, or
+two concurrent retries both execute.
+
+</QA>
+
+<QA q="Cursor vs offset pagination — trade-offs and when each is right.">
+
+Offset (`page=N`): trivial to implement, supports "jump to page 7" and
+total counts — but deep pages degrade (the DB walks and discards
+offset-many rows) and concurrent writes shift rows across page
+boundaries, causing skips/duplicates while scrolling. Cursor
+(`after=<id-or-tuple>`): the query seeks directly via an index
+(`WHERE (created, id) < cursor ORDER BY … LIMIT n`) — constant-time at
+any depth, stable under inserts — but no random jumps, and the cursor
+must encode a *unique, ordered* key (timestamp alone breaks on ties; use
+timestamp+id). Feeds and infinite scroll → cursor, always; small admin
+tables with page numbers → offset is honest and fine.
+
+</QA>
+
+<QA q="Explain GraphQL's N+1 problem and how DataLoader fixes it.">
+
+GraphQL resolves fields independently: `users(first:100) { orders }`
+runs the users resolver once, then the orders resolver per user — 1+100
+queries, invisible in the schema and deadly under load: the ORM lazy-load
+N+1 recreated at the API layer. DataLoader fixes it with per-request
+batching and caching: resolvers call `loader.load(userId)` which queues
+ids during one event-loop tick, then fires a single batched fetch
+(`WHERE user_id IN (…100 ids)`) and distributes results; per-request
+cache also dedupes repeated loads of the same entity. Two queries total.
+The per-request scope matters — a global cache would leak data across
+users and serve stale reads.
+
+</QA>
+
+## Practice
+
+1. **Design on paper:** full REST surface for BookMyShow's booking flow
+   ([the LLD](/lld/bookmyshow)) — resources, verbs, status codes per
+   failure (seat taken: 409), pagination for shows, and where the
+   idempotency key goes in the lock→pay→confirm flow.
+2. **Build:** add cursor pagination to your orders API from the
+   [FastAPI](/backend/fastapi) or [Express](/backend/nodejs) practice —
+   `?after=<id>&limit=`, with a `next_cursor` in the response. Insert
+   mid-scroll and verify stability (then break it with offset pagination
+   to see why).
+3. **Retry-proof it:** implement Idempotency-Key on order creation —
+   in-memory dict of key→response first, then reason about the
+   concurrent-duplicate race.
+4. **GraphQL taste:** model `User → Orders → Items` in Apollo/Strawberry,
+   write the nested query, log SQL, watch the N+1 — then add DataLoader
+   and count again.
+
+Next: [AuthN & AuthZ](/backend/auth) — who's asking, and what they're
+allowed to do.
