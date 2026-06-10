@@ -1,0 +1,273 @@
+---
+title: "Collections"
+summary: "Lists, dictionaries, sets and tuples — the four containers every program is built from, and how to choose between them."
+order: 7
+difficulty: "Level 1"
+tags: ["programming", "lists", "dictionaries", "sets", "collections"]
+---
+
+## One variable, many values
+
+A [variable](/programming/variables-and-data-types) holds one value. Real
+programs deal in *many*: a cart of items, a class of students, a feed of
+posts. **Collections** are the containers languages provide for groups of
+values — and choosing the right one is the first genuinely *architectural*
+decision you'll make daily for the rest of your career.
+
+Four shapes cover ~95% of all code:
+
+| Shape | Python | Java | C++ | One-liner |
+| --- | --- | --- | --- | --- |
+| Ordered sequence | `list` | `ArrayList` | `std::vector` | Items in a row, by position |
+| Key → value lookup | `dict` | `HashMap` | `std::unordered_map` | A label on every value |
+| Unique items | `set` | `HashSet` | `std::unordered_set` | Membership, no duplicates |
+| Fixed group | `tuple` | `record` | `std::pair`/`struct` | A few values that travel together |
+
+## Lists — the workhorse
+
+An ordered, growable sequence, accessed by **index** (position, counting
+from 0):
+
+```python
+# Python
+cart = ["bread", "milk"]
+cart.append("eggs")          # add at the end
+print(cart[0])               # "bread" — first item
+print(cart[-1])              # "eggs" — negative = from the end
+cart[1] = "oat milk"         # replace by index
+print(len(cart))             # 3
+for item in cart:            # iterate (Control Flow page)
+    print(item)
+```
+
+```java
+// Java
+List<String> cart = new ArrayList<>();
+cart.add("bread");
+cart.add("milk");
+System.out.println(cart.get(0));
+cart.set(1, "oat milk");
+```
+
+```cpp
+// C++
+std::vector<std::string> cart = {"bread", "milk"};
+cart.push_back("eggs");
+std::cout << cart[0];
+```
+
+Slicing (Python superpower): `cart[0:2]` is a new list of the first two
+items; `cart[::-1]` is the reverse. Java/C++ do the same with explicit loops
+or library calls.
+
+Use a list when **order matters** or you'll iterate everything: a feed, a
+queue of steps, last-10 search results.
+
+## Dictionaries — label every value
+
+A **dictionary** (also called *map* or *hash map* — same idea) stores
+**key → value** pairs and answers "what's the value for this key?"
+essentially instantly:
+
+```python
+# Python
+prices = {"bread": 40, "milk": 60, "eggs": 90}
+print(prices["milk"])            # 60 — lookup by key
+prices["butter"] = 120           # add or update
+if "tofu" in prices:             # membership check
+    print(prices["tofu"])
+print(prices.get("tofu", 0))     # 0 — default instead of an exception
+for item, price in prices.items():
+    print(item, price)
+```
+
+```java
+// Java
+Map<String, Integer> prices = new HashMap<>();
+prices.put("bread", 40);
+prices.getOrDefault("tofu", 0);
+```
+
+```cpp
+// C++
+std::unordered_map<std::string, int> prices = {{"bread", 40}, {"milk", 60}};
+prices["butter"] = 120;
+```
+
+The analogy: a list is lockers in a row (find by position); a dict is a
+**phone book** (find by name). Asking "is bread in this list of 1 million
+items?" requires checking up to all million; asking a dict takes one step
+regardless of size. *Why* that's true — hashing — is exactly
+[hash tables](/dsa/hash-tables) in Level 2; for now, trust the speed.
+
+Use a dict when you **look things up by identity**: user by id, price by
+product, count by word. The moment you write a loop to *find* something in a
+list repeatedly, you probably wanted a dict.
+
+## Sets — membership and uniqueness
+
+A **set** holds unique values, unordered, with instant membership checks:
+
+```python
+# Python
+visitors = {"asha", "rahul", "asha"}     # duplicates collapse
+print(len(visitors))                     # 2
+visitors.add("meera")
+print("rahul" in visitors)               # True — instant, like dict keys
+
+admins = {"asha", "meera"}
+print(visitors & admins)                 # intersection: both
+print(visitors - admins)                 # difference: visitors who aren't admins
+```
+
+Use a set for **"have I seen this before?"** (dedupe, visited pages,
+already-processed ids) and for set algebra (common followers, missing
+permissions). A set is essentially a dict that stores only keys.
+
+## Tuples — small fixed groups
+
+A **tuple** is a small, *immutable* (unchangeable) bundle of values that
+belong together:
+
+```python
+point = (3, 7)                      # x, y — forever
+x, y = point                        # unpacking
+locations = {(28.6, 77.2): "Delhi"} # immutable ⇒ usable as dict keys
+def min_max(nums):
+    return (min(nums), max(nums))   # return two values at once
+```
+
+Use tuples for coordinates, RGB colors, (key, value) pairs, multiple return
+values. The immutability is a feature: a function can hand one out without
+fearing the caller will mutate it
+(remember [aliasing](/programming/functions)). When a tuple grows fields or
+needs names, graduate to a class ([OOP Basics](/programming/oop-basics)) —
+`point.x` beats `point[0]`.
+
+## Choosing: the decision in four questions
+
+<Mermaid chart={`flowchart TD
+  Q1{Look things up<br/>by a key?} -- yes --> D[dict]
+  Q1 -- no --> Q2{Only need<br/>uniqueness / membership?}
+  Q2 -- yes --> S[set]
+  Q2 -- no --> Q3{Fixed little bundle<br/>that won't change?}
+  Q3 -- yes --> T[tuple]
+  Q3 -- no --> L[list]`} />
+
+And the performance intuition to carry into Level 2 (full version:
+[complexity cheat sheet](/cheatsheets/complexity)):
+
+| Operation | list | dict / set |
+| --- | --- | --- |
+| Get by index/key | instant | instant |
+| `x in collection` | scans everything — O(n) | instant — O(1) |
+| Add at end / insert pair | instant | instant |
+| Insert at front/middle | shifts everything — O(n) | — |
+
+That one row — membership: O(n) vs O(1) — explains half of all real-world
+slow code, and half of all DSA interview optimizations.
+
+## Nesting: collections of collections
+
+Real data is nested — and you already know this shape from
+[JSON](/basics/what-is-an-api):
+
+```python
+orders = [                                  # a list of dicts
+    {"id": 101, "customer": "Asha", "items": ["bread", "eggs"]},
+    {"id": 102, "customer": "Rahul", "items": ["milk"]},
+]
+print(orders[0]["items"][1])                # "eggs"
+
+word_count = {}                             # THE classic pattern: counting
+for word in text.split():
+    word_count[word] = word_count.get(word, 0) + 1
+```
+
+That counting loop is worth memorizing — it's the accumulator pattern from
+[Control Flow](/programming/control-flow) wearing a dict, it appears in
+countless interview problems, and it's your first real
+[hash table](/dsa/hash-tables) algorithm.
+
+## Common beginner mistakes
+
+- **List when you meant dict.** Looping through `users` to find an id, inside
+  another loop — accidental O(n²)
+  ([nested-loop multiplication](/programming/control-flow)). Build
+  `users_by_id` once; look up forever.
+- **Mutating a list while iterating it** — skipped items, subtle chaos.
+  Build a new list with the items you keep.
+- **The aliasing classic:** `b = a` copies the *reference*
+  ([Functions](/programming/functions)) — `b.append(x)` changes `a` too. Copy
+  explicitly: `b = a.copy()` (and `copy.deepcopy` for nested data).
+- **`dict[key]` on a maybe-missing key** → `KeyError`
+  ([Exceptions](/programming/exceptions)). Use `.get(key, default)` or check
+  `in` first.
+- **Relying on order in a set.** Sets (and Java's HashMap keys) have no
+  useful order; if order matters, you wanted a list (or sort at the end).
+
+## Interview perspective
+
+<QA q="Given a list of a million user records, code checks 'user in list' inside a loop over another million events. Why is this slow, and what's the fix?">
+
+`in` on a list scans elements one-by-one — O(n). Inside a loop over m events,
+that's O(m × n): a million × a million = 10¹² comparisons, effectively
+forever. Fix: build a set (or dict keyed by id) from the users once — O(n) —
+then each membership check is O(1) hash lookup, making the whole thing
+O(n + m). This list→set/dict transformation is the single most common
+optimization in both interviews and production code reviews.
+
+</QA>
+
+<QA q="Python: what's the difference between a list and a tuple, and when does immutability actually matter?">
+
+Both are ordered sequences; a list is mutable (append, remove, replace), a
+tuple is fixed at creation. Immutability matters when: (1) the value is a
+dict key or set member — only hashable (immutable) values qualify, so `(lat,
+lon)` works as a key and `[lat, lon]` raises; (2) you're sharing data across
+functions and want a guarantee no one mutates it under you; (3) it documents
+intent — a tuple says "this is a record of fields," a list says "this grows
+and shrinks." Performance differences exist but are minor; reach for tuples
+for meaning, not speed.
+
+</QA>
+
+<QA q="Count the most frequent word in a document — what collection, what algorithm, what complexity?">
+
+A dict mapping word → count: iterate words once, `counts[w] = counts.get(w,
+0) + 1`, then take the max by value — O(n) time over n words, O(u) space for
+u unique words. The naive alternative — for each word, count its occurrences
+with a scan — is O(n²). This counting-dict is the backbone of dozens of
+interview problems (anagrams, top-k, two-sum's complement lookup), which is
+why "use a hash map for counting/lookup" should be reflexive by Level 4.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Keep a shopping list: loop reading commands `add x`, `remove x`, `show`,
+   `quit` — implement each (list + [while loop](/programming/control-flow)).
+2. Given `[3, 7, 3, 1, 7, 3]`, produce: the unique values, the count of each
+   value, and the list reversed — pick the right collection for each.
+
+**Intermediate**
+
+3. Two lists: students enrolled in Math, students in Physics. Produce: in
+   both, in either, only in Math. (Sets — then re-do it without sets and
+   appreciate them.)
+4. Build a gradebook `dict` of student → list of marks. Write functions
+   `add_mark`, `average(student)`, `topper()`. Handle the missing-student
+   case both ways: `.get` default and try/except.
+
+**Advanced**
+
+5. Group a list of words into anagram families: `["eat","tea","tan","ate"]`
+   → `{"aet": ["eat","tea","ate"], "ant": ["tan"]}`. Hint: what *key*
+   makes anagrams collide? Why must that key be a string or tuple, not a
+   list? (You just invented the canonical-form trick — see it again in the
+   [problem bank](/dsa/problem-bank).)
+
+Next: [File Handling](/programming/file-handling) — making data outlive the
+program.

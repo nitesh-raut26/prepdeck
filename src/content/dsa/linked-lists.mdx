@@ -1,0 +1,239 @@
+---
+title: "Linked Lists"
+summary: "Nodes and pointers, O(1) insertion vs O(n) access, dummy heads, and the in-place reversal every interviewer asks."
+order: 3
+difficulty: "Foundation"
+tags: ["linked-list", "pointers", "fundamentals"]
+---
+
+## The opposite trade from arrays
+
+An [array](/dsa/arrays-and-strings) buys O(1) indexing with contiguous
+memory and pays O(n) to insert. A **linked list** takes the exact opposite
+deal: each element (**node**) lives anywhere in memory and carries a
+**pointer** (reference — [Level 1 concept](/programming/variables-and-data-types))
+to the next node:
+
+```
+HEAD → [40|•] → [60|•] → [90|•] → [25|∅]
+        data next
+```
+
+A treasure hunt instead of a row of lockers: each clue tells you where the
+next one is. Consequences:
+
+| Operation | Array | Linked list |
+| --- | --- | --- |
+| Access i-th element | **O(1)** | O(n) — walk from head |
+| Insert/delete at front | O(n) — shift | **O(1)** — repoint |
+| Insert/delete after a node you hold | O(n) | **O(1)** |
+| Search by value | O(n) | O(n) |
+| Memory layout | contiguous, cache-friendly | scattered, pointer overhead |
+
+Insertion is the magic: to add between A and B, create node X, point A at X,
+point X at B. **No shifting** — the neighbors never move; only two pointers
+change. Deletion is the same trick backwards: point A past X, and X is gone.
+
+## Implementation
+
+```python
+# Python
+class Node:
+    def __init__(self, val):
+        self.val = val
+        self.next = None        # pointer to the next Node (or None at the end)
+
+class LinkedList:
+    def __init__(self):
+        self.head = None
+
+    def push_front(self, val):          # O(1)
+        node = Node(val)
+        node.next = self.head
+        self.head = node
+
+    def delete(self, val):              # O(n) find, O(1) unlink
+        cur = self.head
+        if cur and cur.val == val:
+            self.head = cur.next        # special case: deleting the head
+            return
+        while cur and cur.next:
+            if cur.next.val == val:
+                cur.next = cur.next.next   # unlink
+                return
+            cur = cur.next
+
+    def traverse(self):                 # the universal loop shape
+        cur = self.head
+        while cur:
+            print(cur.val)
+            cur = cur.next
+```
+
+```java
+// Java
+class Node {
+    int val;
+    Node next;
+    Node(int val) { this.val = val; }
+}
+```
+
+```cpp
+// C++ — the one language where you free nodes yourself
+struct Node {
+    int val;
+    Node* next;
+    Node(int v) : val(v), next(nullptr) {}
+};
+// delete a node: prev->next = cur->next; delete cur;  ← manual memory!
+```
+
+That `while cur: ... cur = cur.next` loop is to linked lists what
+`for i in range(n)` is to arrays — every algorithm on this page is a
+variation of it.
+
+### The dummy-head trick
+
+Notice `delete` needed a special case for the head. Interviews punish that.
+The fix: a **dummy (sentinel) node** before the real head, so *every* node
+has a predecessor and one code path handles all cases:
+
+```python
+def delete(self, val):
+    dummy = Node(0)
+    dummy.next = self.head
+    cur = dummy
+    while cur.next:
+        if cur.next.val == val:
+            cur.next = cur.next.next
+            break
+        cur = cur.next
+    self.head = dummy.next      # head may have changed; dummy knows
+```
+
+Reach for a dummy head whenever the head itself might be modified —
+merging, deleting, partitioning. It's the single highest-value linked-list
+habit.
+
+### Variants in one breath
+
+- **Doubly linked** — nodes also point backward (`prev`), so you can walk
+  both ways and delete a node *given only the node* in O(1). Cost: one more
+  pointer to maintain. This is the engine inside an
+  [LRU cache](/lld/lru-cache).
+- **Circular** — the tail points back to the head; used for round-robin
+  scheduling.
+
+## The two-pointer toolkit
+
+Linked lists can't be indexed, so their classic problems are solved by
+walking pointers at different speeds or offsets —
+[two pointers](/dsa/two-pointers), born here:
+
+- **Middle of the list:** slow moves 1, fast moves 2; when fast hits the
+  end, slow is at the middle.
+- **Cycle detection (Floyd's):** same setup; if they ever meet, there's a
+  loop.
+- **k-th from the end:** lead pointer starts k ahead; move both; when lead
+  ends, trail is the answer.
+
+And the king of them all — **in-place reversal**, the most-asked linked-list
+question in existence:
+
+```python
+def reverse(head):
+    prev = None
+    cur = head
+    while cur:
+        nxt = cur.next      # save where we're going
+        cur.next = prev     # flip the arrow
+        prev = cur          # advance prev
+        cur = nxt           # advance cur
+    return prev             # new head
+```
+
+Three pointers, one pass, O(1) space. Draw four nodes on paper and run this
+by hand until the pointer dance is boring — that's the bar.
+
+## Production perspective
+
+- Linked lists hide inside things you use daily: the **LRU cache's** doubly
+  linked list ([full LLD treatment](/lld/lru-cache)), OS run-queues,
+  memory allocators' free lists, and
+  [hash-table collision chains](/dsa/hash-tables) — next page.
+- Honest engineering note: as a general-purpose container, arrays usually
+  win in practice even where lists win on paper — pointer-chasing defeats
+  CPU caches ([arrays page](/dsa/arrays-and-strings)). Lists earn their keep
+  when you hold a node reference and need O(1) splice — exactly the LRU
+  pattern. Saying this trade-off out loud is senior-signal in interviews.
+
+## Common mistakes
+
+- **Losing the rest of the list** — assigning `cur.next` before saving it.
+  The `nxt = cur.next` line in reverse is load-bearing; reorder it and the
+  list evaporates.
+- **Null-pointer crashes** — `fast.next.next` when `fast.next` is None.
+  Guard: `while fast and fast.next:` — the order of those checks matters
+  ([short-circuit](/programming/control-flow)).
+- **Forgetting the head can change** — return the (possibly new) head;
+  better, use a dummy.
+- **Infinite loops on cycles** — `while cur:` never ends on a circular
+  list; that's *why* cycle detection exists.
+- **Off-by-one in k-th-from-end** — decide "k=1 means the last node" upfront
+  and test with a 1-node list.
+
+## Interview perspective
+
+<QA q="When would you actually choose a linked list over an array?">
+
+When the workload is dominated by insertions/deletions at known positions —
+especially the front, or mid-list while already holding a node reference —
+and random access is rare. Real examples: an LRU cache (move-to-front and
+evict-from-back are O(1) splices on a doubly linked list), queues/deques,
+schedulers rotating tasks. If access patterns are index-based or scan-heavy,
+arrays win on both complexity and cache behavior. The strong answer names a
+workload, not just the complexity table.
+
+</QA>
+
+<QA q="How do you find the middle of a linked list in one pass, and why does fast/slow work?">
+
+Two pointers from the head: slow advances one node per step, fast advances
+two. When fast reaches the end (null, or its next is null), slow has covered
+exactly half the distance — the middle. It works because the gap between
+them grows by one node per step, so slow's position is always half of
+fast's. One pass, O(n) time, O(1) space; the same skeleton solves cycle
+detection and is the entry ticket to a dozen list problems.
+
+</QA>
+
+<QA q="Detect whether a linked list has a cycle — and find where the cycle starts.">
+
+Floyd's algorithm: slow (+1) and fast (+2) pointers; if there's a cycle they
+must meet inside it (fast gains one node per step on slow, so it can't skip
+over it); if fast hits null, no cycle. O(n) time, O(1) space — beats the
+hash-set-of-visited-nodes approach's O(n) memory. To find the cycle's
+*start*: after they meet, reset one pointer to the head and advance both one
+step at a time; they meet exactly at the cycle's entrance (provable with the
+distance algebra — interviewers love asking "why?", so practice the
+argument: distance head→start equals distance meeting-point→start, mod cycle
+length).
+
+</QA>
+
+## Practice
+
+1. **Build:** implement push_front, push_back, delete, and traverse from
+   memory — then add the dummy-head version of delete and diff the two.
+2. **The canon (all on paper first, then code):** reverse a list; find the
+   middle; detect a cycle; merge two sorted lists into one sorted list
+   (dummy head shines here).
+3. **Combiner:** reorder a list A→B→C→D→E into A→E→B→D→C. Hint: it's three
+   problems from this page glued together — middle, reverse, merge.
+4. **Think:** your music app's "up next" queue supports play-next (insert
+   at front), append, and skip-to-song-5. Which operations favor a list,
+   which favor an array, and what would you actually use?
+
+Next: [Stacks & Queues](/dsa/stacks-and-queues) — restricting access to
+gain power.

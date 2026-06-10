@@ -1,0 +1,207 @@
+---
+title: "Tries"
+summary: "Prefix trees — where the path IS the key. The structure behind autocomplete, spell-check and prefix search in O(word length)."
+order: 8
+difficulty: "Foundation"
+tags: ["trie", "strings", "prefix", "fundamentals"]
+---
+
+## The structure where paths spell words
+
+A **trie** (from re*trie*val, pronounced "try") is a tree for storing
+strings where **each edge is a character and each root-to-node path spells a
+prefix.** Store `cat`, `car`, `card`, `dog`:
+
+```
+         (root)
+         /    \
+        c      d
+        |      |
+        a      o
+       / \     |
+      t●  r●   g●        ● = "a word ends here" flag
+          |
+          d●
+```
+
+`cat` and `car` *share* the path `c→a` — that's the whole idea. A trie
+physically merges common prefixes, so anything prefix-shaped becomes a walk
+down the tree:
+
+- **"Does any word start with `ca`?"** — walk c, a: yes, in 2 steps.
+  A [hash table](/dsa/hash-tables) *cannot* answer this without scanning
+  every key — hashing destroys prefix structure.
+- **"All completions of `ca`?"** — walk to the `ca` node, then collect every
+  flagged node below it ([DFS](/dsa/trees-and-bsts)). That's autocomplete,
+  literally.
+
+| Operation (word of length L) | Hash set | Trie |
+| --- | --- | --- |
+| insert / exact lookup | O(L)* | O(L) |
+| **prefix exists?** | O(n·L) scan | **O(L)** |
+| **all words with prefix** | O(n·L) scan | O(L + results) |
+| memory | compact | pointer-heavy (the trade-off) |
+
+*hashing a string takes O(L) too — people forget.
+
+The complexity teaching point: trie costs depend on **word length, not on
+how many words are stored**. A million-word dictionary answers a 3-letter
+prefix query in ~3 steps.
+
+## Implementation
+
+The node is just "children by character, plus an end-flag" — a
+[dict](/programming/collections) per node:
+
+```python
+# Python
+class TrieNode:
+    def __init__(self):
+        self.children = {}        # char → TrieNode
+        self.is_word = False
+
+class Trie:
+    def __init__(self):
+        self.root = TrieNode()
+
+    def insert(self, word):                  # O(L)
+        node = self.root
+        for ch in word:
+            if ch not in node.children:
+                node.children[ch] = TrieNode()
+            node = node.children[ch]
+        node.is_word = True
+
+    def search(self, word):                  # exact match — O(L)
+        node = self._walk(word)
+        return node is not None and node.is_word
+
+    def starts_with(self, prefix):           # the trie's superpower — O(L)
+        return self._walk(prefix) is not None
+
+    def _walk(self, s):
+        node = self.root
+        for ch in s:
+            if ch not in node.children:
+                return None
+            node = node.children[ch]
+        return node
+```
+
+```java
+// Java — fixed array beats HashMap for lowercase a–z
+class TrieNode {
+    TrieNode[] children = new TrieNode[26];
+    boolean isWord;
+}
+// child lookup: children[ch - 'a']
+```
+
+```cpp
+// C++
+struct TrieNode {
+    TrieNode* children[26] = {};
+    bool isWord = false;
+};
+```
+
+The dict-children version handles any alphabet; the array-of-26 version is
+faster and the standard choice when the problem says "lowercase English
+letters" — mention the choice, it's free signal.
+
+## Where tries earn their keep
+
+- **Autocomplete** — search boxes, IDEs, your phone keyboard. Walk the
+  prefix, DFS below it, rank the results. (Real engines bolt on
+  ranking — at each node, cache the top-k completions underneath so queries
+  don't DFS at all: precompute over recompute, a
+  [system-design instinct](/hld/approach).)
+- **Spell-check & word games** — "is this a word / could it become one?"
+  The `starts_with` check is what lets word-search algorithms **prune**: if
+  no word starts with `xq`, abandon that entire branch of exploration. This
+  trie+[backtracking](/dsa/backtracking) combo is the famous *Word Search
+  II* problem — the trie's marquee interview appearance.
+- **IP routing** — routers pick the **longest matching prefix** for a
+  packet's destination address
+  ([the internet, Level 0](/basics/the-internet)) using binary tries over
+  address bits. Your packets traverse tries to reach this page.
+- **T9 / contact search** — digits map to letter sets; walk all matching
+  branches at once.
+
+## Common mistakes
+
+- **Forgetting the end-of-word flag** — then `search("ca")` returns True
+  because the *path* exists, even though only `cat` was inserted. Prefix
+  existence ≠ word membership; the flag is the difference.
+- **Marking the wrong node** — set `is_word` on the *last character's*
+  node, after the loop; off-by-one here breaks everything quietly.
+- **Reaching for a trie when a set suffices** — exact membership only?
+  A hash set is simpler and leaner. The trie's justification is the word
+  "prefix" (or "longest match") in the problem.
+- **Memory surprise** — a node per character with 26 pointers each adds up;
+  for huge static dictionaries, real systems compress chains
+  (radix/Patricia tries — name-drop, don't implement).
+- **Recursing the collect step without bounding results** — autocomplete
+  wants top-k, not all 40,000 completions of `a`.
+
+## Interview perspective
+
+<QA q="Why can't a hash table power autocomplete, and what makes a trie O(L) for prefix queries?">
+
+A hash function scatters keys uniformly *by design* — `car` and `card` land
+in unrelated buckets, so "all keys starting with car" requires scanning the
+entire table. A trie stores strings *by their structure*: one node per
+character along a shared path, so reaching the prefix node takes exactly L
+child-lookups regardless of dictionary size, and everything below that node
+is, by construction, the answer set. The trade: more memory and
+pointer-chasing than a hash set, and no O(1) exact lookup — pick by which
+question dominates: identity → hash, prefix/order → trie.
+
+</QA>
+
+<QA q="Design search-suggestions: as the user types each character, return the top 3 lexicographically smallest products matching the prefix.">
+
+Build a trie over the products. Naive per keystroke: walk the prefix
+(O(L)), then DFS in lexicographic order (children a→z), stopping after 3
+results — the early stop keeps it cheap. Better for hot paths: store at
+*each node* its top-3 list, filled once at build time — every keystroke
+becomes O(1) after the walk, trading memory for latency
+(precomputation). Also worth saying: in practice "top" means
+popularity-ranked, so the cached lists hold the highest-scoring completions
+instead — same structure, different comparator. This question (LeetCode
+1268) is the trie's most common system-y disguise.
+
+</QA>
+
+<QA q="When does a trie beat a sorted array + binary search for prefix queries?">
+
+A sorted array *can* do prefixes: binary-search the prefix's lower bound,
+then read consecutive entries — O(log n + k), very cache-friendly, minimal
+memory. It's a strong static solution. The trie wins when the set is
+**dynamic** (inserts/deletes are O(L) vs O(n) array shifts), when you need
+per-prefix metadata (counts, cached top-k at internal nodes), or
+character-level operations (longest-common-prefix, wildcard matching,
+longest-prefix-match routing). For a frozen dictionary queried read-only,
+the sorted array is often the engineering answer — saying so shows judgment,
+not weakness.
+
+</QA>
+
+## Practice
+
+1. **Build:** implement the trie above from memory; insert
+   `cat, car, card, dog`; verify `search("ca") == False`,
+   `starts_with("ca") == True`, `search("card") == True`.
+2. **Extend:** add `count_with_prefix(prefix)` — maintain a `pass_count` on
+   each node during insert so the answer is O(L) with no DFS. (This
+   node-metadata trick is the heart of harder trie problems.)
+3. **Autocomplete:** add `suggest(prefix, k)` returning the first k
+   completions in alphabetical order — DFS with early stop.
+4. **The boss fight:** Word Search II (find dictionary words in a letter
+   grid). Solve word-by-word first
+   ([backtracking](/dsa/backtracking) per word), then re-solve with one
+   trie guiding a single grid exploration — and measure the speedup the
+   pruning buys you.
+
+Next: [Union-Find](/dsa/union-find) — the tiny structure that answers "are
+these connected?" almost instantly.

@@ -1,0 +1,244 @@
+---
+title: "Stacks & Queues"
+summary: "LIFO and FIFO — the two access disciplines behind undo, the call stack, BFS, and every task queue you'll ever deploy."
+order: 4
+difficulty: "Foundation"
+tags: ["stack", "queue", "deque", "fundamentals"]
+---
+
+## Less is more
+
+A stack and a queue are *restricted* collections: they deliberately forbid
+random access and offer just two or three operations. The restriction is the
+feature — it makes behavior predictable, implementations trivially fast, and
+intent obvious in code.
+
+| | **Stack** | **Queue** |
+| --- | --- | --- |
+| Discipline | **LIFO** — Last In, First Out | **FIFO** — First In, First Out |
+| Analogy | Plates: add and take from the top | A line at a counter: join at the back, served from the front |
+| Operations | `push`, `pop`, `peek` | `enqueue`, `dequeue`, `peek` |
+| All operations | O(1) | O(1) |
+| Mental model | "most recent first" — undo, backtrack | "fairness" — process in arrival order |
+
+## Stacks
+
+```python
+# Python — a list IS a stack (append/pop at the end are O(1))
+stack = []
+stack.append(10)     # push
+stack.append(20)
+top = stack[-1]      # peek → 20
+x = stack.pop()      # pop  → 20
+```
+
+```java
+// Java — use ArrayDeque, not the legacy Stack class
+Deque<Integer> stack = new ArrayDeque<>();
+stack.push(10);
+int top = stack.peek();
+int x = stack.pop();
+```
+
+```cpp
+// C++
+std::stack<int> st;
+st.push(10);
+int top = st.top();
+st.pop();                 // note: pop() returns void in C++
+```
+
+### Where stacks already run your life
+
+- **The call stack** — you met it in [Functions](/programming/functions):
+  every call pushes a frame, every return pops one. Recursion (Level 3) *is*
+  a stack, which is why any recursive algorithm can be rewritten with an
+  explicit one.
+- **Undo / redo** — every action pushes onto the undo stack; Ctrl-Z pops it
+  (and pushes onto redo).
+- **Browser back button** — pages visited, most recent first.
+- **Parsing** — matching brackets, evaluating expressions, your compiler.
+
+### The interview classic: matched brackets
+
+"Is `{[()]}` valid?" — opens push, closes must match the top:
+
+```python
+def is_valid(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in "([{":
+            stack.append(ch)
+        elif not stack or stack.pop() != pairs[ch]:
+            return False
+    return not stack          # leftovers = unclosed opens
+```
+
+Why a stack? Because the *most recently opened* bracket must close *first* —
+the problem statement contains the letters L-I-F-O if you squint. Training
+yourself to hear "most recent first" → stack is the actual lesson.
+
+One level up sits the **monotonic stack** — keep the stack sorted by popping
+everything your new element beats. It turns "next greater element" and
+"daily temperatures" style problems from O(n²) scans into one O(n) pass.
+Meet it properly in the [problem bank](/dsa/problem-bank).
+
+## Queues
+
+```python
+# Python — NOT a list! Use deque (list.pop(0) shifts everything: O(n))
+from collections import deque
+q = deque()
+q.append(10)         # enqueue at the back
+q.append(20)
+front = q[0]         # peek → 10
+x = q.popleft()      # dequeue from the front → 10, in O(1)
+```
+
+```java
+// Java
+Queue<Integer> q = new ArrayDeque<>();
+q.offer(10);
+int x = q.poll();
+```
+
+```cpp
+// C++
+std::queue<int> q;
+q.push(10);
+int x = q.front(); q.pop();
+```
+
+### Where queues run the world
+
+- **[BFS — breadth-first search](/dsa/graphs-bfs-dfs):** explore a graph
+  level by level; the queue holds the frontier. This is *the* algorithmic
+  reason queues exist, and it's how shortest paths in unweighted graphs are
+  found.
+- **Task/message queues:** printers, web servers under load, and the
+  industrial-strength version — Kafka/SQS pipelines
+  ([messaging & queues](/hld/messaging-and-queues)) — are all "absorb
+  requests at the back, process from the front." The humble `deque` here and
+  Level 6's distributed queue are the same idea at different scales.
+- **Rate limiting & buffering:** smooth a bursty producer feeding a steady
+  consumer ([rate limiting](/hld/rate-limiting)).
+
+### The deque — both ends at once
+
+A **deque** (double-ended queue, "deck") allows O(1) push/pop at *both*
+ends — it's the general tool that plays stack and queue. Its star solo is
+the **sliding-window maximum** problem, where it powers an O(n) solution
+([sliding window](/dsa/sliding-window)).
+
+## Build one from the other (interview favorite)
+
+**Queue from two stacks:** push into `inbox`; to dequeue, if `outbox` is
+empty, pour `inbox` into it (reversing order), then pop `outbox`:
+
+```python
+class QueueFromStacks:
+    def __init__(self):
+        self.inbox, self.outbox = [], []
+
+    def enqueue(self, x):
+        self.inbox.append(x)
+
+    def dequeue(self):
+        if not self.outbox:
+            while self.inbox:
+                self.outbox.append(self.inbox.pop())   # reverse the order
+        return self.outbox.pop()
+```
+
+Each element is moved at most twice ever → **amortized O(1)** per operation
+(the [arrays page](/dsa/arrays-and-strings) accounting again). The mirror
+problem — stack from queues — exists too; one of the pair shows up
+constantly in first rounds.
+
+## Production perspective
+
+- Stacks and queues are usually built on
+  [arrays or linked lists](/dsa/linked-lists) — they're *disciplines*, not
+  layouts. Array-backed (with the resize-doubling trick) is the practical
+  default.
+- The names persist up the stack: "stack trace," "task queue," "event
+  queue" (the heart of Node.js — Level 7), "undo stack." When you read
+  infrastructure docs, these aren't metaphors — there is literally a queue
+  in there.
+- Choosing LIFO vs FIFO is a *product* decision sometimes: a job scheduler
+  that LIFOs feels snappy for new requests but starves old ones — fairness
+  vs recency, in one letter.
+
+## Common mistakes
+
+- **`list.pop(0)` as dequeue in Python** — shifts every element, O(n); a
+  loop of them is O(n²). `deque.popleft()` exists for exactly this.
+- **Peeking/popping an empty stack** — crash
+  ([exceptions](/programming/exceptions)). The `not stack` guard in
+  `is_valid` above is half the solution's correctness.
+- **Using Java's `Stack` class** — legacy, synchronized, slow;
+  `ArrayDeque` is the documented replacement.
+- **Forgetting the leftover check** — bracket-matching that returns True
+  with `"((("` unprocessed. The final `return not stack` matters.
+- **Hearing "queue" and reaching for sorting** — FIFO already *is* the
+  order; if you need priority order instead, that's a
+  [heap](/dsa/heaps-and-intervals), two pages from now.
+
+## Interview perspective
+
+<QA q="A problem says: process items, but each new item may cancel out some of the most recent unprocessed ones. What structure, and why?">
+
+Stack. "Most recent first" interactions — cancellations, matching, undo,
+collisions — are LIFO by definition: the newest pending item is always the
+one examined/removed next. Classic instances: valid parentheses, removing
+adjacent duplicates, the asteroid-collision problem, evaluating expressions.
+The general skill is mapping problem phrases to disciplines: "most recent /
+nested / undo" → stack; "in arrival order / level by level / fairness" →
+queue.
+
+</QA>
+
+<QA q="Implement a queue using two stacks and justify that it's amortized O(1).">
+
+Maintain `inbox` and `outbox`. Enqueue: push onto `inbox` — O(1). Dequeue:
+if `outbox` is empty, pop everything from `inbox` and push onto `outbox`
+(this reverses order, turning LIFO into FIFO), then pop `outbox`. Any single
+dequeue can cost O(n), but each element makes exactly three moves in its
+lifetime — into inbox, across to outbox, out — so n operations cost O(n)
+total: amortized O(1) each. The follow-up "when is the worst case hit?"
+(first dequeue after a long enqueue streak) checks you actually understand
+amortization rather than reciting it.
+
+</QA>
+
+<QA q="Why does BFS use a queue while DFS uses a stack?">
+
+BFS explores level by level: discover all neighbors at distance d before
+anything at d+1. A FIFO queue guarantees that — nodes are processed in
+discovery order, so nearer nodes always come out first; that's exactly why
+BFS finds shortest paths in unweighted graphs. DFS dives deep before
+backtracking: always expand the *most recently* discovered node — LIFO, a
+stack (explicitly, or implicitly via recursion's call stack). Swap the
+container in the same loop skeleton and you literally swap the algorithm —
+one of the cleanest insights in DSA ([full treatment](/dsa/graphs-bfs-dfs)).
+
+</QA>
+
+## Practice
+
+1. **Beginner:** simulate a browser's back button: visit pages, go back,
+   verify order. Then add "forward" — what second structure appeared?
+2. **The canon:** valid parentheses (above, from memory); implement a
+   `MinStack` that returns the minimum element in O(1) (hint: a second
+   stack riding along); queue-from-two-stacks.
+3. **Monotonic teaser:** for `[73,74,75,71,69,72,76,73]` (temperatures),
+   compute for each day how many days until a warmer one — first O(n²) the
+   obvious way, then with a stack in O(n). Compare runs on 10⁵ elements.
+4. **Design:** your API server gets bursts of 1,000 requests/sec but can
+   process 200/sec. Walk through what a queue in front buys you, what
+   happens if the burst never stops, and what policy you'd add
+   (connects to [rate limiting](/hld/rate-limiting)).
+
+Next: [Hash Tables](/dsa/hash-tables) — the O(1) lookup machine that powers
+half of all interview solutions.

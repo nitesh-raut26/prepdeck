@@ -1,0 +1,279 @@
+---
+title: "File Handling"
+summary: "Reading and writing files — text, CSV and JSON — plus paths, encodings, and why 'with' is non-negotiable."
+order: 8
+difficulty: "Level 1"
+tags: ["programming", "files", "json", "csv", "io"]
+---
+
+## Making data outlive the program
+
+Everything your program holds in [variables](/programming/variables-and-data-types)
+and [collections](/programming/collections) lives in RAM — and
+[RAM is wiped](/basics/how-computers-work) the moment the program exits.
+**File handling** is how programs persist data to storage and read it back:
+the simplest form of memory that survives.
+
+It's also the gateway drug to data work: logs, configs, CSV exports, JSON
+APIs — a huge share of real engineering is reading one file shape and
+writing another. (And when files stop being enough, you'll know *exactly* why
+[databases](/basics/what-is-a-database) exist.)
+
+## Reading and writing text
+
+```python
+# Python — write (creates or OVERWRITES the file)
+with open("notes.txt", "w") as f:
+    f.write("First line\n")
+    f.write("Second line\n")
+
+# read it all back
+with open("notes.txt", "r") as f:
+    content = f.read()
+
+# or the memory-safe way: line by line
+with open("notes.txt", "r") as f:
+    for line in f:
+        print(line.strip())      # strip() removes the trailing newline
+
+# append — add to the end instead of overwriting
+with open("notes.txt", "a") as f:
+    f.write("Third line\n")
+```
+
+```java
+// Java — try-with-resources is Java's 'with'
+try (var writer = Files.newBufferedWriter(Path.of("notes.txt"))) {
+    writer.write("First line\n");
+}
+List<String> lines = Files.readAllLines(Path.of("notes.txt"));
+```
+
+```cpp
+// C++ — RAII closes the stream when it goes out of scope
+#include <fstream>
+std::ofstream out("notes.txt");
+out << "First line\n";
+
+std::ifstream in("notes.txt");
+std::string line;
+while (std::getline(in, line)) {
+    std::cout << line << "\n";
+}
+```
+
+The pieces, named:
+
+- **Mode** — `"r"` read, `"w"` write (⚠️ truncates: an existing file is
+  erased the instant you open it), `"a"` append.
+- **The file handle** (`f`) — your connection to the file, with a moving
+  *cursor*: reading advances it, which is why a second `f.read()` returns
+  nothing.
+- **`with` / try-with-resources / RAII** — guarantees the file closes even
+  if the code inside throws. This is the
+  [exceptions page](/programming/exceptions) cleanup rule applied to its
+  most common case. Unclosed files = buffered writes that never hit disk,
+  locked files on Windows, resource leaks under load. **Always `with`.**
+
+Files can be missing, unreadable, or full-disk — file code is exception
+country:
+
+```python
+try:
+    with open("config.txt") as f:
+        config = f.read()
+except FileNotFoundError:
+    config = DEFAULT_CONFIG          # a default is a fine recovery here
+```
+
+## Structured files: CSV and JSON
+
+Raw text is for humans; programs exchange **structured** data. Two formats
+dominate, and both map perfectly onto collections you already know:
+
+### CSV — tables as text
+
+**CSV (Comma-Separated Values)** is the spreadsheet/export format: one row
+per line, commas between columns.
+
+```
+name,city,score
+Asha,Mumbai,91
+Rahul,Delhi,84
+```
+
+```python
+import csv
+
+with open("scores.csv") as f:
+    for row in csv.DictReader(f):          # each row becomes a dict!
+        print(row["name"], int(row["score"]))
+
+with open("out.csv", "w", newline="") as f:
+    writer = csv.DictWriter(f, fieldnames=["name", "score"])
+    writer.writeheader()
+    writer.writerow({"name": "Meera", "score": 95})
+```
+
+Use the `csv` module, not `line.split(",")` — real CSVs contain quoted
+commas (`"Mumbai, India"`), and hand-splitting them is a classic bug.
+
+### JSON — nested data as text
+
+You met [JSON in Level 0](/basics/what-is-an-api) as the language of APIs.
+It's also the standard *file* format for configs and data dumps — and it
+round-trips exactly to dicts and lists:
+
+```python
+import json
+
+settings = {"theme": "dark", "fontSize": 14, "recent": ["a.txt", "b.txt"]}
+
+with open("settings.json", "w") as f:
+    json.dump(settings, f, indent=2)       # dict → file
+
+with open("settings.json") as f:
+    settings = json.load(f)                # file → dict
+print(settings["recent"][0])               # "a.txt"
+```
+
+`dump`/`load` (and Java's Jackson, C++'s nlohmann/json) is called
+**serialization** — turning in-memory structures into bytes and back. The
+concept scales from this 4-line config straight up to every API response in
+Level 7.
+
+Rule of thumb: **CSV for flat tables** (rows × columns, opens in Excel),
+**JSON for nested anything** (configs, records with lists inside).
+
+## Paths — where files actually are
+
+`open("notes.txt")` means "in the **current working directory**" — which is
+wherever the program was *launched from*, not where the script file lives.
+This single fact causes a generation of "works in my editor, fails in the
+terminal" confusion.
+
+```python
+from pathlib import Path
+
+p = Path("data") / "2026" / "scores.csv"   # builds data/2026/scores.csv — / joins safely
+p.parent.mkdir(parents=True, exist_ok=True)  # create folders if missing
+if p.exists():
+    rows = p.read_text().splitlines()
+```
+
+Use `pathlib` (Python) / `Path` (Java) / `std::filesystem::path` (C++)
+instead of gluing strings with `+` — they handle the Windows-`\` vs
+Unix-`/` separator difference and edge cases for you.
+
+One more word you'll meet: **encoding** — how text becomes bytes on disk.
+The answer is **UTF-8**, everywhere, always (`open(..., encoding="utf-8")`).
+If you ever see `Ashä` instead of `Asha`, an encoding was mismatched.
+
+## Industry perspective
+
+- **Logs are files.** Every server you'll ever run appends diagnostic lines
+  to log files; reading/parsing them is daily backend life (Level 7), and
+  log pipelines are a whole system-design topic
+  ([ingestion case study](/hld/case-ingestion-pipeline)).
+- **Configs are files.** JSON/YAML files configure every real deployment —
+  Level 10 (Docker, Kubernetes, Terraform) is largely *files describing
+  infrastructure*.
+- **Data engineering starts here.** "Read this 10 GB CSV, clean it, write
+  JSON" is a real job interview task — the line-by-line iteration pattern
+  (not `f.read()`!) is what makes it possible without 10 GB of RAM.
+- **The file→database moment:** the instant two users write the same file
+  concurrently, or you need to *search* it fast, you've rediscovered
+  [why databases exist](/basics/what-is-a-database). Files are
+  single-writer, scan-to-search; that's the boundary.
+
+## Common beginner mistakes
+
+- **Opening with `"w"` to read-modify-write.** `"w"` truncates immediately —
+  your data is gone *before* you read it. Read first, then write.
+- **No `with`** — file never closed; writes may sit in a buffer and never
+  reach disk if the program crashes.
+- **`f.read()` on huge files** — loads everything into RAM. Iterate lines.
+- **Building paths with string concatenation** — `folder + "/" + name`
+  breaks across OSes and edge cases; use path libraries.
+- **Hand-parsing CSV/JSON with `split` and slicing** — quoted commas, nested
+  braces, escapes… use the standard parsers; they exist because everyone who
+  hand-rolled one regretted it.
+- **Storing secrets in code instead of files/env** — passwords belong in
+  config files *excluded from git* or environment variables
+  ([security](/fundamentals/security)), never hardcoded.
+
+## Interview perspective
+
+<QA q="Why must files be closed, and what guarantees closing in modern code?">
+
+Open files hold OS resources (file descriptors — finite per process) and,
+for writes, **buffers**: data sits in memory and is flushed to disk on close.
+Skip the close and you leak descriptors (servers die under load with "too
+many open files") and risk losing the final writes on crash. Modern code ties
+closing to scope so it's automatic even when exceptions unwind: Python's
+`with` (context managers), Java's try-with-resources, C++'s RAII destructors.
+Manual `close()` calls in a finally block are the legacy equivalent — same
+guarantee, more ceremony.
+
+</QA>
+
+<QA q="How would you process a 50 GB log file on a machine with 8 GB of RAM?">
+
+Stream it: iterate line by line (`for line in f` — Python buffers in small
+chunks), maintaining only running state ([accumulators](/programming/control-flow)
+— counts, a top-k dict, current window) instead of loading the file.
+Memory stays constant regardless of file size; time is one O(n) pass. If one
+pass per question is too slow for *many* questions, that's the cue for
+preprocessing into a better structure — an index, a database, or a
+[stream-processing pipeline](/hld/case-ingestion-pipeline) at system-design
+scale. The interviewer is checking you won't write `f.read()` and that you
+recognize streaming as the default for big data.
+
+</QA>
+
+<QA q="What is serialization? Compare CSV and JSON as formats.">
+
+Serialization converts in-memory structures (objects, dicts, lists) into a
+byte/text form that can be stored or transmitted, and deserialization
+reverses it. CSV: flat rows-and-columns, extremely compact and
+Excel-friendly, but no nesting, no types (everything's a string), and messy
+edge cases (quoting, encodings). JSON: nested objects/arrays with basic types
+(numbers, strings, booleans, null), the lingua franca of APIs and configs,
+human-readable but bulkier. Rules of thumb: tabular exports → CSV; nested
+structures, configs, API payloads → JSON; at serious scale or strict schemas,
+binary formats (Parquet, Protobuf) take over — worth name-dropping at senior
+interviews.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Write a program that appends one diary line per run (with a timestamp),
+   and another that prints all entries numbered. Run them several times.
+2. Save your gradebook dict from the [Collections page](/programming/collections)
+   to JSON; load it back; verify a student's average survives the round trip.
+
+**Intermediate**
+
+3. Word frequency, for real: read any long text file, lowercase it, count
+   words with a dict, write the top 20 to `top_words.csv` (word, count).
+   Streams + collections + CSV in one program.
+4. Make the diary robust: what happens on the very first run if the file
+   doesn't exist? Handle it cleanly with the
+   [exceptions](/programming/exceptions) toolkit — once with try/except,
+   once with `Path.exists()`. Which reads better here, and why?
+
+**Advanced**
+
+5. Build a tiny key-value store: `kv.py set name Asha` writes to a JSON
+   file, `kv.py get name` reads it back (command-line args:
+   `sys.argv`). Then break it on purpose: what happens if two copies run
+   `set` at the same instant? Write one paragraph connecting what you saw to
+   [transactions](/basics/what-is-a-database).
+
+**Level 1 complete.** You can now write real programs: variables,
+control flow, functions, objects, errors, collections and persistence. Next
+stop is [Level 2 — Data Structures](/dsa/study-plan), where the question
+flips from "does it work?" to "how fast, and why?"

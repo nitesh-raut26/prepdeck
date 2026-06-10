@@ -1,0 +1,244 @@
+---
+title: "Trees & BSTs"
+summary: "Hierarchy as a data structure — tree vocabulary, the four traversals, binary search trees, and why balance is everything."
+order: 6
+difficulty: "Foundation"
+tags: ["trees", "bst", "recursion", "fundamentals"]
+---
+
+## When data has hierarchy
+
+Arrays and lists are flat. But file systems, org charts, HTML pages
+([the DOM](/basics/websites-and-browsers)), comment threads, JSON — real
+data nests. A **tree** is the structure for hierarchy: nodes connected
+parent-to-child, no cycles, one **root** at the top.
+
+```
+            (root) Documents
+           /        |        \
+       Photos     Work      Music
+       /    \       |
+   2025    2026   resume.pdf     ← leaves: nodes with no children
+```
+
+Vocabulary you'll use forever: **root** (top), **parent/child** (direct
+links), **leaf** (no children), **subtree** (any node + its descendants —
+itself a tree, which is *why recursion fits*), **depth** (distance from
+root), **height** (longest root-to-leaf path).
+
+A **binary tree** allows at most two children per node — `left` and
+`right` — and is the form 90% of interview tree questions take:
+
+```python
+class TreeNode:
+    def __init__(self, val):
+        self.val = val
+        self.left = None      # both are TreeNodes or None —
+        self.right = None     # a node's children are themselves trees
+```
+
+That self-similarity is the key mental shift of this page: **every tree
+algorithm is "do something with this node; recurse on the subtrees."** The
+[call stack](/programming/functions) does the bookkeeping.
+
+```python
+def height(node):
+    if node is None:                 # base case: empty tree has height -1
+        return -1
+    return 1 + max(height(node.left), height(node.right))
+
+def count(node):
+    if node is None:
+        return 0
+    return 1 + count(node.left) + count(node.right)
+```
+
+Two lines of pattern — null check, combine recursive answers — and you can
+already compute size, height, sums, mirror a tree, compare two trees…
+
+## The four traversals
+
+"Visit every node" has four standard orders, and naming them is interview
+table stakes:
+
+| Traversal | Order | Use it for |
+| --- | --- | --- |
+| **Pre-order** | node, left, right | copy/serialize a tree |
+| **In-order** | left, node, right | **sorted order in a BST** ← the famous one |
+| **Post-order** | left, right, node | delete/free, compute from children up |
+| **Level-order** | top to bottom, row by row | shortest paths, "by level" output |
+
+```python
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.val)
+    inorder(node.right, out)
+```
+
+The first three are **DFS** (depth-first — dive, then backtrack: a
+[stack discipline](/dsa/stacks-and-queues), via recursion). Level-order is
+**BFS** (breadth-first — a queue holding the current frontier):
+
+```python
+from collections import deque
+
+def level_order(root):
+    if not root: return []
+    out, q = [], deque([root])
+    while q:
+        node = q.popleft()
+        out.append(node.val)
+        if node.left:  q.append(node.left)
+        if node.right: q.append(node.right)
+    return out
+```
+
+These are the same DFS/BFS you'll meet on [graphs](/dsa/graphs-bfs-dfs) —
+a tree is just a graph with no cycles, so trees are where you learn them
+gently.
+
+## Binary Search Trees: sorted order as a shape
+
+A **BST** adds one rule to a binary tree: at every node,
+**left subtree < node < right subtree.** That single invariant turns the
+tree into a decision diagram for search:
+
+```
+            8
+          /   \
+         3     10        find 6: 6<8 go left, 6>3 go right,
+        / \      \                6=6 found — 3 comparisons,
+       1   6     14               not a scan
+```
+
+Each comparison discards an entire subtree — the same halving as
+[binary search](/dsa/binary-search), but in a structure that also supports
+**insertion and deletion** without shifting anything
+(unlike a sorted [array](/dsa/arrays-and-strings)):
+
+| Operation | Sorted array | Hash table | **Balanced BST** |
+| --- | --- | --- | --- |
+| Search | O(log n) | O(1) | O(log n) |
+| Insert/delete | O(n) — shift | O(1) | **O(log n)** |
+| Min / max | O(1) | O(n) | O(log n) |
+| **Sorted iteration / range query** | O(n) ✓ | ✗ no order | **O(n) ✓ in-order** |
+| "All keys between a and b" | O(log n + k) | ✗ | **O(log n + k)** |
+
+Read that table's last two rows — they're the BST's reason to exist:
+**hash tables answer exact lookups; BSTs answer *order* questions** (min,
+max, range, nearest, rank) while staying fast to modify.
+
+```python
+def search(node, target):
+    if node is None or node.val == target:
+        return node
+    if target < node.val:
+        return search(node.left, target)
+    return search(node.right, target)
+```
+
+## The catch: balance
+
+Insert 1, 2, 3, 4, 5 in order and the "tree" becomes a chain hanging right —
+height n, every operation O(n). A [linked list](/dsa/linked-lists) with
+extra steps. All the O(log n) promises hold only if height stays ~log n:
+a **balanced** tree.
+
+**Self-balancing BSTs** — AVL trees, Red-Black trees — restructure
+themselves with O(1)-ish *rotations* on every insert/delete to guarantee
+O(log n) height. You will almost never implement one (say that confidently
+in interviews — knowing *that* is the senior answer), but you use them
+daily: Java's `TreeMap`, C++'s `std::map`/`std::set` are Red-Black trees.
+And databases use the same idea, generalized: the **B-tree** — a BST
+flattened into fat nodes matching disk pages — is *the* database index
+([indexing, Level 9](/fundamentals/databases); it's why `ORDER BY` and
+range scans are fast).
+
+## Production perspective
+
+- Every `std::map`, `TreeMap`, database index, and filesystem directory
+  structure is this page. The DOM your browser renders, the JSON your API
+  returns, the org chart in HR software — trees.
+- **Heaps** ([next-but-one page](/dsa/heaps-and-intervals)) are binary trees
+  with a *different* invariant (parent beats children) stored in an array —
+  same shape, different promise.
+- Compilers parse your code into a tree (the AST) and every analysis is a
+  traversal — when Level 8 tooling (linters, bundlers) feels magical, it's
+  post-order walks.
+
+## Common mistakes
+
+- **Forgetting the base case** — `if node is None: return ...` is line one
+  of every tree function; omit it and you recurse into a crash.
+- **Checking only children, not subtrees, for BST validity** — `5 → right:
+  8 → left: 3` passes the child check but breaks the invariant (3 < 5 yet
+  sits in 5's right subtree). Validate with *bounds* passed down
+  (see QA below) — this is among the most-failed easy questions.
+- **Confusing depth and height**, or height of empty tree (-1) vs leaf (0)
+  — define it out loud before coding.
+- **Assuming BST when given "binary tree"** — no order invariant means no
+  binary-search shortcuts; read the problem.
+- **Recursion depth** — a chain-shaped tree of 10⁵ nodes overflows Python's
+  default recursion limit; the iterative-with-stack version exists for a
+  reason.
+
+## Interview perspective
+
+<QA q="Validate that a binary tree is a BST — and what's wrong with the obvious approach?">
+
+The obvious approach — check each node against its immediate children —
+fails because the invariant is about *entire subtrees*: every node in the
+left subtree must be smaller, not just the left child. Correct: recurse with
+a (low, high) window — root gets (−∞, +∞); going left tightens high to
+node.val, going right tightens low. Each node checks `low < val < high`.
+O(n) time, O(height) stack. Alternative: an in-order traversal of a valid
+BST is strictly increasing — walk it and verify order. Both answers are
+accepted; knowing *why* the naive one fails is the actual test.
+
+</QA>
+
+<QA q="Why do databases use B-trees rather than hash tables or plain BSTs for indexes?">
+
+Indexes must support range queries (`WHERE age BETWEEN 25 AND 30`,
+`ORDER BY`) — hash tables can't, they destroy order. A plain BST keeps order
+but its nodes are scattered, and on disk every pointer-hop is a slow page
+read ([the speed gap](/basics/how-computers-work)). B-trees fatten each node
+to hold hundreds of keys sized to a disk page, making the tree only 3–4
+levels deep for millions of rows — a handful of page reads per lookup, plus
+ordered leaves for range scans. Hash indexes do exist for pure
+exact-match workloads; the default is B-tree because order questions are
+everywhere. (Full story in Level 9.)
+
+</QA>
+
+<QA q="Find the lowest common ancestor (LCA) of two nodes in a BST. Why is the BST version easier than the general one?">
+
+Walk from the root: if both targets are smaller, go left; both larger, go
+right; otherwise — they split here (or one equals the node) — this node is
+the LCA. O(height), no extra space, because the BST invariant tells you
+*which side* each node lives on. In a plain binary tree there's no compass:
+you recurse both sides and combine ("if left and right each found one
+target, I'm the ancestor") — O(n). One problem, two structures, two
+difficulties — a perfect illustration of what invariants buy.
+
+</QA>
+
+## Practice
+
+1. **Warm-up (recursion reps):** implement `height`, `count`, `sum`, and
+   `mirror` (swap every left/right). Each is ≤5 lines; do them from memory.
+2. **Traversals:** build the BST from the diagram above by inserting
+   `8,3,10,1,6,14`; print all four traversals; confirm in-order comes out
+   sorted.
+3. **The canon:** validate-BST (bounds method), level-order traversal
+   grouped by level (the output is `[[8],[3,10],[1,6,14]]` — where does the
+   per-level boundary come from?), LCA both ways.
+4. **Think in invariants:** you need a leaderboard supporting "insert
+   score," "delete score," and "how many scores are higher than X?" —
+   compare hash table, sorted array, and BST honestly, then pick.
+   (The rank query is the tell.)
+
+Next: [Tries](/dsa/tries) — trees whose *paths* are the data, powering
+autocomplete everywhere.

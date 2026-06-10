@@ -1,0 +1,206 @@
+---
+title: "Hash Tables"
+summary: "How dicts actually work — hash functions, buckets, collisions, resizing — and why O(1) lookup powers half of all interview solutions."
+order: 5
+difficulty: "Foundation"
+tags: ["hash-table", "dictionary", "hashing", "fundamentals"]
+---
+
+## Opening the black box
+
+You've been using hash tables since [Level 1](/programming/collections) —
+every Python `dict`/`set`, Java `HashMap`, C++ `unordered_map` is one. They
+answer "what's the value for this key?" in O(1). This page is about *how*,
+because interviewers ask, and because the failure modes only make sense once
+you've seen the machinery.
+
+## The big idea: compute the location
+
+An [array](/dsa/arrays-and-strings) finds element i instantly because the
+index *is* the location. A hash table extends that trick to arbitrary keys:
+**run the key through a function that turns it into an index.**
+
+```
+key "milk" → hash("milk") = 8,613,972,041 → % 8 buckets → index 5
+
+buckets:  0     1     2     3     4     5         6     7
+        ┌─────┬─────┬─────┬─────┬─────┬─────────┬─────┬─────┐
+        │     │bread│     │     │     │ milk:60 │     │eggs │
+        └─────┴─────┴─────┴─────┴─────┴─────────┴─────┴─────┘
+```
+
+A **hash function** converts any key into a number (the **hash**); modulo
+the array size gives a bucket index. Lookup repeats the same computation —
+no searching, just arithmetic, exactly like array indexing. That's the whole
+O(1).
+
+A good hash function is: **deterministic** (same key → same hash, always),
+**fast**, and **uniform** (keys spread evenly across buckets — clumping
+ruins everything).
+
+## Collisions: the inevitable problem
+
+Infinite possible keys, finite buckets — two keys *will* land in the same
+bucket (`"milk"` and `"yogurt"` both → 5). This is a **collision**, and
+handling it is most of hash-table design:
+
+- **Chaining** (the classic): each bucket holds a small
+  [linked list](/dsa/linked-lists) of (key, value) pairs. Lookup hashes to
+  the bucket, then walks the short chain comparing keys. Java's HashMap
+  works this way (upgrading long chains to trees since Java 8).
+- **Open addressing**: on collision, probe the next slot(s) until an empty
+  one is found. Everything lives in the array itself — cache-friendly;
+  Python's dict does a sophisticated version of this.
+
+### Load factor and resizing
+
+How full the table is — `entries / buckets` — is the **load factor**. As it
+rises, chains lengthen and probes multiply; too full, and O(1) decays toward
+O(n). So tables **resize**: past a threshold (~0.75 for Java's HashMap),
+allocate ~2× the buckets and **re-hash every entry** into its new position
+(indices change because `% size` changed!). One expensive O(n) operation,
+rare enough to stay **amortized O(1)** — the
+[dynamic-array argument](/dsa/arrays-and-strings) again.
+
+| Operation | Average | Worst case | Worst when |
+| --- | --- | --- | --- |
+| insert / lookup / delete | **O(1)** | O(n) | all keys collide into one bucket |
+
+That worst case is real: adversaries who know your hash function can
+manufacture colliding keys and turn your API's dict into a linked list — a
+**hash-flooding DoS attack**. Languages randomize their string hashes per
+process precisely to prevent it. (Great
+[security](/fundamentals/security) trivia that signals depth.)
+
+## Why keys must be immutable
+
+The table *files* a key under the bucket computed from its contents. Mutate
+the key afterwards and its hash changes — but it's still filed in the old
+bucket. It becomes unfindable: lookups compute the *new* hash and walk the
+wrong bucket. This is why Python rejects lists as dict keys
+([tuples are fine](/programming/collections)) and why "don't mutate
+something used as a HashMap key" is a real Java bug class. Java's contract:
+**equal objects must have equal hashes** — override `equals()` and
+`hashCode()` together, or your objects vanish inside HashMaps.
+
+## The interview superpower
+
+The strategic fact: **a hash table converts "have I seen X?" and "what goes
+with X?" from O(n) scans into O(1) asks.** A huge share of "optimize this
+O(n²) solution" interview problems are solved by exactly one hash table:
+
+```python
+# Two Sum — THE canonical example
+# Brute force: try all pairs — O(n²)
+# Hash table: one pass — O(n)
+def two_sum(nums, target):
+    seen = {}                          # value → index
+    for i, x in enumerate(nums):
+        if target - x in seen:         # have I seen my complement?  O(1)
+            return [seen[target - x], i]
+        seen[x] = i
+```
+
+The reusable patterns, each O(n) where the naive way is O(n²):
+
+- **Complement lookup** — two-sum and friends: store what you've seen, ask
+  for what you need.
+- **Counting** — frequency dicts ([Level 1](/programming/collections)):
+  anagrams, majority element, top-k (with a [heap](/dsa/heaps-and-intervals)).
+- **Canonical form as key** — group anagrams by sorted letters; the key
+  *is* the insight.
+- **Seen-set** — duplicates, cycle detection,
+  [visited nodes in graphs](/dsa/graphs-bfs-dfs).
+- **Prefix-sum + hash** — count subarrays summing to k: store running-sum
+  frequencies (prefix sums from the
+  [arrays page](/dsa/arrays-and-strings) meet complement lookup).
+
+When an interviewer says "can you do better?", your first reflex should be:
+*what would I need to look up in O(1) to avoid the inner loop?*
+
+## Production perspective
+
+- Hash tables are arguably the **single most-used data structure in
+  production software**: every JSON object
+  ([Level 0](/basics/what-is-an-api)), HTTP header map, database index of
+  the hash variety, deduplication pass, and cache.
+- **Redis** ([Level 0's key-value store](/basics/what-is-a-database)) is
+  essentially a giant networked hash table — and Level 6's
+  [caching](/hld/caching) is hash-table thinking applied at datacenter
+  scale, including **consistent hashing**, the distributed answer to "what
+  happens when the number of buckets (servers!) changes."
+- The resize pause is real in production too: latency-sensitive systems
+  pre-size their maps, just like `reserve` for vectors.
+
+## Common mistakes
+
+- **Assuming order.** Hash tables order by bucket, not by insertion or
+  value. (Python ≥3.7 dicts *do* preserve insertion order as a language
+  guarantee, but the moment you rely on order across languages, you're in
+  bug country. If order is the point, sort or use the right structure.)
+- **Mutating keys** — the unfindable-entry bug above.
+- **`dict[key]` on missing keys** → KeyError; use `.get`/`getOrDefault`
+  ([exceptions](/programming/exceptions) vs defaults — choose deliberately).
+- **Using a hash table where an array does** — keys 0…n-1? A plain array
+  is faster, smaller, ordered. The dict is not a status symbol.
+- **Java: forgetting hashCode/equals symmetry** when using your own class
+  as a key — entries silently disappear.
+
+## Interview perspective
+
+<QA q="Explain how a hash table achieves O(1) lookup, including what happens on collision.">
+
+A hash function maps the key to a fixed-size integer; modulo the bucket
+count gives an array index — so locating a key is arithmetic, not search.
+Collisions (two keys, one bucket) are handled by chaining (a short list per
+bucket, walked with key comparisons) or open addressing (probe subsequent
+slots). Performance stays O(1) *on average* as long as the hash spreads keys
+uniformly and the load factor is bounded — which resizing maintains by
+doubling buckets and re-hashing when the table gets too full. Worst case is
+O(n) if everything collides — uniform hashing and randomized seeds are the
+defenses.
+
+</QA>
+
+<QA q="Why does resizing a hash table require re-hashing every key?">
+
+Because the bucket index is `hash(key) % bucket_count` — change the bucket
+count and almost every key's index changes. Each entry must be re-placed
+under the new modulus, costing O(n) for that one resize. Doubling makes
+resizes geometrically rarer, so the amortized per-insert cost stays O(1).
+Bonus connection: in distributed caches the "buckets" are servers, and naive
+re-hashing on server changes would invalidate nearly the whole cache —
+that's exactly the problem **consistent hashing** solves (Level 6 material,
+and a beautiful answer to volunteer).
+
+</QA>
+
+<QA q="Given an array, find the length of the longest consecutive run of integers (e.g. [100,4,200,1,3,2] → 4) in O(n). Where's the hash table?">
+
+Put everything in a set — O(1) membership. For each number x, only start
+counting if `x-1` is *not* in the set (x is a run's left edge); then walk
+x+1, x+2… while present, tracking the best length. Every element is visited
+at most twice (once in the scan, once inside a walk), so O(n) total — the
+left-edge check is what prevents O(n²). This is the "seen-set" pattern plus
+a pruning insight, and it's a top-20 interview question
+([problem bank](/dsa/problem-bank)).
+
+</QA>
+
+## Practice
+
+1. **Build it:** implement a hash table with chaining — `put`, `get`,
+   `delete` — using `hash(key) % 8` and lists of pairs. Then add resizing at
+   load factor 0.75 and verify entries survive it.
+2. **The canon:** two-sum (from memory, one pass); first non-repeating
+   character in a string; group anagrams (what's your key?); contains-duplicate.
+3. **Pattern transfer:** count subarrays with sum exactly k using
+   prefix-sums in a dict. Start by solving it O(n²), then ask the magic
+   question: "what lookup kills the inner loop?"
+4. **Reason:** your service maps 10 million session-ids → user objects.
+   Estimate the memory overhead vs a sorted array of pairs, and name what
+   you gain and lose. (Numbers in the
+   [cheat sheet](/cheatsheets/system-design-numbers) help.)
+
+Next: [Trees & BSTs](/dsa/trees-and-bsts) — when data has hierarchy, and
+how sorted order becomes a shape.

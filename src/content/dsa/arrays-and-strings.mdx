@@ -1,0 +1,225 @@
+---
+title: "Arrays & Strings"
+summary: "Contiguous memory, O(1) indexing vs O(n) insertion, dynamic arrays, and why strings are arrays with rules."
+order: 2
+difficulty: "Foundation"
+tags: ["arrays", "strings", "memory", "fundamentals"]
+---
+
+## What an array is
+
+An **array** is a block of **contiguous memory** — values sitting physically
+side by side in [RAM](/basics/how-computers-work) — accessed by index.
+Python's `list`, Java's `ArrayList`/`int[]`, C++'s `vector` are all arrays
+at heart.
+
+The contiguity is the entire story. Because element `i` sits at
+`start_address + i × element_size`, the computer can *calculate* where any
+element lives in one multiplication:
+
+```
+index:    0     1     2     3     4
+        ┌─────┬─────┬─────┬─────┬─────┐
+        │ 40  │ 60  │ 90  │ 25  │ 70  │   addr of a[3] = base + 3×4 bytes
+        └─────┴─────┴─────┴─────┴─────┘
+```
+
+That's why `a[3]` is **O(1)** — instant, whether the array has five elements
+or five billion. No other structure on this level gives you that.
+
+## The cost of contiguity
+
+Everything an array is bad at follows from the same property:
+
+- **Insert/delete in the middle = O(n).** Insert at index 1 and elements
+  1…n−1 must all shift right one slot to keep the block contiguous. Delete,
+  and they shift back. Front insertion is the worst case.
+- **Search by value = O(n).** "Where is 90?" has no shortcut — scan. (Unless
+  the array is *sorted*, which unlocks
+  [binary search](/dsa/binary-search) at O(log n) — the first great
+  trade-off of DSA: pay sorting cost upfront, query fast forever.)
+- **Fixed size... sort of.** True arrays can't grow — the memory after them
+  may be occupied. Growable "arrays" cheat — next section.
+
+| Operation | Cost | Why |
+| --- | --- | --- |
+| Read/write `a[i]` | O(1) | address arithmetic |
+| Append at end | O(1) amortized | usually a free slot (see below) |
+| Insert/delete at index | O(n) | shifting |
+| Search unsorted | O(n) | scan |
+| Search sorted | O(log n) | binary search |
+
+## Dynamic arrays: how append stays O(1)
+
+Python lists, Java ArrayLists and C++ vectors grow on demand. The trick:
+allocate *extra* capacity, and when it runs out, allocate a new block
+(typically ~2× bigger), **copy everything over**, and free the old one.
+
+A single append is occasionally O(n) (the copy), but doubling means copies
+get rarer exactly as they get more expensive — averaged over n appends, each
+costs O(1). That averaged accounting is called **amortized** O(1), a term
+interviewers expect at every level.
+
+```python
+# Python — you never see the resizing, but it's happening
+nums = []
+for i in range(1_000_000):
+    nums.append(i)        # amortized O(1) each
+```
+
+```java
+// Java — capacity is visible if you look
+List<Integer> nums = new ArrayList<>(16);   // initial capacity 16
+```
+
+```cpp
+// C++ — fully visible and controllable
+std::vector<int> nums;
+nums.reserve(1'000'000);   // pre-allocate: now zero re-copies happen
+for (int i = 0; i < 1'000'000; i++) nums.push_back(i);
+```
+
+`reserve` (or sizing the ArrayList) when you know n in advance is a free,
+real-world performance win — and mentioning it in an interview signals you
+know what's under the hood.
+
+## Strings: arrays with rules
+
+A **string** is an array of characters — with one huge twist in
+Python/Java: strings are **immutable**. You can never edit one in place;
+every "modification" builds a new string.
+
+```python
+s = "hello"
+s[0] = "H"          # ❌ TypeError
+s = "H" + s[1:]     # ✅ a NEW string — O(n) copy
+```
+
+This makes one beginner pattern quadratic — the string-building loop:
+
+```python
+# ❌ O(n²): each += copies everything built so far
+result = ""
+for word in words:
+    result += word
+
+# ✅ O(n): collect, then join once
+result = "".join(words)
+```
+
+```java
+// Java: same trap, same fix
+StringBuilder sb = new StringBuilder();   // a MUTABLE char array
+for (String w : words) sb.append(w);
+String result = sb.toString();
+```
+
+C++'s `std::string` *is* mutable (`s[0] = 'H'` works), so the trap doesn't
+exist there — a genuinely useful interview fact when comparing languages.
+
+Why immutability at all? Safe sharing (no
+[aliasing surprises](/programming/functions)), free use as
+[dict keys](/dsa/hash-tables), and thread safety — the same reasons
+[tuples](/programming/collections) are immutable.
+
+## The patterns arrays unlock
+
+Level 3 is built on top of this page; here's the map of where arrays lead:
+
+- **[Two pointers](/dsa/two-pointers)** — replace nested scans with one
+  coordinated pass (sorted pairs, palindromes, partitioning).
+- **[Sliding window](/dsa/sliding-window)** — running computations over every
+  contiguous chunk in O(n).
+- **[Binary search](/dsa/binary-search)** — sorted arrays answer "where?" in
+  O(log n).
+- **Prefix sums** — precompute running totals so any range-sum is O(1):
+  `sum(a[i..j]) = prefix[j+1] - prefix[i]`. Three lines, endless interview
+  mileage:
+
+```python
+prefix = [0]
+for x in nums:
+    prefix.append(prefix[-1] + x)
+# sum of nums[2..5] == prefix[6] - prefix[2]
+```
+
+## Production perspective
+
+- Arrays are the **default collection of all programming** — CPU caches love
+  contiguity (streaming through an array is the fastest thing hardware does),
+  which is why `vector` outperforms fancier structures in practice far more
+  often than complexity tables suggest.
+- Every database row scan, image (2-D array of pixels), ML tensor
+  (n-dimensional array — Level 11), and network buffer is arrays underneath.
+- The append-resize behavior shows up for real: latency spikes when a hot
+  list crosses a doubling boundary at scale — the production cousin of
+  "amortized."
+
+## Common mistakes
+
+- **Index out of range** — `a[len(a)]` doesn't exist; the last element is
+  `a[len(a)-1]`. Off-by-one is the national bug of arrays
+  ([Control Flow](/programming/control-flow) warned you).
+- **Inserting at the front in a loop** — O(n) each, O(n²) total. Append and
+  reverse once, or use a deque ([next page](/dsa/stacks-and-queues)).
+- **String `+=` in loops** in Python/Java — the O(n²) classic above.
+- **Forgetting slices copy.** `b = a[1:4]` in Python is a new list (O(k)) —
+  cheap insurance against aliasing, but a real cost in tight loops.
+- **Modifying while iterating** — still illegal, still tempting
+  ([Collections](/programming/collections)).
+
+## Interview perspective
+
+<QA q="Why is array indexing O(1) but inserting at index 0 O(n)?">
+
+Indexing is address arithmetic: contiguous layout means element i lives at
+`base + i × size`, computable in constant time with no traversal. Inserting
+at the front must keep the layout contiguous, so all n existing elements
+shift one slot right — O(n) moves. The pairing is the array's fundamental
+trade: blazing random access, expensive structural change. If front
+insertions dominate your workload, you want a linked list or a deque instead
+— and articulating that switch is exactly what interviewers fish for.
+
+</QA>
+
+<QA q="Explain amortized O(1) append. Why double the capacity instead of adding a fixed amount?">
+
+When a dynamic array fills, it allocates a bigger block and copies — that
+single append is O(n). With **doubling**, after a copy of size n you're
+guaranteed n more cheap appends before the next copy, so total work for n
+appends is n + (1+2+4+…+n) ≈ 3n → O(1) average per append. With a **fixed
+increment** k, copies happen every k appends and each copy keeps growing:
+total O(n²/k) — asymptotically worse. Geometric growth is what makes the
+amortized argument work.
+
+</QA>
+
+<QA q="Reverse the words in a sentence in place — what does 'in place' even mean for strings in your language?">
+
+In C++ (mutable strings): genuinely in place — reverse the whole char array,
+then reverse each word's range; O(n) time, O(1) extra space. In Python/Java,
+strings are immutable, so true in-place is impossible on the string itself —
+either convert to a list/char array (O(n) space, then the same two-reverse
+trick) or build the answer with split/reverse/join. Saying this distinction
+out loud, rather than hand-waving, is the senior move; the two-reversal trick
+itself is a classic worth knowing.
+
+</QA>
+
+## Practice
+
+1. **Beginner:** given a list of daily temperatures, find the max, min, and
+   average in one pass (no built-ins). Then: a *second* pass approach for
+   "how many days were above average?" — why is one pass impossible here?
+2. **Core:** build the prefix-sum array for `[3, 1, 4, 1, 5, 9, 2]` by hand,
+   then answer `sum(2..5)` from it. Verify by direct addition.
+3. **Classic:** rotate an array right by k positions. First with O(n) extra
+   space, then in place with the three-reversal trick — and prove the trick
+   to yourself on paper before coding.
+4. **String:** check if two strings are anagrams — once by sorting (O(n log
+   n)), once with a counting dict (O(n),
+   [Collections](/programming/collections) pattern). When is sorting
+   actually fine?
+
+Next structure: [Linked Lists](/dsa/linked-lists) — what you get when you
+give up contiguity.

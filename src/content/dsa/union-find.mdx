@@ -1,0 +1,211 @@
+---
+title: "Union-Find"
+summary: "Disjoint sets in ~10 lines — union by rank, path compression, and the 'are these connected?' questions it wins instantly."
+order: 10
+difficulty: "Foundation"
+tags: ["union-find", "dsu", "graphs", "fundamentals"]
+---
+
+## The two-operation structure
+
+**Union-Find** (also *Disjoint Set Union*, **DSU**) tracks a collection of
+items partitioned into non-overlapping groups, and supports exactly two
+operations — both, after optimizations, in effectively O(1):
+
+- `find(x)` — which group is x in?
+- `union(x, y)` — merge x's and y's groups.
+
+That's the entire API. Its question is **"are these two things in the same
+group?"** — `find(x) == find(y)` — and an astonishing number of problems
+are secretly that question:
+
+- Are these two computers connected, given these network links?
+- Do these two people share a friend circle?
+- Does adding this road create a *cycle* (i.e., were its endpoints already
+  connected)?
+- How many islands / clusters / connected components exist?
+
+[BFS/DFS](/dsa/graphs-bfs-dfs) can answer connectivity too — but they
+re-explore the world per query. Union-Find shines when connections arrive
+**incrementally** and you ask connectivity *between* additions: it maintains
+the answer as it goes.
+
+## How it works: forests of pointers
+
+Each group is a tree (not the [BST kind](/dsa/trees-and-bsts) — no order,
+just "who's my parent"), and the **root represents the group**. Every item
+holds a parent pointer; roots point to themselves:
+
+```
+groups {0,1,2} and {3,4}:        parent array: [0, 0, 0, 3, 3]
+
+      0          3               find(2): 2 → 0. root = 0
+     / \         |               find(4): 4 → 3. root = 3
+    1   2        4               same group? 0 ≠ 3 → no
+                                 union(2,4): root 3 now points to root 0
+```
+
+```python
+class UnionFind:
+    def __init__(self, n):
+        self.parent = list(range(n))   # everyone is their own root
+        self.rank = [0] * n            # tree-height estimate, for balance
+
+    def find(self, x):
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])  # ① path compression
+        return self.parent[x]
+
+    def union(self, x, y):
+        rx, ry = self.find(x), self.find(y)
+        if rx == ry:
+            return False               # already connected — useful signal!
+        if self.rank[rx] < self.rank[ry]:
+            rx, ry = ry, rx            # ② union by rank: short tree under tall
+        self.parent[ry] = rx
+        if self.rank[rx] == self.rank[ry]:
+            self.rank[rx] += 1
+        return True
+```
+
+```java
+// Java — same structure, iterative find
+int find(int x) {
+    while (parent[x] != x) {
+        parent[x] = parent[parent[x]];   // path halving — same effect
+        x = parent[x];
+    }
+    return x;
+}
+```
+
+```cpp
+// C++
+int find(int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+```
+
+### The two optimizations (and the magic complexity)
+
+Naively, trees can degenerate into chains — find becomes O(n), the
+[unbalanced-BST disease](/dsa/trees-and-bsts) again. Two one-line cures:
+
+1. **Path compression** — while finding the root, repoint every visited
+   node *directly* at it. The tree flattens itself with use.
+2. **Union by rank/size** — always hang the shorter tree under the taller
+   one, so height grows only when equals merge.
+
+Together: amortized **O(α(n))** per operation, where α is the *inverse
+Ackermann function* — ≤ 4 for any n that fits in this universe. Say
+"effectively constant time" and you're correct at any interview level;
+naming α(n) is the flourish.
+
+## The signature move: cycle detection
+
+`union` returning `False` means "these were already connected" — so adding
+that edge would close a **cycle**. That single bit powers the famous
+applications:
+
+```python
+def has_cycle(n, edges):
+    uf = UnionFind(n)
+    for a, b in edges:
+        if not uf.union(a, b):     # already connected → this edge closes a loop
+            return True
+    return False
+```
+
+- **Kruskal's minimum spanning tree** (Level 3 greedy): sort edges by
+  weight, take each edge unless it forms a cycle — Union-Find *is* that
+  check. Cheapest network connecting all cities, in 15 lines total.
+- **Counting components:** start with n groups; every successful union
+  decrements the count. "Number of islands II" (land appears cell by cell)
+  is exactly this, and is brutal *without* DSU.
+- **Accounts merge / friend circles / equation satisfiability** — anything
+  where equivalences trickle in and must be consolidated.
+
+## Production perspective
+
+- **Network/infra tooling** uses DSU for reachability under churn —
+  clusters merging as links come up.
+- **Image processing**: connected-component labeling (which pixels form one
+  blob) — DSU over the pixel grid.
+- **Compilers & type checkers**: unification of type variables — the
+  "equations arrive incrementally" pattern precisely.
+- The deeper lesson it teaches: **representative elements**. Many systems
+  pick one canonical member to stand for an equivalence class (leader
+  election, canonical URLs, dedup keys) — DSU is that idea as a data
+  structure.
+
+## Common mistakes
+
+- **Skipping both optimizations** — correct but O(n) per op; on 10⁵
+  unions, the difference between instant and timeout.
+- **Comparing items instead of roots** — `parent[x] == parent[y]` is wrong
+  (parents may be mid-tree); always compare `find(x) == find(y)`.
+- **Union-ing the items, not the roots** — `parent[y] = x` instead of
+  `parent[ry] = rx` corrupts the forest invariant.
+- **Forgetting it can't *un*-merge.** DSU has no `split` — deletions/
+  disconnections break it (offline tricks exist; out of scope — but *know*
+  the limitation before proposing DSU in design discussions).
+- **Strings/objects as items** — map them to indices first (a
+  [dict](/dsa/hash-tables): name → id), or use a parent-dict directly.
+
+## Interview perspective
+
+<QA q="Union-Find vs BFS/DFS for connectivity — when does each win?">
+
+BFS/DFS answers connectivity for a *fixed* graph: one O(V+E) traversal
+labels every component; great when the graph is given upfront and queried
+after. Union-Find wins when edges arrive **over time** interleaved with
+queries — it maintains components incrementally at ~O(1) per edge/query,
+where re-running BFS per query would be O(V+E) each. It also can't be beaten
+for cycle-as-you-build checks (Kruskal). Limits: DSU only knows *whether*
+things connect — it can't return the path (BFS can), and it can't handle
+edge deletions. Classifying the problem by "static vs incremental, path vs
+yes/no" is exactly the judgment being tested.
+
+</QA>
+
+<QA q="Explain path compression and union by rank — why does each help, and what's the combined complexity?">
+
+Path compression: during find, repoint every node on the walked path
+directly at the root — the next find on any of them is one hop; trees
+flatten as a side effect of being used. Union by rank: track an upper bound
+on each root's tree height and always attach the shorter tree beneath the
+taller, so height only grows when two equal-rank trees merge — height stays
+O(log n) even without compression. Either alone gives O(log n) amortized;
+together they give O(α(n)) — inverse Ackermann, ≤4 for any feasible input,
+i.e. effectively constant. The proof is graduate-level; the statement and
+intuition are interview-level.
+
+</QA>
+
+<QA q="You're given a stream of 'a is-same-as b' facts and occasional 'are x and y the same?' queries — millions of each. Sketch the solution and its cost.">
+
+Map each new identifier to an integer id via a hash map; maintain a DSU
+over the ids. Facts → `union(a, b)`; queries → `find(x) == find(y)`. With
+both optimizations, each operation is amortized α(n) ≈ constant, so
+millions of mixed operations run in roughly linear total time and O(n)
+memory. This shape — entity resolution / accounts merge / "same cluster?" —
+is among the most common real-world DSU disguises; recognizing the phrase
+"same as" as union-find is the interview unlock.
+
+</QA>
+
+## Practice
+
+1. **Build:** implement UnionFind from memory with both optimizations —
+   it's ~15 lines. Test: 10 items, union pairs, verify groups; check that
+   `union` of an already-joined pair returns False.
+2. **Components:** n computers and a list of cables — how many isolated
+   clusters remain? (Count = n − successful unions.) Then: what's the
+   *minimum* number of new cables to connect everything?
+3. **Cycle:** given a tree-plus-one-extra-edge (LeetCode "Redundant
+   Connection"), find the edge to remove — pure DSU.
+4. **Capstone:** Kruskal's MST on a small weighted graph by hand — sort
+   edges, take-unless-cycle — then code it. You've now combined sorting,
+   greedy (Level 3), and DSU into a real algorithm.
+
+**That completes the Level 2 data structures.** [Heaps](/dsa/heaps-and-intervals)
+and [graphs](/dsa/graphs-bfs-dfs) round out the structures; then the
+[Level 3 patterns](/dsa/two-pointers) start composing them into solutions.

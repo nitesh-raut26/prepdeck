@@ -1,0 +1,260 @@
+---
+title: "Exceptions & Errors"
+summary: "What happens when code goes wrong — try/catch, raising your own errors, finally/with, and the difference between expected and impossible failures."
+order: 6
+difficulty: "Level 1"
+tags: ["programming", "exceptions", "error-handling"]
+---
+
+## Errors are not optional
+
+Every program meets the real world eventually: a file that doesn't exist, a
+network that's down, a user who types `"twenty"` into the age field. The
+question is never *whether* things go wrong — it's **who handles it, where,
+and how gracefully**. Error handling is what separates "works on my machine"
+code from production code, and interviewers notice it instantly.
+
+Three kinds of "wrong," with different fixes:
+
+| Kind | Example | Caught by | Fix |
+| --- | --- | --- | --- |
+| **Syntax error** | `if x > 5` missing the `:` | The language, before/at startup | Read the message, fix the typo |
+| **Runtime error (exception)** | `int("twenty")`, dividing by zero, file missing | The running program — it crashes unless handled | This page |
+| **Logic error (bug)** | Computing the discount as `price * 1.2` | Nothing — code runs "fine," answer is wrong | Tests (Level 7) and debugging |
+
+## What an exception is
+
+An **exception** is an object the runtime creates the moment an operation
+cannot proceed — it then abandons normal execution and travels *up* the
+[call stack](/programming/functions), looking for someone who declared they
+can handle it. If nobody does, the program dies with the **stack trace** you've
+already seen:
+
+```
+Traceback (most recent call last):
+  File "app.py", line 12, in <module>
+    age = int(user_input)
+ValueError: invalid literal for int() with base 10: 'twenty'
+```
+
+Read stack traces **bottom-up**: last line = what went wrong (`ValueError`)
+and where; the lines above = the chain of calls that led there. Learning to
+read these calmly is a genuine professional skill — the trace is not an
+insult, it's a map.
+
+## try / catch: declaring "I can handle this"
+
+```python
+# Python
+try:
+    age = int(input("Your age: "))     # risky line
+except ValueError:
+    print("That's not a number — try again.")
+```
+
+```java
+// Java
+try {
+    int age = Integer.parseInt(input);
+} catch (NumberFormatException e) {
+    System.out.println("That's not a number — try again.");
+}
+```
+
+```cpp
+// C++
+try {
+    int age = std::stoi(input);
+} catch (const std::invalid_argument& e) {
+    std::cout << "That's not a number — try again.\n";
+}
+```
+
+Mechanics, same in all three:
+
+- Code in `try` runs normally. If a line throws, the rest of the `try` block
+  is **skipped** and control jumps to the matching `except`/`catch`.
+- If nothing throws, the handler is skipped entirely.
+- Catch blocks match by **type** — `ValueError` here. You can stack several
+  handlers for different types, most specific first (the
+  [if/elif rule](/programming/control-flow) again).
+
+The analogy: airbags. You don't drive *expecting* a crash, and airbags don't
+prevent crashes — they turn a fatal outcome into a recoverable one, **at the
+place equipped to deal with it**.
+
+## Raising your own
+
+Your functions should refuse bad input rather than compute garbage:
+
+```python
+def withdraw(account, amount):
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+    if amount > account.balance:
+        raise InsufficientFundsError(account.id, amount)
+    account.balance -= amount
+```
+
+```java
+if (amount <= 0) {
+    throw new IllegalArgumentException("amount must be positive, got " + amount);
+}
+```
+
+This is the encapsulation promise from [OOP Basics](/programming/oop-basics)
+with teeth: the object *cannot* be put into an invalid state, because invalid
+requests explode immediately, loudly, at the source — instead of corrupting
+data and exploding three days later somewhere confusing. **Fail fast** is the
+name of this principle, and it's a phrase worth using in interviews.
+
+You can define your own exception types (`class InsufficientFundsError(Exception)`)
+so callers can react to *your* failure modes specifically.
+
+## Cleanup: finally and with
+
+Some things must happen *whether or not* the code failed — closing files,
+releasing connections, unlocking locks:
+
+```python
+# The manual way
+f = open("data.txt")
+try:
+    process(f)
+finally:
+    f.close()        # runs on success AND on exception
+
+# The Pythonic way — 'with' does the finally for you
+with open("data.txt") as f:
+    process(f)       # f is guaranteed closed when this block exits, however it exits
+```
+
+Java's equivalent is **try-with-resources**
+(`try (var f = new FileReader(...)) { ... }`); C++ does it through
+**RAII** — destructors run automatically when scope exits, which is the same
+guarantee built into the language. The shared idea: **tie cleanup to scope,
+not to memory** — humans forget; scopes don't.
+
+## The judgment call: handle, or let it fly?
+
+The hardest part isn't syntax — it's *policy*. Two rules cover most cases:
+
+1. **Catch only what you can actually do something about.** Can you retry,
+   use a default, or ask the user again? Catch it *there*. Can't? Let it
+   propagate to a layer that can — often all the way to one top-level handler
+   that logs it and returns a clean error (Level 7: this becomes your API's
+   `500` handler — see [status codes](/basics/what-is-an-api)).
+2. **Never swallow silently.** The worst line in programming:
+
+```python
+try:
+    save_order(order)
+except Exception:
+    pass          # ❌ the order vanished and nobody will ever know why
+```
+
+An empty catch block converts a loud, debuggable crash into silent data
+corruption. If you truly must continue, *log it* at minimum.
+
+<Callout type="warn" title="Exceptions are for the exceptional">
+Don't use exceptions as ordinary control flow — "user not found" on a login
+page isn't exceptional, it's Tuesday; return a result for it. Reserve
+exceptions for *can't-continue* situations. (Python is culturally more
+permissive here — `StopIteration` powers every for-loop — but the design
+rule of thumb survives across languages.)
+</Callout>
+
+## Common beginner mistakes
+
+- **Catching `Exception` (everything) out of reflex.** You wanted to catch
+  the missing file; you also caught the typo in your own code that *should*
+  have crashed in development. Catch the narrowest type that matches your
+  recovery plan.
+- **try around 200 lines.** Wrap the one risky operation, not the whole
+  function — otherwise you can't tell what failed or guarantee what state
+  things are in.
+- **Using exceptions where an if will do.** Checking `if amount <= 0` before
+  calling is often clearer than try/except around it. (Validation vs
+  exception handling — both have a place.)
+- **Printing instead of re-raising.** `print("error!")` then carrying on with
+  broken state is swallowing with extra steps.
+- **Forgetting the error message is for a *future debugger* (often you).**
+  `raise ValueError("bad input")` vs
+  `raise ValueError(f"expected ISO date, got {raw!r}")` — one of these saves
+  an hour at 2 AM.
+
+## Interview perspective
+
+<QA q="Walk through what happens, mechanically, when an exception is thrown.">
+
+The runtime creates an exception object capturing the error and current stack,
+then begins **unwinding**: the current function stops mid-line; if it has a
+matching catch block, control jumps there. If not, the function's frame is
+popped and the exception re-emerges at the caller's call site, which gets the
+same chance — repeating up the call stack. Any `finally` blocks (or C++
+destructors) along the unwinding path still run. If the stack empties without
+a handler, the runtime terminates the program and prints the stack trace. Key
+implication: an exception is a *non-local* jump — code between the throw site
+and the handler simply doesn't run, which is why cleanup must be in
+finally/with/RAII, not on the lines after the risky call.
+
+</QA>
+
+<QA q="Checked vs unchecked exceptions in Java — what's the difference, and what's the controversy?">
+
+Checked exceptions (e.g. `IOException`) must be either caught or declared in
+the method signature (`throws IOException`) — the compiler enforces that
+callers confront them. Unchecked exceptions (`RuntimeException` and
+subclasses, like `NullPointerException`) propagate freely. The intent:
+checked = recoverable external failures, unchecked = programming bugs. The
+controversy: checked exceptions clutter signatures and tempt developers into
+empty catch blocks, so most modern languages (C#, Kotlin, Python, C++) chose
+not to copy them, and much modern Java wraps checked exceptions into
+unchecked ones at boundaries. Knowing both the rule and the critique reads as
+real-world experience.
+
+</QA>
+
+<QA q="Where should errors be handled in a layered application?">
+
+At the layer that has enough context to *act*. Low layers (database access,
+file IO) should throw rich, specific errors, not swallow them — they don't
+know whether to retry or apologize to a user. Mid layers translate: catch
+`ConnectionTimeout`, maybe retry with backoff, re-throw as a domain error if
+it persists. The top layer (API handler, UI) catches whatever escapes, logs
+the full trace, and presents a clean message — never the raw stack trace
+(that's an information leak, see [security](/fundamentals/security)). One
+sentence version: **throw low, catch high, log once.**
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Wrap the age-input example so it keeps asking until the user enters a
+   valid number ([while loop](/programming/control-flow) + try/except).
+2. Trigger and read three different exceptions on purpose: divide by zero,
+   index past the end of a list, `int("abc")`. For each, identify the
+   exception type name from the trace.
+
+**Intermediate**
+
+3. Add `withdraw` validation to your `BankAccount` from
+   [OOP Basics](/programming/oop-basics): raise on non-positive amounts and
+   on insufficient funds — with messages that include the offending values.
+   Then write calling code that catches each case differently.
+4. Write `safe_divide(a, b)` that returns `a / b`, but returns `None` on
+   division by zero. Then argue (one paragraph): when is returning `None`
+   better than raising, and what new bug does returning `None` invite?
+
+**Advanced**
+
+5. Create a custom `RetryableError`, and write a function
+   `with_retries(f, attempts)` that calls `f`, catches only `RetryableError`,
+   retries up to `attempts` times, and re-raises after the last failure.
+   (You wrote a higher-order function with an error policy — that's
+   production code shape. Compare with what you'll meet in Level 7.)
+
+Next: [Collections](/programming/collections) — lists, dictionaries, sets and
+tuples, and how to pick between them.
