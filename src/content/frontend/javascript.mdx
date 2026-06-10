@@ -1,0 +1,396 @@
+---
+title: "JavaScript"
+summary: "The language of the web — variables, closures, the event loop, promises, async/await, and the DOM. From zero to senior understanding."
+order: 2
+difficulty: "Core"
+tags: ["javascript", "es6", "closures", "async", "dom", "event-loop"]
+---
+
+## What is JavaScript?
+
+**JavaScript (JS)** is the only programming language that runs natively in every web browser. It's what makes web pages *interactive* — clicking buttons, fetching data, animating elements, validating forms.
+
+```
+Analogy: HTML is the skeleton, CSS is the skin, JavaScript is the muscles
+and nervous system — it makes things move and respond.
+```
+
+JavaScript was created in **10 days** in 1995 by Brendan Eich at Netscape. Originally a quick scripting language, it's now used for:
+- Browser interactivity (its original home)
+- Server-side development (Node.js — Level 7)
+- Mobile apps (React Native)
+- Desktop apps (Electron)
+- Machine learning (TensorFlow.js)
+
+---
+
+## Variables: let, const, var
+
+```javascript
+// var — old, function-scoped, avoid in modern code
+var name = "Alice";
+
+// let — block-scoped, reassignable (use for values that change)
+let count = 0;
+count = 1;  // ✅
+
+// const — block-scoped, NOT reassignable (use by default)
+const API_URL = "https://api.example.com";
+API_URL = "other";  // ❌ TypeError
+
+// const objects and arrays can be mutated (just not reassigned)
+const user = { name: "Alice" };
+user.name = "Bob";   // ✅ fine — we're mutating, not reassigning
+user = {};           // ❌ TypeError
+```
+
+**Rule of thumb**: Always use `const`. If you need to reassign, switch to `let`. Never use `var`.
+
+## Data Types
+
+JavaScript has 7 primitive types + objects:
+
+```javascript
+// Primitives (immutable, compared by value)
+let str    = "hello";         // string
+let num    = 42;              // number (JS has one number type — floats and ints)
+let big    = 9007199254740993n; // BigInt (for very large integers)
+let bool   = true;            // boolean
+let nothing = null;           // intentional absence of value
+let missing = undefined;      // variable declared but not assigned
+let sym    = Symbol("id");    // unique identifier (advanced)
+
+// Objects (mutable, compared by reference)
+let obj   = { key: "value" };
+let arr   = [1, 2, 3];       // arrays are objects
+let fn    = function() {};    // functions are objects
+```
+
+**Type coercion gotcha** — JS silently converts types, which causes bugs:
+```javascript
+"5" + 3    // "53" (string concatenation!)
+"5" - 3    // 2    (numeric subtraction)
+0 == false // true
+0 === false// false  ← always use === (strict equality)
+```
+
+**Always use `===` (strict equality)** — it checks both value AND type.
+
+## Functions
+
+```javascript
+// Function declaration (hoisted — can be called before its definition)
+function greet(name) {
+  return `Hello, ${name}!`;
+}
+
+// Function expression
+const greet = function(name) {
+  return `Hello, ${name}!`;
+};
+
+// Arrow function (concise; does NOT have its own `this`)
+const greet = (name) => `Hello, ${name}!`;
+
+// Default parameters
+const connect = (host = "localhost", port = 3000) => `${host}:${port}`;
+
+// Rest parameters (...args collects remaining args into array)
+const sum = (...nums) => nums.reduce((a, b) => a + b, 0);
+sum(1, 2, 3, 4); // 10
+
+// Spread operator (opposite: expands an array/object)
+const nums = [1, 2, 3];
+Math.max(...nums);      // 3
+const copy = [...nums]; // [1, 2, 3] — shallow copy
+```
+
+## Closures — The Most Important Concept in JS
+
+A **closure** is a function that "remembers" the variables from its surrounding scope even after that scope has finished executing.
+
+```javascript
+function makeCounter() {
+  let count = 0;  // This variable lives in makeCounter's scope
+
+  return function() {
+    count++;       // The inner function "closes over" count
+    return count;
+  };
+}
+
+const counter = makeCounter();  // makeCounter finishes executing
+counter();  // 1   — but count is still alive inside the closure!
+counter();  // 2
+counter();  // 3
+
+const counter2 = makeCounter();
+counter2(); // 1   — independent closure, own count
+```
+
+**Why closures matter**:
+- **Data privacy** — `count` is inaccessible from outside; only the returned function can touch it
+- **Factory functions** — create customized functions
+- **Memoization** — cache previous results (see [Dynamic Programming](/dsa/dynamic-programming))
+- **Event handlers** — retain access to variables when an event fires later
+
+```javascript
+// Classic closure bug in loops (with var)
+for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100);
+}
+// Prints: 3 3 3 (all share the same var i)
+
+// Fix 1: use let (block-scoped, creates new binding each iteration)
+for (let i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100);
+}
+// Prints: 0 1 2 ✅
+```
+
+## `this` — The Most Confusing Part of JS
+
+`this` refers to the **object that invoked the function**, not where the function was defined.
+
+```javascript
+const user = {
+  name: "Alice",
+  greet() {
+    console.log(`Hi, I'm ${this.name}`);  // this = user
+  }
+};
+user.greet();  // "Hi, I'm Alice" ✅
+
+// Losing `this`
+const fn = user.greet;
+fn();  // "Hi, I'm undefined" ❌ — this = global object (or undefined in strict mode)
+
+// Fix: arrow functions don't have their own `this` — they inherit from enclosing scope
+const user2 = {
+  name: "Bob",
+  greet: () => console.log(`Hi, I'm ${this.name}`)
+};
+user2.greet(); // "Hi, I'm undefined" ❌ — arrow functions capture outer `this`, not user2
+
+// Fix for class methods: bind, or use regular functions as methods
+class User {
+  constructor(name) { this.name = name; }
+  greet() { return `Hi, I'm ${this.name}`; }  // regular function as method ✅
+}
+```
+
+Rule: use **regular functions** for methods (they get `this` from the caller), **arrow functions** for callbacks (they inherit `this` from the enclosing scope).
+
+## Arrays & Objects — Modern Syntax
+
+```javascript
+// Destructuring
+const { name, age = 25 } = user;          // object destructuring (with default)
+const [first, , third] = [10, 20, 30];    // array destructuring (skip index 1)
+
+// Spread & rest
+const merged = { ...obj1, ...obj2 };      // merge objects
+const clone  = [...arr];                   // shallow copy array
+
+// Optional chaining — no more "Cannot read property of undefined"
+const city = user?.address?.city;         // undefined if any step is null/undefined
+const first = users?.[0]?.name;
+
+// Nullish coalescing
+const name = user.name ?? "Anonymous";    // use right side only if left is null/undefined
+// vs logical OR (||): uses right side if left is falsy (0, "", false)
+const count = data.count ?? 0;            // 0 wins; data.count || 0 would also be 0
+```
+
+## The Event Loop — How JS Is Single-Threaded but Non-Blocking
+
+JavaScript runs on **one thread** — it can only execute one thing at a time. But it handles I/O (network, timers, files) without blocking through the **event loop**.
+
+```
+┌─────────────────────────────────────────┐
+│              Call Stack                  │  ← synchronous code runs here
+│   (runs one function at a time)          │
+└─────────────────────────────────────────┘
+          ↑ when stack empty
+┌─────────────────────────────────────────┐
+│            Callback Queue               │  ← setTimeout, setInterval callbacks
+└─────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│           Microtask Queue               │  ← Promise .then(), await (runs FIRST)
+└─────────────────────────────────────────┘
+```
+
+Order of execution: **synchronous → microtasks → callback queue**
+
+```javascript
+console.log("1");
+
+setTimeout(() => console.log("2"), 0);  // callback queue
+
+Promise.resolve().then(() => console.log("3"));  // microtask queue
+
+console.log("4");
+
+// Output: 1, 4, 3, 2
+// Why: sync (1, 4) → microtasks (3) → callbacks (2)
+```
+
+## Promises & Async/Await
+
+A **Promise** represents a value that will be available in the future (or an error).
+
+```javascript
+// Creating a Promise
+function fetchUser(id) {
+  return new Promise((resolve, reject) => {
+    // Simulating async work (HTTP request, file read, etc.)
+    setTimeout(() => {
+      if (id > 0) resolve({ id, name: "Alice" });
+      else reject(new Error("Invalid ID"));
+    }, 1000);
+  });
+}
+
+// Consuming with .then()/.catch() (older, but good to know)
+fetchUser(1)
+  .then(user => console.log(user.name))  // Alice
+  .catch(err => console.error(err.message));
+
+// Consuming with async/await (modern, preferred — reads like synchronous code)
+async function main() {
+  try {
+    const user = await fetchUser(1);   // pauses until promise resolves
+    console.log(user.name);            // Alice
+  } catch (err) {
+    console.error(err.message);
+  }
+}
+```
+
+**Parallel vs sequential async**:
+```javascript
+// Sequential (slow — each waits for the previous)
+const user    = await fetchUser(1);
+const posts   = await fetchPosts(1);  // waits for fetchUser to finish first
+
+// Parallel (fast — both start simultaneously)
+const [user, posts] = await Promise.all([fetchUser(1), fetchPosts(1)]);
+```
+
+Use `Promise.all` when operations are independent. Use sequential `await` when one depends on the other.
+
+## DOM Manipulation
+
+The **DOM** (Document Object Model) is the tree of HTML elements that JavaScript can read and modify.
+
+```javascript
+// Selecting elements
+const header  = document.getElementById("main-header");
+const buttons = document.querySelectorAll(".btn");    // returns NodeList
+const first   = document.querySelector(".card");      // first match
+
+// Reading and writing
+header.textContent = "New Title";           // safe text (no HTML parsing)
+header.innerHTML = "<strong>Bold</strong>"; // renders HTML (XSS risk if user input!)
+header.style.color = "red";
+
+// Classes
+element.classList.add("active");
+element.classList.remove("active");
+element.classList.toggle("active");
+element.classList.contains("active"); // boolean
+
+// Attributes
+input.getAttribute("placeholder");
+input.setAttribute("disabled", "");
+input.removeAttribute("disabled");
+
+// Creating and inserting elements
+const p = document.createElement("p");
+p.textContent = "New paragraph";
+document.body.appendChild(p);
+parent.insertBefore(p, referenceNode);
+```
+
+## Events
+
+```javascript
+// addEventListener (preferred — can add multiple listeners)
+button.addEventListener("click", function(event) {
+  event.preventDefault();   // stop default behavior (e.g., form submission)
+  event.stopPropagation();  // stop event bubbling up to parent elements
+  console.log("Clicked!", event.target);
+});
+
+// Event delegation — attach one listener to a parent, not many to children
+// Efficient for dynamic lists
+document.getElementById("todo-list").addEventListener("click", (event) => {
+  if (event.target.matches(".delete-btn")) {
+    event.target.closest("li").remove();
+  }
+});
+```
+
+**Event bubbling**: events propagate up the DOM tree (child → parent → document). This is why event delegation works.
+
+## Modules (ES Modules)
+
+Modern JS splits code into **modules** — files that explicitly export and import things.
+
+```javascript
+// utils.js
+export function formatDate(date) {
+  return date.toLocaleDateString();
+}
+export const MAX_ITEMS = 100;
+export default class Logger { /* ... */ }  // one default export per file
+
+// main.js
+import Logger from './utils.js';                          // default import
+import { formatDate, MAX_ITEMS } from './utils.js';       // named imports
+import { formatDate as fd } from './utils.js';            // aliased import
+import * as utils from './utils.js';                      // namespace import
+```
+
+Modules are loaded in browsers via `<script type="module">` and in Node.js natively (`.mjs` or `"type": "module"` in package.json).
+
+## Common Interview Questions
+
+<QA q="What is a closure and why is it useful?">
+
+A closure is a function that retains access to its outer scope's variables even after the outer function has returned. It's useful for data encapsulation (private variables), factory functions, memoization, and maintaining state in callbacks. The classic example is a counter factory: `makeCounter()` returns an increment function that keeps its own `count` private.
+
+</QA>
+
+<QA q="Explain the JavaScript event loop.">
+
+JS is single-threaded — it has one call stack that runs one function at a time. When async operations (timers, fetch, I/O) complete, their callbacks are placed in a queue. The **event loop** checks: if the call stack is empty, pull the next callback from the queue and execute it. Microtasks (Promise `.then`, `await`) have a dedicated higher-priority queue that drains completely before any macrotask (setTimeout, setInterval) runs.
+
+</QA>
+
+<QA q="What's the difference between `null` and `undefined`?">
+
+`undefined` means a variable was declared but never assigned a value. `null` is an explicit, intentional absence of a value — a developer sets something to `null` on purpose. Use `undefined` to check "was this provided?", and `null` to mean "intentionally empty". Both are falsy; `null == undefined` is `true` but `null === undefined` is `false`.
+
+</QA>
+
+<QA q="How does `async/await` differ from Promises `.then()`?">
+
+Both are Promise-based — `async/await` is syntactic sugar that makes async code look synchronous, making it easier to read and reason about, especially in chains. Error handling with `try/catch` is cleaner than `.catch()` chaining. However, `.then()` is still useful for `.all()`, `.race()`, and functional styles. They're interchangeable; choose based on readability.
+
+</QA>
+
+<QA q="Explain `var`, `let`, and `const` scope differences.">
+
+`var` is function-scoped and hoisted (available before declaration, as `undefined`). `let` and `const` are block-scoped (only available within the `{}` they're declared in) and not accessible before declaration (temporal dead zone). `const` additionally prevents reassignment. In modern code, always prefer `const` by default, `let` when reassignment is needed, and never `var`.
+
+</QA>
+
+## Practice
+
+1. **Beginner**: Write a closure-based bank account with `deposit(amount)`, `withdraw(amount)`, and `balance()` methods — balance should be private.
+2. **Core**: Implement `debounce(fn, delay)` — a function that delays calling `fn` until `delay` milliseconds after the last call. Use it for search input.
+3. **Async**: Fetch a list of users from `https://jsonplaceholder.typicode.com/users` and display their names in the DOM, with loading and error states.
+4. **Event delegation**: Build a dynamic TODO list where items can be added and deleted, using only one event listener on the parent `<ul>`.
+
+Next: [TypeScript](/frontend/typescript) — typed JavaScript for large-scale applications.

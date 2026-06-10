@@ -1,0 +1,380 @@
+---
+title: "HTML & CSS"
+summary: "The skeleton and skin of every web page — semantic HTML5, the box model, Flexbox, Grid, and responsive design from first principles."
+order: 1
+difficulty: "Foundation"
+tags: ["html", "css", "responsive", "flexbox", "grid", "fundamentals"]
+---
+
+## What is HTML?
+
+**HTML** (HyperText Markup Language) is the skeleton of a web page. It describes
+*what* content exists — headings, paragraphs, images, buttons — using **tags**
+wrapped in angle brackets.
+
+```
+Real-world analogy: HTML is the blueprint of a building.
+It says "put a door here, a window there, stairs here" —
+but doesn't describe the colour of the walls or the carpet.
+That's CSS's job.
+```
+
+A minimal HTML document:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My First Page</title>
+  </head>
+  <body>
+    <h1>Hello, World!</h1>
+    <p>This is a paragraph.</p>
+  </body>
+</html>
+```
+
+- `<!DOCTYPE html>` — tells the browser to use HTML5 (modern rules).
+- `<head>` — metadata (not visible to users): title, charset, links to CSS.
+- `<body>` — everything the user actually sees.
+
+## Semantic HTML5
+
+**Semantic tags** have meaning beyond just layout. Prefer them over generic `<div>` wrappers.
+
+| Tag | Meaning | Use for |
+|---|---|---|
+| `<header>` | Top section | Logo, nav, hero |
+| `<nav>` | Navigation links | Menus, breadcrumbs |
+| `<main>` | Primary content | Only ONE per page |
+| `<article>` | Self-contained content | Blog post, card |
+| `<section>` | Thematic group | Chapter-like regions |
+| `<aside>` | Secondary content | Sidebar, related links |
+| `<footer>` | Bottom section | Copyright, links |
+| `<figure>` / `<figcaption>` | Media + caption | Images, charts |
+
+Why semantic HTML matters:
+- **Accessibility** — screen readers navigate by landmarks (`<nav>`, `<main>`, etc.)
+- **SEO** — search engines weight `<h1>` and `<article>` content heavily
+- **Maintainability** — `<header>` is self-documenting; `<div class="header">` is not
+
+```html
+<!-- ❌ Non-semantic: structure hidden in class names -->
+<div class="header">
+  <div class="nav">...</div>
+</div>
+
+<!-- ✅ Semantic: structure is in the tag itself -->
+<header>
+  <nav>...</nav>
+</header>
+```
+
+## HTML Forms
+
+Forms collect user input and send it to a server (or JavaScript).
+
+```html
+<form action="/submit" method="POST">
+  <label for="email">Email</label>
+  <input type="email" id="email" name="email" required placeholder="you@example.com" />
+
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" minlength="8" required />
+
+  <button type="submit">Sign In</button>
+</form>
+```
+
+Key input types: `text`, `email`, `password`, `number`, `date`, `checkbox`, `radio`, `file`, `range`, `search`.
+
+The `for` attribute on `<label>` must match the `id` on the `<input>` — this links them for accessibility (clicking the label focuses the input).
+
+---
+
+## What is CSS?
+
+**CSS** (Cascading Style Sheets) is the skin — it controls color, size, spacing, fonts, and layout.
+
+```
+Analogy: HTML is the blueprint; CSS is the interior design —
+paint, furniture placement, lighting.
+```
+
+Three ways to apply CSS (in order of best practice):
+
+```html
+<!-- 1. External stylesheet (best — separation of concerns) -->
+<link rel="stylesheet" href="styles.css" />
+
+<!-- 2. Internal <style> tag (acceptable for demos) -->
+<style>
+  h1 { color: blue; }
+</style>
+
+<!-- 3. Inline (avoid — hard to override, mixes concerns) -->
+<h1 style="color: blue;">Hello</h1>
+```
+
+## The Box Model
+
+**Every element in CSS is a rectangular box** with four layers:
+
+```
+┌──────────────────────────────────────────────────┐
+│                     MARGIN                        │  ← Space OUTSIDE the border
+│  ┌──────────────────────────────────────────┐    │
+│  │                  BORDER                  │    │  ← The line/edge
+│  │  ┌────────────────────────────────────┐  │    │
+│  │  │              PADDING               │  │    │  ← Space INSIDE the border
+│  │  │  ┌──────────────────────────────┐  │  │    │
+│  │  │  │          CONTENT             │  │  │    │  ← Your text/image
+│  │  │  └──────────────────────────────┘  │  │    │
+│  │  └────────────────────────────────────┘  │    │
+│  └──────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────┘
+```
+
+```css
+.card {
+  width: 300px;          /* content width */
+  padding: 16px;         /* space inside border */
+  border: 2px solid #ccc;
+  margin: 24px auto;     /* space outside; auto centers horizontally */
+  box-sizing: border-box; /* width now includes padding + border — always use this */
+}
+```
+
+> **Always set `box-sizing: border-box` globally.** It makes sizing predictable:
+> with the default `content-box`, `width: 300px` + `padding: 16px` + `border: 2px`
+> = 334px total — unintuitive. `border-box` keeps it at 300px.
+>
+> ```css
+> *, *::before, *::after { box-sizing: border-box; }
+> ```
+
+## CSS Specificity
+
+When multiple rules target the same element, CSS uses **specificity** to decide which wins:
+
+```
+Inline styles       → 1000 points
+ID selectors        →  100 points (#myId)
+Class/attr/pseudo   →   10 points (.class, [type="text"], :hover)
+Element selectors   →    1 point  (p, div, h1)
+```
+
+```css
+/* 0,0,1 — element */
+p { color: blue; }
+
+/* 0,1,0 — class beats element */
+.intro { color: green; }   /* wins */
+
+/* 1,0,0 — ID beats class */
+#hero { color: red; }      /* wins */
+```
+
+Avoid `!important` — it breaks the cascade and makes debugging a nightmare.
+
+## Flexbox — 1-Dimensional Layout
+
+Flexbox arranges items in **one axis** (row or column). It's the right tool for:
+- Navbars
+- Card rows
+- Centering things
+
+```css
+.container {
+  display: flex;
+  flex-direction: row;      /* or column */
+  justify-content: center;  /* main axis: start|end|center|space-between|space-around */
+  align-items: center;      /* cross axis: start|end|center|stretch */
+  gap: 16px;               /* spacing between children (modern, prefer over margins) */
+}
+```
+
+```html
+<!-- Center anything — the classic one-liner -->
+<div style="display:flex; justify-content:center; align-items:center; height:100vh;">
+  <p>I am perfectly centered.</p>
+</div>
+```
+
+Key child properties:
+```css
+.item {
+  flex: 1;          /* grow to fill available space (shorthand for flex-grow:1 flex-shrink:1 flex-basis:0) */
+  flex: 0 0 200px;  /* fixed 200px, no grow, no shrink */
+  align-self: flex-start; /* override parent's align-items for this item */
+}
+```
+
+## CSS Grid — 2-Dimensional Layout
+
+Grid arranges items across **both rows and columns**. Use it for full-page layouts and complex grids.
+
+```css
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr; /* 3 columns: 1/4, 2/4, 1/4 of space */
+  grid-template-rows: auto;
+  gap: 24px;
+}
+
+/* Named areas — self-documenting layout */
+.layout {
+  display: grid;
+  grid-template-areas:
+    "header header header"
+    "sidebar main  main"
+    "footer footer footer";
+  grid-template-columns: 250px 1fr 1fr;
+}
+
+.header  { grid-area: header; }
+.sidebar { grid-area: sidebar; }
+.main    { grid-area: main; }
+.footer  { grid-area: footer; }
+```
+
+`fr` is the **fractional unit** — it divides the remaining space proportionally. `1fr 2fr` = one-third, two-thirds.
+
+`repeat(auto-fill, minmax(250px, 1fr))` is the magic responsive grid — as many columns as fit, each at least 250px wide:
+
+```css
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+```
+
+## Responsive Design
+
+**Responsive design** means your layout adapts to different screen sizes (phone, tablet, desktop).
+
+### Media Queries
+
+```css
+/* Mobile-first: style for small screens by default */
+.card { padding: 12px; }
+
+/* Then add rules for larger screens */
+@media (min-width: 768px) {
+  .card { padding: 24px; }
+}
+
+@media (min-width: 1024px) {
+  .card { padding: 32px; }
+}
+```
+
+Common breakpoints: 480px (small phones), 768px (tablets), 1024px (desktops), 1280px (large desktops).
+
+### Viewport Units
+
+```css
+.hero {
+  height: 100vh;   /* 100% of viewport height */
+  width: 100vw;    /* 100% of viewport width */
+  font-size: 5vw;  /* 5% of viewport width — scales with screen */
+}
+```
+
+### The `<meta viewport>` Tag
+
+**Without this, mobile browsers zoom out** to fit a desktop page:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+```
+
+Always include it. Without it, your CSS media queries won't work correctly on mobile.
+
+## CSS Variables (Custom Properties)
+
+```css
+:root {
+  --color-primary: #6366f1;
+  --color-bg: #0f172a;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --radius: 8px;
+  --font-sans: 'Inter', sans-serif;
+}
+
+.button {
+  background: var(--color-primary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius);
+}
+
+/* Dark mode in 3 lines */
+@media (prefers-color-scheme: dark) {
+  :root { --color-bg: #0f172a; --color-text: #f8fafc; }
+}
+```
+
+## Positioning
+
+```css
+.parent { position: relative; }
+
+.child {
+  position: absolute;   /* positioned relative to nearest positioned ancestor */
+  top: 0;
+  right: 0;
+}
+
+/* position: fixed — relative to viewport, stays on scroll (navbars, modals) */
+/* position: sticky — scrolls with page until a threshold, then sticks */
+nav { position: sticky; top: 0; z-index: 100; }
+```
+
+## Common Interview Questions
+
+<QA q="What's the difference between `display: block`, `inline`, and `inline-block`?">
+
+- **`block`**: Takes full width, starts on a new line, respects width/height/margin/padding in all directions. Examples: `div`, `p`, `h1`.
+- **`inline`**: Flows with text, ignores `width`/`height`, only respects horizontal margin/padding. Examples: `span`, `a`, `strong`.
+- **`inline-block`**: Flows with text but respects `width`/`height` — best of both worlds. Good for navigation items.
+
+</QA>
+
+<QA q="Explain the CSS cascade — what determines which rule wins?">
+
+The cascade resolves conflicts using three factors in order:
+1. **Origin** — author (your CSS) beats browser defaults; `!important` reverses this.
+2. **Specificity** — inline > ID > class/pseudo > element.
+3. **Order** — if specificity is equal, the last rule wins.
+
+Understanding this is why you should avoid `!important`: it short-circuits the cascade and makes maintenance painful.
+
+</QA>
+
+<QA q="When do you choose Flexbox vs Grid?">
+
+Use **Flexbox** when you have a 1-dimensional arrangement (a row of items, a vertical stack) and want items to respond to their content size.
+Use **Grid** for 2-dimensional layouts where you need to control placement across both rows and columns simultaneously — page layouts, dashboards, complex card grids.
+
+They're not mutually exclusive: Grid for the page structure, Flexbox for the items within each grid cell.
+
+</QA>
+
+<QA q="What is z-index and when does it work?">
+
+`z-index` controls stacking order on the Z axis (which element appears on top). It only works on elements with a `position` other than `static` (i.e., `relative`, `absolute`, `fixed`, `sticky`). Higher values stack on top. Elements also form **stacking contexts** — a child can never appear above its parent's stacking context boundary.
+
+</QA>
+
+## Practice
+
+1. **Beginner**: Build a responsive navbar with a logo left and nav links right using Flexbox. On mobile it should stack vertically.
+2. **Core**: Create a 3-column card grid using CSS Grid that becomes 1 column on mobile. No JavaScript.
+3. **Advanced**: Build a full page layout — sticky header, sidebar, main content, footer — using CSS Grid named areas.
+4. **Challenge**: Implement a dark/light mode toggle using only CSS custom properties and the `:checked` pseudo-class (no JavaScript).
+
+Next: [JavaScript](/frontend/javascript) — making pages interactive.
