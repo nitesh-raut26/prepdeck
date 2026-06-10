@@ -71,8 +71,11 @@ runtime, exactly where it matters most (untrusted input).
 
 ## async, and the honest version
 
-`async def` endpoints run on an event loop (uvicorn) — **the same model
-as [Node](/backend/nodejs)**, same superpower (huge I/O concurrency on
+`async def` endpoints run on an event loop, hosted by **uvicorn** — the
+server program that actually listens on the port and feeds requests to
+your FastAPI app (FastAPI defines *what* to do; uvicorn does the
+listening and looping). It is **the same model as
+[Node](/backend/nodejs)**: same superpower (huge I/O concurrency on
 one thread), same iron rule (CPU work freezes everyone), same caveat
 (your DB driver must be async — SQLAlchemy's async mode in StockVision's
 case). FastAPI adds a pragmatic escape hatch: declare an endpoint with

@@ -108,10 +108,20 @@ names generate.
 One annotation wraps the method in a
 [database transaction](/basics/what-is-a-database): everything inside
 commits together or rolls back together on exception. The reserve-and-save
-above can never half-happen. Mechanism worth knowing: Spring wraps your
-bean in a **proxy** that opens/commits the transaction around the call —
-which is why *internal* calls (`this.create(...)`) bypass it. That gotcha
-is a famous mid-level interview question.
+above can never half-happen.
+
+The mechanism is worth understanding, not just naming. A **bean** is
+Spring's word for any object the container manages (your `OrderService`
+instance is a bean). When a bean has `@Transactional`, Spring doesn't
+hand out your object directly — it hands out a **proxy**: a stand-in
+object that wraps yours, like a receptionist in front of an office. Calls
+arrive at the proxy, which opens the transaction, *then* forwards to your
+real method, then commits or rolls back when it returns. This explains
+the famous gotcha: a method calling another method on the *same class*
+(`this.create(...)`) goes straight to the real object — the receptionist
+never sees it — so the annotation silently does nothing. A favorite
+mid-level interview question, because it tests whether you know the
+mechanism or just the annotation.
 
 ## Annotations, magic, and the trade
 

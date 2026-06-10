@@ -146,9 +146,11 @@ operationalizes all three.
   origin story.
 - **Splitting by noun-table instead of capability** — UserService,
   OrderService, and every request visiting both.
-- **Sync chains five deep** — availability multiplies down: five
-  99.9% services in series ≈ 99.5%, and p99 latency stacks
-  ([estimation instincts](/hld/approach)).
+- **Sync chains five deep** — availability multiplies down: if each
+  service is up 99.9% of the time, a request needing all five in a row
+  succeeds only 0.999⁵ ≈ 99.5% of the time — you made everything less
+  reliable by wiring it in series. Worst-case latency stacks the same
+  way ([estimation instincts](/hld/approach)).
 - **No timeouts/circuit breakers** — one slow dependency exhausts your
   thread pool and the cascade takes the platform down.
 - **Events without idempotent consumers** — duplicate `PaymentCharged`,

@@ -141,8 +141,9 @@ registry + backplane*. Learn it once, recognize it everywhere.
 - **Skipping heartbeats** — zombie sockets accumulate until memory or
   file-descriptor exhaustion ([the unclosed-file lesson](/programming/file-handling)
   at scale).
-- **Unbounded per-client queues** — one slow consumer OOMs the server;
-  coalesce or cut.
+- **Unbounded per-client queues** — messages buffered for one slow
+  consumer pile up until the server runs out of memory and crashes
+  (an **OOM** — out-of-memory — kill); coalesce or cut.
 - **Auth only at connect, forever** — an 8-hour socket outlives a
   10-minute token; re-verify on a timer or on sensitive actions.
 

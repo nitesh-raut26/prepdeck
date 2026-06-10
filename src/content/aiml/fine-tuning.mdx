@@ -1,0 +1,263 @@
+---
+title: "Fine-Tuning"
+summary: "Teaching a pre-trained model new behavior — full fine-tuning vs LoRA, when to fine-tune vs RAG vs prompting, data preparation, and evaluation."
+order: 7
+difficulty: "Intermediate"
+tags: ["fine-tuning", "lora", "llm", "training", "ai"]
+---
+
+## What fine-tuning is
+
+A pre-trained [LLM](/aiml/llms) has already learned language, facts and
+reasoning from its enormous training run. **Fine-tuning** continues that
+training — briefly, on *your* much smaller dataset — so the model's
+weights shift toward your task.
+
+```
+Analogy: a pre-trained model is a doctor fresh out of medical school —
+broad knowledge, general skills. Fine-tuning is residency: a few months
+of focused practice that turns them into a cardiologist. You didn't
+re-teach biology; you specialized behavior that was already there.
+```
+
+The key mental model: fine-tuning changes **how the model behaves**
+(style, format, skill at a narrow task), not primarily **what it knows**.
+That single sentence decides most fine-tune-or-not debates — see the
+comparison below.
+
+## The decision that matters: prompt vs RAG vs fine-tune
+
+This is the question interviews and real projects actually ask, so take
+it first. The three tools solve *different* problems:
+
+| You need… | Reach for | Why |
+| --- | --- | --- |
+| Better instructions, examples of the task | **Prompting** (few-shot examples, clearer system prompt) | Free, instant, no training. Always exhaust this first. |
+| The model to know *your data* (docs, tickets, code) | **[RAG](/aiml/rag)** | Knowledge changes daily; retrieval stays current. Fine-tuning is a terrible database. |
+| A *behavior* prompting can't reach: strict output format, brand voice, a narrow skill, a smaller/cheaper model matching a bigger one on your task | **Fine-tuning** | Behavior lives in weights; examples in the prompt only rent it, training buys it. |
+
+```
+The litmus test:
+
+  "The model doesn't KNOW something"        → RAG (or wait for a newer model)
+  "The model doesn't DO something the way   → prompt harder; if 50+ good
+   I want, even with examples in the prompt"   examples still fail → fine-tune
+
+  And they compose: production systems often use ALL THREE —
+  a fine-tuned model, fed retrieved context, behind a good prompt.
+```
+
+Two honest costs before you start: fine-tuning **freezes knowledge** at
+training time (your data updates ≠ model updates — that's RAG's job),
+and a fine-tuned model can **forget** some general ability while
+specializing (called *catastrophic forgetting* — mild at low learning
+rates, real at aggressive ones).
+
+## How it works mechanically
+
+Recall from [neural networks](/aiml/neural-networks): training = show
+examples, measure error, nudge weights downhill (gradient descent).
+Fine-tuning is literally the same loop with three changes:
+
+1. **Start from the pre-trained weights** instead of random ones.
+2. **Tiny learning rate** — you're refining a sculpture, not carving a
+   new one; big steps destroy what pre-training built.
+3. **Your dataset** — hundreds to tens of thousands of examples instead
+   of trillions of tokens.
+
+For chat models, each training example is a conversation showing the
+*exact* behavior you want:
+
+```jsonl
+{"messages": [
+  {"role": "system", "content": "You are LandAI's report writer."},
+  {"role": "user", "content": "Summarize parcel #4412 for a buyer."},
+  {"role": "assistant", "content": "**Parcel 4412 — Buyer Summary**\n- Zoning: residential R2...\n- Flood risk: low (zone X)...\n- Verdict: suitable for single-family development."}
+]}
+```
+
+The assistant turns are the lesson: the model learns to produce *that
+shape of answer* in *that voice* — exactly the formatting consistency
+that's hard to guarantee through prompting alone.
+
+## Full fine-tuning vs LoRA (the interview distinction)
+
+**Full fine-tuning** updates *every* weight in the model. For a
+70-billion-parameter model that means holding the model, its gradients,
+and optimizer state in GPU memory — hundreds of gigabytes, multi-GPU
+rigs, real money. And every specialized variant you train is a complete
+multi-hundred-GB copy.
+
+**LoRA (Low-Rank Adaptation)** is the technique that made fine-tuning
+affordable, and the one to know cold:
+
+```
+Full fine-tuning:                LoRA:
+
+  W  (the original weights)       W stays FROZEN
+  ↓ training updates W            two small matrices A·B are added
+  W' (a whole new model)          alongside: output = W·x + (A·B)·x
+                                  ↓ training updates only A and B
+
+  100% of parameters touched      typically <1% of parameters trained
+  one new full model per task     one ~50 MB "adapter" file per task —
+                                  swap adapters on the same base model
+```
+
+Why a *low-rank* (small) pair of matrices is enough: the change a
+fine-tune needs to make is far simpler than the model itself — you're
+adjusting a style, not relearning English. Empirically, LoRA matches
+full fine-tuning on most specialization tasks at a fraction of the cost.
+**QLoRA** pushes further: the frozen base model is *quantized* (weights
+compressed to 4-bit numbers — lossy but tolerable), letting a
+13B-parameter model fine-tune on one consumer GPU.
+
+In practice you'll meet fine-tuning at two levels:
+
+- **API fine-tuning** (OpenAI/Anthropic-style): upload JSONL, the
+  provider trains and hosts; you never see a GPU. Right answer for most
+  product teams.
+- **Open-weights fine-tuning** (Llama/Mistral + LoRA via Hugging Face
+  PEFT): full control, your hardware or rented GPUs, you own the
+  weights. Right answer for privacy, cost-at-scale, or research.
+
+## The workflow (where projects actually succeed or fail)
+
+```
+1. BASELINE   Prompt-engineer the best you can; measure it.
+              (If you can't measure it, stop — see step 2.)
+
+2. EVALS      Build the test FIRST: 50–200 held-out examples + a scoring
+              method (exact match, rubric, or LLM-as-judge). This is the
+              step everyone skips and everyone regrets.
+
+3. DATA       Collect/curate training examples of the IDEAL behavior.
+              Quality crushes quantity: 500 excellent, consistent,
+              deduplicated examples beat 50,000 scraped ones. Garbage
+              in, garbage amplified.
+
+4. TRAIN      Start small (1–3 epochs, low learning rate, LoRA).
+              Watch validation loss — falling train loss with rising
+              validation loss = memorizing, not learning (overfitting).
+
+5. EVALUATE   Run the step-2 evals on base vs fine-tuned. Also spot-check
+              for regressions on general ability and safety behavior.
+
+6. ITERATE    Most gains come from FIXING DATA, not tuning
+              hyperparameters. Look at the failures; they're usually
+              inconsistencies in your own examples.
+```
+
+The dirty secret of the field, worth saying in interviews: **fine-tuning
+is a data-curation discipline wearing an ML costume.** The model
+faithfully amplifies whatever your examples teach — including their
+inconsistencies, biases and mistakes.
+
+## Production perspective
+
+- **The classic economic win:** distill a frontier model into a small
+  one — use the big model to generate/grade training data for your
+  narrow task, fine-tune a small model on it, serve at a tenth of the
+  cost and latency. ("Teacher → student" distillation; this pattern
+  powers many production classifiers, routers and extractors.)
+- **Where it shines in real products:** rigid structured output
+  (extraction to your exact JSON schema), tone/brand voice at scale,
+  domain dialects (legal, medical, your codebase's conventions),
+  classification/routing at high volume.
+- **Where teams waste months:** fine-tuning to inject knowledge that
+  belongs in [RAG](/aiml/rag), fine-tuning before exhausting prompting,
+  or fine-tuning without evals and "feeling" the result.
+- **Serving note:** LoRA adapters are swappable per-request on one
+  hosted base model — multi-tenant fine-tunes without multi-model costs.
+
+## Common mistakes
+
+- **No eval set** — you cannot improve what you don't measure; vibes are
+  not a metric.
+- **Fine-tuning for knowledge** — it'll hallucinate confidently in your
+  brand voice. Knowledge → RAG; behavior → fine-tuning.
+- **Inconsistent training data** — 500 examples written by five people
+  with three formats teaches the model to be confused with confidence.
+- **Too many epochs** — training loss → 0 while the model memorizes your
+  examples verbatim and loses generality (overfitting,
+  [the same enemy](/aiml/neural-networks) as every ML system).
+- **Skipping the regression check** — your model now formats reports
+  perfectly and somehow forgot how to refuse harmful requests; test
+  general + safety behavior, not just the target task.
+- **Treating it as one-and-done** — behavior drifts as your product
+  changes; budget for re-tuning like you budget for migrations.
+
+## Interview perspective
+
+<QA q="When do you fine-tune vs use RAG vs just prompt better?">
+
+Order of escalation: prompt first — clearer instructions and few-shot
+examples are free and solve most "it's not doing what I want" cases.
+RAG when the gap is *knowledge*: private, large or fast-changing
+information belongs in retrieval, because weights freeze at training
+time and retraining per update is absurd. Fine-tune when the gap is
+*behavior* that survives good prompting: strict output schemas, a
+specific voice, or a narrow skill — especially to make a small cheap
+model match a large one on that task. They compose: a production
+assistant is often a fine-tuned model + retrieved context + a good
+prompt. The disqualifying answer is "fine-tune to teach it our docs" —
+that's RAG's job, and saying so is the point being tested.
+
+</QA>
+
+<QA q="Explain LoRA — what it changes, why it works, and what it costs you.">
+
+LoRA freezes all original weights and injects pairs of small low-rank
+matrices (A·B) alongside the big weight matrices; only those are
+trained, and the layer's output becomes W·x + A·B·x. Under 1% of
+parameters train, so memory and compute collapse — QLoRA additionally
+quantizes the frozen base to 4-bit, fitting fine-tunes on a single GPU —
+and each task yields a tiny adapter file (~tens of MB) that can be
+swapped on a shared base model at serving time. Why it works: the
+*delta* a specialization needs is low-dimensional compared to the model
+— you're steering, not re-teaching. Costs: a small quality gap on tasks
+requiring deep change, slight added serving complexity, and the same
+data-quality dependence as any fine-tune. Default to LoRA; escalate to
+full fine-tuning only with evidence the adapter can't get there.
+
+</QA>
+
+<QA q="Your fine-tuned model nails the training examples but fails on real user inputs. Diagnose.">
+
+Classic overfitting plus data-distribution mismatch. Diagnosis order:
+(1) compare train vs validation loss — train falling while validation
+rises means the model memorized your examples (too many epochs, too
+little data, learning rate too high); (2) audit whether training data
+*looks like* production traffic — if you trained on clean curated
+queries and users send typos, fragments and adversarial phrasing, the
+model specialized to a distribution that doesn't exist; (3) check label
+consistency — conflicting examples teach noise. Fixes in the same
+order: fewer epochs/lower LR/more diverse data; harvest real (anonymized)
+production inputs as training examples; re-curate with one consistent
+rubric. And re-run the held-out evals after each change — which assumes
+you built them, which is the habit the question is really probing.
+
+</QA>
+
+## Practice
+
+1. **Decision reps:** for each, pick prompt/RAG/fine-tune and defend it
+   in one sentence: (a) chatbot must answer from your company wiki;
+   (b) extractor must emit your exact JSON schema 100% of the time;
+   (c) model doesn't know a library released last month; (d) support
+   bot should sound like your brand across 50 K tickets/day.
+2. **Data drill:** write 5 training conversations for the LandAI report
+   style above — then critique your own consistency (format, length,
+   tone) the way step-6 demands.
+3. **Hands-on (API path):** take 50 examples of a toy task (e.g.,
+   classify commit messages as feat/fix/chore), fine-tune a small hosted
+   model, and compare against few-shot prompting on a held-out 20. The
+   eval table you produce is the deliverable.
+4. **Hands-on (open path):** run a LoRA fine-tune of a 7B model with
+   Hugging Face PEFT on the same data; note GPU memory with and without
+   4-bit quantization.
+
+**That completes Level 11.** The full roadmap now runs unbroken from
+[what a computer is](/basics/how-computers-work) to
+[salary negotiation](/career/salary-negotiation) — see the
+[roadmap](/roadmap).

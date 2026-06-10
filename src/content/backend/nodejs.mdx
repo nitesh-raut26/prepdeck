@@ -182,8 +182,10 @@ job queues are for.
 
 Any synchronous work that takes meaningful time — big loops, sync file or
 crypto APIs, huge JSON.parse — runs on the only JS thread, so every other
-request's callback waits behind it; p99 latency spikes across *unrelated*
-endpoints, which is the telltale symptom. Find it: event-loop-lag metrics
+request's callback waits behind it; **p99 latency** (the response time of
+your slowest 1% of requests — the standard way engineers measure "how bad
+do the bad cases get") spikes across *unrelated* endpoints, which is the
+telltale symptom. Find it: event-loop-lag metrics
 (monitor loop delay), CPU profiles/flame graphs, `--prof`. Fix it: replace
 sync APIs with async versions, chunk large computations, move CPU work to
 worker threads or a separate worker service behind a queue, and cluster

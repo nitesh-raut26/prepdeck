@@ -132,7 +132,7 @@ the API boundary).
 | Many client shapes (iOS/Android/web) over a rich graph | GraphQL — clients self-serve |
 | Heavy read traffic wanting CDN caching | REST |
 | Internal service-to-service | REST/gRPC — fixed shapes don't need query flexibility ([microservices](/backend/microservices)) |
-| Aggregating several backends for frontends | GraphQL as a **BFF** layer over REST services — the common hybrid |
+| Aggregating several backends for frontends | GraphQL as a **BFF** (Backend-for-Frontend — a thin API layer built specifically to serve one frontend's screens) over REST services — the common hybrid |
 
 The senior framing: GraphQL moves complexity, it doesn't remove it —
 from "many endpoints to maintain" to "one endpoint to operate carefully."
