@@ -1,0 +1,211 @@
+---
+title: "Design Google Drive"
+summary: "The sync problem: chunking and content hashes, delta sync, conflict resolution, sharing permissions, and why metadata and blocks live apart."
+order: 18
+tags: ["system-design", "file-sync", "storage", "case-study"]
+---
+
+## Prompt
+
+> Design cloud file storage with sync: upload/download any file, edit
+> on one device and see it everywhere, share with permissions, restore
+> old versions. Billions of files, exabytes.
+
+## 1. Requirements
+
+**Functional:** upload/download files of any type/size; **automatic
+sync** across a user's devices; folder hierarchy; sharing with
+view/edit permissions; version history & trash.
+**Non-functional:** **never lose a byte** (durability is the product —
+eleven nines, not five); sync feels near-instant for small edits;
+bandwidth-efficient (users edit 5 MB of a 2 GB file; don't re-upload
+2 GB); offline edits must reconcile.
+
+The framing: *"Unlike [feeds](/hld/design-twitter) or
+[video](/hld/design-youtube), the hard parts here are
+**state reconciliation** — many devices, one truth — and **storage
+economics**. The deep dives are chunking, delta sync, and conflicts."*
+
+## 2. Estimation (shapes the design)
+
+1 B users × ~15 GB average = **exabyte scale**, write-heavy in bursts
+(a photo library import) but read-light per file (most files are
+written once, read rarely — the *cold* opposite of YouTube's hot
+head). Metadata: ~1 B users × thousands of files = **trillions of
+metadata rows**, hit on every sync check — the metadata store is the
+hot path; the blob store is the big path. Dedup matters at this
+scale: millions of users store the *same* PDF/installer/meme —
+content-addressing turns those into one stored copy.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  C[Desktop/mobile client
+  watches filesystem] -->|chunk hashes| META[Metadata service
+  files, versions, chunk lists]
+  META --> MDB[(Metadata DB, sharded by user)]
+  C -->|only missing chunks| BLK[Block service]
+  BLK --> S3[(Object storage
+  content-addressed chunks)]
+  META --> NOTIF[[Change events]]
+  NOTIF -->|push| C2[User's other devices]
+  C2 -->|fetch changed chunks| BLK
+  META --> PERM[(Sharing / ACL store)]`} />
+
+The structural split to announce: **metadata (small, hot, relational,
+consistent) and blocks (huge, cold, immutable, dumb) never share a
+system.** Every operation talks to metadata first; bytes move only
+when strictly necessary.
+
+## 4. Deep dives
+
+### Chunking + content addressing (the storage engine)
+
+Files are split into **chunks** (~4–8 MB). Each chunk is named by the
+**hash of its content** (SHA-256) — *content addressing*:
+
+- **Upload protocol:** client hashes its chunks and sends the hash
+  list to the metadata service, which answers "I already have chunks
+  3, 7, 19 — send the rest." A file the system has ever seen — from
+  *any* user — uploads instantly (**cross-user dedup**: one stored
+  copy of every popular installer on earth, reference-counted).
+- **A "file" is metadata:** name, folder, version, and an ordered
+  chunk-hash list. **Versions are nearly free:** editing one chunk of
+  a 2 GB file creates a new chunk + a new chunk-list that shares
+  every other entry with the old version — version history is
+  structural sharing, not copies ([the same trick as git](/devops/ci-cd)).
+- Chunks are **immutable** — never edited, only created and
+  garbage-collected when no version references them
+  ([reference counting](/programming/memory-management), at exabyte
+  scale). Immutability is what makes the blob tier "dumb": cacheable,
+  replicable, no coordination.
+
+### Delta sync (the bandwidth engine)
+
+Edit 5 MB in the middle of a 2 GB file → re-hash chunks → only the
+changed chunks have new hashes → upload only those. One subtlety
+earns senior points: with fixed-size chunks, *inserting* one byte at
+the front shifts every boundary — every chunk hash changes, delta
+sync collapses. Fix: **content-defined chunking** — boundaries chosen
+by a [rolling hash](/dsa/string-algorithms) over the content (split
+where the hash matches a pattern), so an insertion only disturbs the
+chunk it lands in; boundaries downstream re-align. The rolling hash
+you met in Rabin-Karp is literally what rsync and Drive-class systems
+run on.
+
+### Sync & notification (the freshness engine)
+
+Each device tracks a **cursor** (last seen change-sequence per user
+namespace). The metadata service maintains an ordered **change log**;
+devices hold a lightweight connection
+([long poll or WebSocket](/backend/websockets)) and get poked when
+the log advances, then pull changes after their cursor and fetch any
+missing chunks. Offline devices just have old cursors — reconnection
+is the same code path as a missed notification
+([design the offline path as primary](/backend/websockets)).
+
+### Conflicts (the part interviewers actually probe)
+
+Two devices edit the same file while one is offline. On reconnect,
+device B uploads a new version whose **parent version** is stale —
+the metadata service detects the fork (B's parent ≠ current head):
+
+- **Never silently merge, never silently drop.** Drive-class systems
+  keep B's upload as a **conflicted copy** ("report (Asha's MacBook,
+  conflicted).docx") alongside the winner — both versions durable, a
+  human resolves. This is [optimistic concurrency](/lld/bookmyshow)
+  with "make a copy" as the conflict handler, the only safe default
+  for opaque binary files.
+- Folder-level races (rename vs delete, move into deleted folder) are
+  resolved by ordering through the change log — last-writer-wins on
+  metadata *with the loser preserved in trash/history*, because the
+  history makes every resolution reversible.
+- Real-time co-editing (Google Docs' character-level merging — OT/CRDT)
+  is a different product on a different data model; *name* it as
+  out-of-scope — knowing the boundary is the point.
+
+### Sharing & permissions
+
+ACLs live in metadata: (subject, file/folder, role). The design
+wrinkle is **inheritance** — permission checks walk up the folder
+tree, so deep hierarchies cache *effective* permissions per
+(user, subtree) with invalidation on ACL change. Every block fetch is
+authorized via short-lived signed URLs minted by the metadata layer —
+the blob store itself stays dumb and trusts nobody
+([the API-gateway instinct](/backend/auth)).
+
+## 5. Bottlenecks & failure modes
+
+- **Metadata DB is the hot path** — shard by user/namespace; shared
+  folders cross shards, so sharing metadata gets its own service. The
+  blob tier scales by being boring.
+- **Durability story** (the product promise): chunks replicated
+  across zones + erasure-coded across regions; *metadata* backed up
+  independently — losing the map to the bytes is losing the bytes.
+- **Mass-change storms** (user renames a folder of 100 K files; a
+  team's bot rewrites everything) → change-log batching, per-account
+  [rate limits](/hld/rate-limiting), and clients that coalesce
+  filesystem events before syncing.
+- **The GC must be cowardly:** reference-counting bugs that delete a
+  live chunk are catastrophic and silent; real systems garbage-collect
+  with delays, tombstones and audits — slow deletion is a feature
+  ([the BookMyShow TTL philosophy](/lld/bookmyshow), inverted).
+
+<QA q="Walk through what happens when a user edits 5MB in the middle of a 2GB file, on a metered connection.">
+
+The client's watcher sees the file change and re-chunks it. With
+content-defined chunking (boundaries from a rolling hash), only the
+chunks overlapping the edited region produce new hashes — say 2 of
+~400. The client sends the new chunk-list to the metadata service,
+which diffs against the previous version: "send me these 2 chunks."
+~10 MB uploads instead of 2 GB. Metadata commits a new version — a
+chunk-list structurally sharing 398 entries with the old one — and
+appends to the change log; other devices get poked, pull the new
+list, fetch the 2 chunks, and splice locally. Bonus depth: explain
+why *fixed* chunking fails this scenario when the edit is an
+insertion (every boundary shifts, all hashes change) — that
+distinction is precisely what separates candidates who've understood
+sync from those who've read about it.
+
+</QA>
+
+<QA q="Two devices edited the same document, one offline. Design the reconciliation — and defend not auto-merging.">
+
+Every version records its parent. When the offline device reconnects
+and uploads, the metadata service sees the parent is no longer the
+head — a fork. For opaque files the only safe resolutions are: keep
+both. The later upload becomes a sibling "conflicted copy" with
+device/timestamp in the name; the user merges manually; version
+history makes any choice reversible. Auto-merging binary formats
+(docx, sqlite, PSD) risks producing a file that is *valid-looking but
+semantically corrupt* — silent data damage, the one unforgivable sin
+in a storage product whose entire promise is durability. Auto-merge
+is only sound when the system understands the content's structure —
+which is the Google-Docs/CRDT product, operating on operations rather
+than bytes, and worth naming as the deliberate boundary of this
+design. Then the operational details: conflicts are rare, so optimize
+the common path (fast-forward) and make the rare path loud and
+lossless.
+
+</QA>
+
+<QA q="Why split metadata and block storage into separate systems with such different designs?">
+
+Because they have opposite requirements on every axis. Metadata:
+trillions of small mutable rows, consistency-critical (a wrong
+chunk-list is a corrupt file), queried on every operation, relational
+(hierarchies, versions, ACLs) — wants a sharded transactional store
+with caching. Blocks: exabytes of large immutable blobs, no queries
+(fetch by hash), latency-tolerant, cost-dominated — wants
+object/archival storage with replication+erasure coding and CDN-style
+delivery. Coupling them forces one system to satisfy both — you'd
+pay transactional overhead on exabytes or weaken consistency on the
+map of your data. The split also creates the security/scaling seam:
+the smart layer authorizes and mints signed URLs; the dumb layer
+moves bytes. This metadata/data separation is one of the great
+recurring patterns — [Netflix](/hld/design-netflix) (control vs video
+planes), [WhatsApp media](/hld/design-whatsapp), and every filesystem
+since Unix inodes — and saying *that* shows you see the pattern, not
+the product.
+
+</QA>

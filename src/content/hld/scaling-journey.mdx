@@ -1,0 +1,251 @@
+---
+title: "The Scaling Journey: 100 → 1B Users"
+summary: "The same app at six orders of magnitude — what breaks at each stage, what you add, and what each addition costs. The capstone mental model for all of HLD."
+order: 19
+tags: ["system-design", "scalability", "architecture-evolution", "capstone"]
+---
+
+## Why this page exists
+
+Every other [HLD doc](/hld/approach) shows a finished architecture.
+Real systems never start there — they *evolve*, each component added
+when (and only when) something measurably broke. This page runs one
+app — say a BookMyShow-style booking product
+([whose LLD you've built](/lld/bookmyshow)) — from 100 users to a
+billion, breaking one thing at a time. Internalize the sequence and
+two skills appear: you can **design by evolution** in interviews
+("I'd start simple and scale when X breaks" — the strongest possible
+framing), and you can **diagnose real systems** by recognizing which
+stage they're stuck at.
+
+The iron law of the journey: **every addition buys headroom and costs
+complexity — never pay before the bill arrives.**
+
+## Stage 1 — 100 users: one box
+
+```
+[ Users ] → [ One server: app + PostgreSQL + files ]
+```
+
+Everything on one machine. Deploys are `git pull && restart`.
+**This is not a confession — it's correct.** A modern server handles
+hundreds of concurrent users without noticing; the product is the
+risk, not the architecture ([microservices doc's
+warning](/backend/microservices) starts here).
+
+**What breaks next:** a deploy or crash takes everything down, and the
+database competes with the app for RAM.
+
+## Stage 2 — 10K users: separate the database, add a spare
+
+```
+[ Users ] → [ App server ] → [ DB server ]
+                 ↑ (second app server, behind a load balancer)
+```
+
+Split app and DB onto separate machines (independent resources,
+independent failure). Put **two stateless app servers behind a load
+balancer** — now deploys roll one at a time (zero downtime), and one
+crash halves capacity instead of zeroing it.
+
+The forcing function nobody warns you about: **statelessness.** Two
+app servers means user sessions can't live in app memory anymore —
+sessions move to the DB or Redis, uploads move to object storage. This
+hurts *once*, and every later stage depends on it
+([scalability fundamentals](/hld/scalability)).
+
+**What breaks next:** the database, always. Read traffic grows with
+users; one box's CPU and disk hit their ceiling.
+
+## Stage 3 — 100K users: cache + read replicas
+
+```
+[ LB ] → [ App × N ] → [ Redis cache ] → [ Primary DB ]
+                                            ↓ replication
+                                         [ Read replicas × 2 ]
+```
+
+Two additions, in the order they're usually needed:
+
+1. **Cache** ([caching](/hld/caching)): the same shows/seats/profiles
+   are read thousands of times — Redis absorbs 80–95% of reads for
+   ~zero effort. *Cost paid:* invalidation bugs and the new question
+   "how stale is acceptable, per data type?"
+2. **Read replicas** ([replication](/hld/databases-at-scale)): the
+   primary handles writes; replicas serve reads. *Cost paid:*
+   **replication lag** — a user writes, reads a replica, sees old
+   data. You now choose read-your-own-writes strategies per feature.
+   Welcome to [consistency trade-offs](/hld/cap-consistency); you
+   live here now.
+
+**What breaks next:** anything slow inside the request path (emails,
+PDFs, image resizing) and traffic spikes.
+
+## Stage 4 — 1M users: async work + auto-scaling + CDN
+
+```
+[ CDN ] → [ LB ] → [ App × auto ] → [ cache / DB as above ]
+                        ↓ enqueue
+                   [[ Queue ]] → [ Workers × auto ]
+```
+
+- **Queues + workers** ([messaging](/hld/messaging-and-queues)): every
+  non-essential step leaves the request path — booking confirmation
+  emails, invoices, analytics. Requests get faster *and* spikes get
+  absorbed. *Cost:* at-least-once delivery → every consumer must be
+  [idempotent](/backend/rest-and-graphql); you now debug *flows*, not
+  call stacks.
+- **Auto-scaling** app/worker fleets ([the cloud's killer
+  feature](/basics/what-is-the-cloud)) — capacity follows the daily
+  curve.
+- **CDN** for static assets and images ([the Netflix
+  lesson](/hld/design-netflix) at small scale).
+- And the unglamorous one that saves you: **observability** — metrics,
+  structured logs, alerts ([microservices'
+  pillars](/backend/microservices)). Beyond this scale, what you can't
+  see, you can't fix.
+
+**What breaks next:** the write path. One primary database takes every
+booking on earth — and at some point, no bigger box exists.
+
+## Stage 5 — 10M users: shard the writes (the painful stage)
+
+```
+[ App ] → [ Router ] → [ DB shard: users A–F ]
+                       [ DB shard: users G–M ]
+                       [ DB shard: ... ]
+```
+
+**Sharding** ([databases at scale](/hld/databases-at-scale)):
+partition data across independent databases by a key (user id, or for
+booking systems, event/venue — recall
+[BookMyShow's natural per-show isolation](/lld/bookmyshow)). Each
+shard handles a slice of writes; capacity finally scales horizontally
+on the write path.
+
+This is the journey's most expensive toll — pay it as late as
+possible: **cross-shard queries** ("revenue across all venues") stop
+being SQL and become scatter-gather or analytics pipelines;
+**cross-shard transactions** stop existing and become
+[sagas](/backend/microservices); **resharding** later is a migration
+project. Often teams split *services* first (payments, search,
+notifications as [separate systems](/backend/microservices) with
+their own stores) precisely to delay sharding the core.
+
+**What breaks next:** physics and organizations — one region's
+latency for global users; one codebase for 50 teams.
+
+## Stage 6 — 100M+ users: multi-region, cells, and the org chart
+
+```
+[ Mumbai region: full stack ]   [ Virginia region: full stack ]
+        ↕ async replication / global routing ↕
+```
+
+- **Multi-region**: full stacks per geography, users routed to the
+  nearest ([latency is physics](/basics/the-internet)); data
+  replicated across regions for disaster recovery. The hard part is
+  *write* coordination — most systems route each user's writes to a
+  **home region** and replicate asynchronously, accepting
+  cross-region staleness ([CAP, now unavoidable](/hld/cap-consistency)).
+- **Cellular architecture**: within a region, independent "cells"
+  (full slices serving a user subset — [Uber's
+  cities](/hld/design-uber) are natural cells) bound every blast
+  radius.
+- **The org scales with the system**: platform teams, on-call
+  rotations, deployment infrastructure
+  ([Level 10](/devops/kubernetes)) — at this stage
+  [Conway's law](/backend/microservices) is an architecture input,
+  and the [engineering ladder's](/career/engineering-ladder)
+  staff/principal work *is* this page's decisions.
+
+## The journey on one card
+
+| Stage | Users | You add | You pay |
+| --- | --- | --- | --- |
+| 1 | 100 | one box | nothing — correctly |
+| 2 | 10K | LB + stateless apps, split DB | sessions must externalize |
+| 3 | 100K | cache, read replicas | invalidation, replication lag |
+| 4 | 1M | queues/workers, auto-scale, CDN, observability | idempotency, async debugging |
+| 5 | 10M | sharding (and/or service splits) | no cross-shard SQL/transactions |
+| 6 | 100M+ | multi-region, cells | eventual consistency, org design |
+
+Read the table backwards for diagnosis: "we have replication-lag
+bugs" → you're a Stage 3 system; "our deploys block each other" → a
+Stage 5–6 *organization* on Stage 4 architecture.
+
+## Common mistakes
+
+- **Building Stage 5 on day one** — sharded microservices for zero
+  users: all the toll, none of the traffic. The startup graveyard's
+  favorite headstone.
+- **Skipping statelessness at Stage 2** — every later stage assumes
+  it; retrofitting it at Stage 4 under load is misery.
+- **Caching before measuring** — cache what's *measured* hot;
+  speculative caches are invalidation bugs with no payoff.
+- **Sharding before splitting services** — often the write-hot table
+  is one domain (bookings); extracting that service buys years before
+  the core needs sharding.
+- **Treating the table as a schedule** — user *count* is shorthand;
+  the real triggers are measured: p99 latency, replication lag, queue
+  depth, primary CPU. Scale when the metric says so, not the
+  milestone.
+
+<QA q="An interviewer says: 'design X for 1B users.' Why is starting from Stage 6 the wrong move, and what's the right one?">
+
+Jumping to the end-state produces a component soup with no reasoning
+attached — the interviewer can't tell whether you understand *why*
+each piece exists, which is the actual question. The strong move:
+state the evolution compressed — "a single service with a relational
+DB is correct first; at read pressure I add cache and replicas,
+accepting staleness; at request-path bloat I go async with queues,
+accepting idempotency work; at write pressure I shard by user-id,
+losing cross-shard transactions; at global scale I go multi-region
+with home-region writes" — then say "for 1B on day one, here's that
+end state" and draw it, with each component *justified by the failure
+it prevents*. You demonstrate the same architecture *plus* the
+judgment, and you've pre-answered every "why is that there?"
+follow-up. Bonus: it lets you cut scope honestly — "at the stated
+scale, these two stages are the interesting ones; may I focus there?"
+
+</QA>
+
+<QA q="Your Stage 3 app (cache + replicas) shows users their old username after they rename. Diagnose and give three fixes with costs.">
+
+Classic replication lag: the write went to the primary; the next read
+hit a replica that hadn't replayed it yet (or a cache entry that
+wasn't invalidated). Fixes, cheapest first: (1) **read-your-own-writes
+routing** — after a user writes, pin *their* reads to the primary for
+a few seconds (session flag or timestamp cookie); cost: a little
+routing logic, slight primary load. (2) **Write-through caching** —
+update the cache at write time rather than invalidating and refilling
+from a lagging replica; cost: cache/DB write-ordering care. (3)
+**Client-side echo** — the UI optimistically shows the submitted
+value ([optimistic UI](/basics/frontend-and-backend)); cost: purely
+cosmetic, hides rather than fixes. The wrong fix is synchronous
+replication everywhere — paying global write latency to repair one
+feature's freshness. The senior framing: replication lag isn't a bug
+to eliminate but a budget to allocate per feature — usernames need
+read-your-writes; view counts don't.
+
+</QA>
+
+<QA q="When is sharding actually justified, and what dies the day you shard?">
+
+Justified when the *write* path exhausts a single primary after
+you've spent the cheaper currencies: reads offloaded to
+caches/replicas, async work queued, biggest-feasible hardware bought,
+hot domains split into their own services. (If reads are the problem,
+you wanted replicas/caches, not shards.) The day you shard: ad-hoc
+cross-shard SQL dies (joins/aggregates become scatter-gather or move
+to an analytics pipeline fed by [change streams](/hld/case-ingestion-pipeline));
+cross-entity ACID dies (multi-user operations become
+[sagas](/backend/microservices) with compensations); operational
+simplicity dies (N primaries to monitor, back up, fail over); and
+your shard key becomes destiny — chosen wrong (hot venues on one
+shard), you inherit hotspots and a resharding migration. Which is why
+the interview answer is always: shard by the access pattern's natural
+isolation boundary (user, tenant, venue/show), as late as possible,
+and say both halves out loud.
+
+</QA>

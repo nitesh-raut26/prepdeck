@@ -1,0 +1,201 @@
+---
+title: "Design Instagram"
+summary: "The feed problem: fan-out on write vs read, the celebrity exception, photo storage done right, and why the home feed is precomputed."
+order: 14
+tags: ["system-design", "feed", "fan-out", "case-study"]
+---
+
+## Prompt
+
+> Design a photo-sharing app: users post photos, follow each other, and
+> scroll a home feed of the people they follow. Likes and comments.
+> Hundreds of millions of users.
+
+## 1. Requirements
+
+**Functional:** upload photos with captions; follow/unfollow; **home
+feed** (recent posts from people you follow, roughly reverse-
+chronological); like/comment; user profile (own posts grid).
+**Non-functional:** feed loads fast (perceived-instant, under ~200 ms);
+read-heavy in the extreme; eventual consistency is fine *almost*
+everywhere (a follower seeing your post 30 s late is invisible; a
+deleted post reappearing is not).
+
+Scope cut to state: *"Stories, DMs ([that's WhatsApp](/hld/design-whatsapp)),
+Reels ([that's YouTube/Netflix](/hld/design-youtube)) and the ML-ranked
+ordering are out; the deep dive is the feed."*
+
+## 2. Estimation (shapes the design)
+
+~500 M daily users; maybe ~100 M photos posted/day ≈ **1,200
+uploads/sec** — modest. But each user opens the feed several times a
+day: ~2 B feed loads/day ≈ **25–50 K feed reads/sec**. Read:write is
+roughly **100:1** — and each feed read *logically* touches hundreds of
+followees. Photos: 100 M/day × ~2 MB ≈ 200 TB/day into storage —
+a blob + [CDN](/hld/design-netflix) problem, solved the standard way.
+
+The number that designs the system: **a naive feed query is a join
+across hundreds of accounts, executed 50 K times per second.** Make
+that fast and everything else is routine.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  U[Client] -->|upload| API[API servers]
+  API --> BLOB[(Object storage)]
+  BLOB --> CDN[(CDN — serves all images)]
+  API --> PDB[(Posts DB, sharded)]
+  API --> GDB[(Social graph: follows)]
+  API --> Q[[Fan-out queue]]
+  Q --> W[Fan-out workers]
+  W --> FEED[(Feed cache: Redis
+  user → list of post ids)]
+  U -->|read feed| API
+  API --> FEED
+  API -->|hydrate ids| PDB`} />
+
+The split to announce immediately: **photos are bytes** (object storage
++ CDN; the API hands out URLs, [exactly like
+WhatsApp media](/hld/design-whatsapp)) and **the feed is ids** (small
+lists of post ids, hydrated on read). All the interesting design is in
+the ids.
+
+## 4. Deep dive — the feed problem
+
+Two pure strategies, then the real answer:
+
+### Fan-out on read (compute when they ask)
+
+Store posts once, by author. To build a feed: fetch the user's followee
+list, query recent posts per followee, merge by time, return.
+
+- ✅ Writes are trivial (one insert). Nothing stale, nothing wasted on
+  inactive users.
+- ❌ Every feed load does **hundreds of queries + a merge**, 50 K
+  times/sec. Latency and load are paid on the *frequent* operation
+  (reads) to subsidize the *rare* one (writes) — backwards for a
+  100:1 read-heavy system.
+
+### Fan-out on write (compute when they post)
+
+When a user posts, **push the post id into every follower's
+precomputed feed list** (Redis list per user, capped at ~800 entries).
+Reading the feed = one list fetch + hydration. This is the
+[compute-once-broadcast-many](/hld/case-realtime-pricing) instinct
+applied to feeds.
+
+- ✅ Reads are O(1) — the 200 ms budget is easy.
+- ❌ A post by someone with **50 M followers** triggers 50 M list
+  pushes. The write cost is unbounded — this is **the celebrity
+  problem**, and it's the single most famous follow-up in system
+  design interviews.
+
+### The hybrid (the answer)
+
+**Fan-out on write for normal users; fan-out on read for celebrities.**
+Define a threshold (say 100 K followers). Normal posts push to follower
+feeds via [queue workers](/hld/messaging-and-queues) (async — a few
+seconds of delivery lag is invisible). Celebrity posts are *not* fanned
+out; instead, each feed read merges the precomputed list with a live
+query of the (few) celebrities the user follows — bounded, because
+nobody follows many thousands of accounts, and celebrity posts are
+cache-friendly (millions of users request the *same* recent posts —
+one cache entry serves them all).
+
+Also skip fan-out to **dormant users** (no login in 30 days) and
+rebuild their feed lazily on return — why maintain 200 M feeds nobody
+is reading?
+
+### Likes & comments at scale
+
+Counters are their own mini-problem: a viral post takes thousands of
+likes/sec, and `UPDATE posts SET likes = likes + 1` serializes on one
+row. Standard answer: **sharded counters or Redis increments**,
+flushed/reconciled to the DB periodically; display counts may lag by
+seconds, and nobody notices ([the same trade](/hld/cap-consistency) as
+view counts — [YouTube's version](/hld/design-youtube) goes deeper).
+Comments are just posts attached to a post id — paginated, newest
+first, no fan-out.
+
+### Data model sketch
+
+- `posts` — sharded by **author id** (profile pages read one shard;
+  feed hydration does scatter-gather by post id, mitigated by caching
+  hot posts).
+- `follows` — (follower → followee) and the reverse index (followee →
+  followers); the reverse index is what fan-out workers read, and for
+  celebrities it's millions of rows — another reason not to fan out
+  their posts.
+- `feed:{userId}` — Redis list of post ids, capped; the product
+  decision hiding inside: scroll past the cap → fall back to
+  fan-out-on-read for older content.
+
+## 5. Bottlenecks & failure modes
+
+- **Fan-out queue backlog** (everyone posts during the World Cup
+  final) → feeds go stale by minutes. Mitigation: scale workers;
+  prioritize fan-out to *active-now* users first — staleness for
+  offline users is free.
+- **Redis feed cache loss** → feeds rebuild via fan-out-on-read on
+  demand (degraded latency, not data loss — posts are the source of
+  truth, feeds are derived). This "cache is rebuildable" property is
+  worth saying out loud; it's why the design sleeps at night.
+- **Hot post** (celebrity engagement storm) → counter sharding above,
+  plus the post itself cached at the API layer.
+- **Delete must propagate** — a deleted post's id lingers in millions
+  of feed lists; hydration must treat missing posts as tombstones and
+  skip them. (Cheaper than chasing every list.)
+
+<QA q="Fan-out on write vs fan-out on read — make the decision like it's your system.">
+
+The axis is read:write ratio per user-pair and the variance of
+audience size. Feeds are read ~100× more than written, so precomputing
+on write (push post ids to follower lists) moves cost to the rare
+operation and makes the frequent one O(1) — the right default. It
+breaks on power-law audiences: one celebrity post = tens of millions
+of pushes, most of them to feeds that won't be read before the next
+rebuild anyway. So: hybrid. Push for normal accounts (async, via
+queues), pull-and-merge at read time for accounts above a follower
+threshold, skip dormant users entirely. State the regression test for
+the threshold: total fan-out work saved vs added read-merge cost —
+it's a tunable, not a constant. This question is the system-design
+equivalent of two-sum; the hybrid answer with reasoning is table
+stakes at senior level.
+
+</QA>
+
+<QA q="Why is the feed stored as post ids in Redis rather than full post objects — or rather than just querying the posts table?">
+
+Versus full objects: ids are ~16 bytes; a hydrated post (caption, URLs,
+counts, author info) is kilobytes and *mutable* — likes change every
+second, captions get edited, posts get deleted. Storing ids keeps
+feed lists tiny (800 ids ≈ 12 KB per user) and always-fresh-on-read,
+since hydration fetches current data (from a hot post cache, mostly).
+Versus querying directly: the feed query is an N-way merge across all
+followees' recent posts — hundreds of index lookups per feed load at
+50 K loads/sec; precomputed id lists turn that into one Redis read.
+The deeper principle: **store the expensive-to-compute structure (the
+merge), reference the cheap-to-fetch data (the posts)** — the same
+normalize-then-cache split as [storing customer_id, not customer
+name](/basics/what-is-a-database), at planetary scale.
+
+</QA>
+
+<QA q="A user reports seeing a deleted post in their feed. Walk through why, and whether you'd 'fix' it.">
+
+The feed list holds ids written at post time; deletion removes the
+post row (or tombstones it) but doesn't chase the id out of millions
+of Redis lists — that would be a celebrity-scale fan-out for every
+delete. So hydration encounters a dangling id. The correct behavior:
+hydration treats missing/tombstoned posts as skips, so the user should
+never *render* it — if they did, the bug is in hydration (e.g., a
+post-object cache serving the deleted post; deletes must invalidate
+that cache synchronously). Would I chase ids out of feed lists? No —
+lazy cleanup on read plus capped list turnover bounds the garbage;
+the eager version costs more than the problem. The exception that
+flips the answer: legal/safety takedowns, where "eventually invisible"
+isn't acceptable — then you pay for synchronous hot-cache invalidation
+plus an id-level blocklist checked at hydration. Knowing *when the
+cheap answer is wrong* is the senior half of the question.
+
+</QA>

@@ -1,0 +1,207 @@
+---
+title: "Design YouTube"
+summary: "Netflix's problem plus user-generated chaos: the upload pipeline, view counting at scale, long-tail caching, and comments under fire."
+order: 15
+tags: ["system-design", "video", "ugc", "case-study"]
+---
+
+## Prompt
+
+> Design a video platform where *anyone* uploads: process and serve
+> videos globally, count views, rank search and recommendations,
+> handle comments. 500 hours of video uploaded **per minute**.
+
+## 1. Requirements
+
+**Functional:** upload videos of arbitrary size/format; watch with
+adaptive quality; view counts; search; comments; channel pages.
+**Non-functional:** smooth playback worldwide
+([Netflix's bar](/hld/design-netflix)); uploads must never be lost;
+processing delay of minutes is acceptable; view counts may lag but
+must end up right (creators are *paid* on them).
+
+The framing that earns immediate credit: *"This is
+[Netflix](/hld/design-netflix) with three hard additions: the catalog
+is **unbounded and user-generated**, the popularity curve has a
+massive **long tail**, and **counters are money**. I'll focus there
+and inherit the CDN/ABR machinery."*
+
+## 2. Estimation (shapes the design)
+
+500 hours/min uploaded ≈ 30 K hours/hour ≈ raw ingest of ~5–10 GB/s,
+multiplied by transcoding into ~a dozen renditions. Watch side: ~5 B
+views/day ≈ **60 K video starts/sec**, ~1 M+ concurrent streams of
+*different* videos (vs Netflix's concentrated catalog). Storage grows
+**petabytes per month, forever** — deletion is rare; tiering is
+mandatory. The asymmetry to call out: uploads are 1,200/min while
+watches are 60 K/sec — but *each upload* costs minutes of compute,
+while each watch is a CDN byte-push.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  subgraph Upload [Upload path — async, queued]
+    C[Creator] -->|resumable chunked upload| UP[Upload service]
+    UP --> RAW[(Raw storage)]
+    UP --> Q[[Processing queue]]
+    Q --> T[Transcode workers
+    chunked, parallel]
+    T --> PROC[(Processed renditions)]
+    T --> META[(Video metadata DB)]
+    PROC --> CDN[(CDN + origin tiers)]
+  end
+  subgraph Watch [Watch path]
+    V[Viewer] --> API[API: metadata, URLs]
+    API --> META
+    V -->|segments| CDN
+    V -->|view beacon| CNT[[Count pipeline]]
+    CNT --> AGG[(Aggregated counts)]
+  end`} />
+
+## 4. Deep dives — the three YouTube-specific problems
+
+### The upload pipeline (UGC ≠ studio masters)
+
+Netflix ingests a few pristine files per week from studios; YouTube
+ingests **anything** — 4 GB phone videos over hotel Wi-Fi, weird
+codecs, 12-hour streams. The pipeline:
+
+1. **Resumable, chunked upload** — the client splits the file and
+   uploads parts; a dropped connection resumes at the last chunk, not
+   byte zero ([the reconnect-and-resume instinct](/backend/websockets),
+   applied to uploads). The raw file lands in object storage *before*
+   anything else — durability first; everything downstream can retry.
+2. **Queue + transcode workers** — [the ingestion-pipeline
+   playbook](/hld/case-ingestion-pipeline): split the video into
+   segments, transcode segments **in parallel** across workers into
+   the rendition matrix, reassemble, publish
+   ([Netflix's trick](/hld/design-netflix), at conveyor-belt scale).
+   Idempotent workers; per-segment retries; a poison-pill lane for
+   corrupt files.
+3. **Progressive availability** — publish a watchable 360p fast,
+   backfill higher qualities; creators see "processing HD…" — a
+   *product* expression of the async architecture.
+4. Along the way: thumbnail extraction, **content moderation /
+   copyright matching** (fingerprint against a known-content index —
+   acknowledge, don't deep-dive), metadata indexing for search.
+
+### View counting (counters are money)
+
+A viral video takes **tens of thousands of views/sec**; row-level
+`UPDATE views = views + 1` melts, and creators are paid per view so
+"roughly right" must converge to *exactly right*:
+
+- Clients send **view beacons** into a [stream/queue](/hld/messaging-and-queues)
+  (Kafka-class), not the database.
+- Stream processors **aggregate in windows** (per video, per ~10 s),
+  writing one increment per window instead of 30 K — the
+  [accumulator pattern](/programming/control-flow) running on a
+  firehose.
+- Displayed counts read from the aggregate store (seconds stale —
+  fine); **billing/analytics replay the raw log** with dedup and fraud
+  filtering (a view ≠ a beacon: minimum watch time, bot detection).
+- The split to name: **display counters = eventually consistent;
+  monetized counters = recomputed from the durable log.** Same trick
+  as [Instagram's likes](/hld/design-instagram), plus an audit trail
+  because money.
+
+### The long tail (why YouTube's CDN works harder than Netflix's)
+
+Netflix: ~20 K titles, viewing concentrated on a few hundred —
+pre-push to edges, ~everything served from cache. YouTube: **billions
+of videos**, and while the head is hot, a huge fraction of daily
+watches hit videos requested *rarely* — the **long tail**. Edge caches
+can't hold it all, so:
+
+- **Tiered storage/caching:** edges hold the hot head; regional
+  origins hold the warm middle; cold tail lives in cheap object
+  storage (and even cheaper archival tiers) and is pulled through on
+  demand — first viewer in a region pays a slower start.
+- **Popularity prediction** still pre-positions: a rising video gets
+  pushed outward *as it trends*, not on a nightly schedule.
+- Cache-hit ratio becomes the metric the infra team lives by; every
+  point of miss-rate is origin bandwidth — real money
+  ([caching](/hld/caching) economics, at maximum stakes).
+
+### Comments (briefly, but say it)
+
+Comments on a viral video are a write-heavy, celebrity-shaped problem:
+attach them to the video (no fan-out), paginate by cursor
+([never offset](/backend/rest-and-graphql) at this depth), cache the
+first page hard (that's 95% of reads), rank asynchronously, and
+rate-limit per user ([rate limiting](/hld/rate-limiting)) because
+comment spam is an industry.
+
+## 5. Bottlenecks & failure modes
+
+- **Transcode backlog** (a global event spikes uploads) → queue
+  absorbs; autoscale workers; progressive availability keeps creators
+  calm. Watch path unaffected — the planes are decoupled.
+- **A video goes viral in minutes** → CDN pull-through warms edges
+  organically; the count pipeline's windowing absorbs the beacon
+  storm; the metadata/first-comment-page caches are the parts that
+  actually feel it.
+- **Region loses its origin tier** → edges pull from a sibling region;
+  tail latency rises, nothing breaks ([replication](/hld/databases-at-scale)
+  doing its job).
+- **Count pipeline lag** → display counts freeze (users shrug);
+  monetization unaffected because it reads the durable log. Decoupling
+  display from settlement is *the* design insight of counters.
+
+<QA q="You've designed Netflix. What actually changes for YouTube?">
+
+Three things. (1) **Ingest is adversarial**: instead of a few studio
+masters, it's 500 hrs/min of arbitrary user files — so you build
+resumable chunked uploads, durability-before-processing, a queued
+parallel transcode farm with idempotent retries, moderation and
+fingerprinting, and progressive availability. (2) **The catalog is
+unbounded with a long tail**: edge caches can't hold it, so caching
+becomes tiered (hot edge / warm regional / cold archival pull-through)
+and cache-hit-ratio engineering replaces Netflix's pre-push-everything
+model. (3) **Engagement systems at UGC scale**: view counting becomes
+a stream-aggregation pipeline with a display/settlement split (counts
+are revenue), plus comments, search and recommendations over billions
+of items. The playback path itself — segments, ABR, CDN — transfers
+almost unchanged, and saying *that* explicitly is what shows you're
+reasoning rather than reciting.
+
+</QA>
+
+<QA q="Design view counting for a video taking 50,000 views/sec, where creators are paid per view.">
+
+Never increment a database row per view — 50 K row-lock contentions/sec
+is the textbook hot-row failure. Clients emit beacons into a
+partitioned log (Kafka), keyed by video id. Stream processors
+aggregate per video over short windows (5–10 s) and write one
+increment per window to the serving store — four orders of magnitude
+write reduction; displayed counts lag seconds, which is acceptable and
+universal. Because views are monetized: keep the raw beacon log
+durable; billing recomputes from it asynchronously with validity rules
+(minimum watch duration, dedup by user/device/window, bot filtering) —
+so display is eventually consistent but settlement is exact and
+auditable, and discrepancies reconcile toward the log, not the
+counter. Mention the hot-partition detail: one viral video can
+overwhelm a single log partition, so shard its beacons across
+partitions by random salt and merge in aggregation. That last sentence
+is the staff-level flourish.
+
+</QA>
+
+<QA q="Why does the long tail make YouTube's caching fundamentally harder than Netflix's, and what's the architecture answer?">
+
+Cache effectiveness depends on the popularity distribution. Netflix's
+catalog is small and viewing is concentrated: pre-push a few hundred
+hot titles and edges serve ~everything. YouTube's catalog is billions
+of items where a large share of requests hit rarely-watched videos —
+no edge can hold the tail, so a naive design sends constant misses to
+origin (expensive, slow). Answer: a storage/cache hierarchy matched to
+the popularity curve — edges cache the head (with trend-following
+pre-position for rising videos), regional origins the warm middle,
+cheap object/archival storage the cold tail served pull-through with
+an accepted first-viewer latency penalty; plus request collapsing so a
+sudden tail-spike doesn't stampede origin with duplicate fetches.
+The general lesson to land: **caching strategy is a function of your
+popularity distribution, not a checkbox** — measure the curve before
+copying Netflix.
+
+</QA>

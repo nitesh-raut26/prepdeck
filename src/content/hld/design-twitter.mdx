@@ -1,0 +1,204 @@
+---
+title: "Design Twitter/X"
+summary: "The canonical fan-out interview: hybrid timelines under a power law, retweets, trending topics as a streaming problem, and search over everything ever said."
+order: 17
+tags: ["system-design", "fan-out", "trending", "case-study"]
+---
+
+## Prompt
+
+> Design a microblogging platform: short posts, follows, home timeline,
+> retweets/likes, trending topics, search. Hundreds of millions of
+> users; some have 100M followers.
+
+## 1. Requirements
+
+**Functional:** post (small text + media refs); follow; **home
+timeline**; retweet & like; **trending topics**; search.
+**Non-functional:** timeline under ~200 ms; posting feels instant;
+extreme read-heavy; the follower distribution is a **power law** — and
+unlike [Instagram](/hld/design-instagram), celebrity content *is the
+product*: a head-of-state's post must reach 100 M timelines fast.
+
+Why this design exists separately from Instagram: tweets are tiny and
+text-first (storage is easy, *distribution* is everything), reshares
+(retweets) amplify fan-out recursively, and two new subsystems —
+trending and search — are first-class. The feed machinery
+[transfers](/hld/design-instagram); this page builds what doesn't.
+
+## 2. Estimation (shapes the design)
+
+~500 M tweets/day ≈ **6 K writes/sec** (tweets are ~300 bytes — a
+day's text fits on a laptop; storage is *not* the problem). Timeline
+reads: ~100 K/sec. Average followers ~700 → naive full fan-out ≈
+4 M timeline-writes/sec *average*, with single posts spiking to 100 M.
+The power law isn't an edge case here — **the head of the distribution
+carries the product**, so the hybrid strategy isn't an optimization,
+it's the core design.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  U[User] -->|tweet| API[API]
+  API --> TDB[(Tweet store, sharded)]
+  API --> K[[Event log: every tweet]]
+  K --> FAN[Fan-out workers] --> TL[(Timeline cache
+  user → tweet ids)]
+  K --> TREND[Trending pipeline
+  windowed counts]
+  K --> SIDX[Search indexer] --> ES[(Inverted index, sharded by time)]
+  U -->|read timeline| API --> TL
+  API -->|merge celebrity tweets| TDB
+  U -->|search| API --> ES`} />
+
+The structural idea to announce: **every tweet enters one durable
+event log, and four independent consumers build four derived views** —
+timelines, trends, search, analytics. Adding a fifth view never
+touches the write path ([event-driven
+decoupling](/backend/microservices), drawn large).
+
+## 4. Deep dives
+
+### Timelines under a power law (the canonical answer, compressed)
+
+Same hybrid as [Instagram](/hld/design-instagram) — push for normal
+users, pull-and-merge for celebrities, skip dormant accounts — with
+the Twitter-specific torques:
+
+- The celebrity threshold matters more (the head *is* the traffic);
+  celebrity tweets are served from a hot **celebrity-recent cache**
+  that millions of timeline-reads merge in — one cache line doing
+  100 M timelines' work.
+- **Retweets amplify recursively:** a retweet is a new timeline entry
+  *referencing* the original (never a copy — the original's counters
+  must stay singular), and a mid-tier user retweeting a celebrity
+  triggers fan-out to *their* followers. Fan-out workers therefore
+  consume from the event log with per-tweet dedup: a user following
+  five retweeters sees the tweet **once** (timeline insertion checks
+  the referenced id against recent entries).
+- Posting writes the tweet + appends to the log, then returns —
+  **fan-out is fully async**; "instant post" means "durably logged,"
+  not "delivered to 100 M lists."
+
+### Trending topics (the streaming subsystem)
+
+"What's spiking *right now*" is a **windowed heavy-hitters** problem
+over the firehose:
+
+1. Tokenize tweets into terms/hashtags as they flow through the log.
+2. Count per term over **sliding windows** (last 10–60 min) — at
+   firehose volume, exact counts per term are wasteful; use
+   **count-min sketch** (a probabilistic counting structure: small
+   fixed memory, slight overestimates — name it, one sentence, move
+   on) with exact counting for the current top-K candidates.
+3. **Trending ≠ popular**: "Monday" is always frequent. Score by
+   *acceleration* — current window count vs the term's historical
+   baseline; a 50× spike on a small base beats a 1.02× wiggle on a
+   huge one.
+4. Compute per region; smooth over adjacent windows; apply the
+   editorial/abuse filters every real system has.
+
+Output: a tiny top-K list per region, recomputed every few seconds and
+cached — *read* by 100 M users, *computed* once
+([compute-once-broadcast-many](/hld/case-realtime-pricing), again).
+
+### Search (the second index)
+
+Every tweet ever, searchable in milliseconds: an **inverted index**
+(term → list of tweet ids — [the hash-map idea](/dsa/hash-tables)
+applied to text, the structure inside Elasticsearch/Lucene).
+Twitter-specific shape:
+
+- **Shard by time, not just term** — queries overwhelmingly want
+  *recent* matches, so the freshest index shards are small, hot,
+  in-memory, and searched first; older shards are bigger, colder,
+  searched only when needed (pagination past recent results). The
+  long-tail tiering of [YouTube's caches](/hld/design-youtube), applied
+  to an index.
+- Indexing lag of seconds is acceptable and is what the async indexer
+  buys; ranking blends recency, engagement and relevance — acknowledge
+  and move on.
+
+### Counters, briefly
+
+Likes/retweet counts on viral tweets are the
+[hot-counter problem](/hld/design-youtube) — sharded counters /
+windowed aggregation; display lags seconds; nobody pays per like, so
+no settlement pipeline needed. One sentence in the room; the cross-
+reference is the point.
+
+## 5. Bottlenecks & failure modes
+
+- **Fan-out backlog during global events** (World Cup final: tweet
+  volume × 5, every tweet hot) → prioritized fan-out (active users
+  first), celebrity-cache absorbs the head, timelines staleness
+  degrades gracefully by minutes — *posting never blocks*.
+- **Trending manipulation** (bot brigades) → rate limits per account,
+  spam-scoring upstream of the trend pipeline, editorial gates — name
+  the adversarial reality; it's a product surface, not a footnote.
+- **Timeline cache loss** → rebuild lazily via pull-model
+  ([the rebuildable-derived-data story](/hld/design-uber) once more).
+- **Search indexer lag** → recent tweets invisible in search for
+  minutes; trending (separate pipeline) keeps working — independent
+  consumers fail independently, which is *why* the event-log
+  architecture wins.
+
+<QA q="You've explained Instagram's hybrid fan-out. What genuinely changes for Twitter?">
+
+Four things. (1) The power law is the product, not the exception —
+celebrity reach is the platform's purpose, so the pull-side (celebrity
+cache merged at read) carries the main traffic and gets engineered
+hardest. (2) **Retweets make fan-out recursive and referential**: a
+retweet fans out to the retweeter's followers while referencing the
+original (single source of truth for counters), forcing dedup at
+timeline-insert so multi-path delivery renders once. (3) Two new
+derived systems — **trending** (windowed heavy-hitters with
+acceleration scoring over the firehose) and **search** (time-sharded
+inverted index) — both consuming the same durable event log as
+fan-out, which is the architectural headline: one write path, N
+independent views. (4) Storage flips from heavy media to trivial text,
+so the entire difficulty budget moves to distribution and derived
+computation. Frame it that way and you've shown transfer, not
+memorization.
+
+</QA>
+
+<QA q="Design 'Trending Topics' — and explain why raw frequency is the wrong metric.">
+
+Consume the tweet stream; extract terms/hashtags; maintain counts per
+term over short sliding windows (10–60 min), using approximate
+counting (count-min sketch) for the universe and exact counters for
+top-K candidates — memory stays fixed regardless of vocabulary. Then
+score by **acceleration, not frequency**: compare the current window
+against the term's historical baseline rate (and global volume), so
+"#earthquake" spiking 80× over its base outranks "monday," which is
+frequent every Monday and trending never. Compute per region, smooth
+across windows to avoid flapping, filter spam/abuse upstream, and
+publish a tiny cached top-K read by everyone. The architecture point
+worth stating: this is a *streaming* system fed by the same event log
+as fan-out and search — seconds-fresh, never touching the write path.
+The metric point is what the question is really testing; lead with it.
+
+</QA>
+
+<QA q="A user with 80M followers tweets, and 40M of their followers are active right now. Trace the system, end to end.">
+
+The tweet writes once to the tweet store and appends to the event log;
+the author sees success immediately. Fan-out workers see the author is
+above the celebrity threshold and do **not** push 80 M timeline
+inserts — instead the tweet lands in the celebrity-recent cache
+(replicated, hot). Each of the 40 M active followers' next timeline
+read fetches their precomputed list (normal-tier content) and merges
+the celebrity cache entries for accounts they follow — the merge cost
+is per-read O(few celebrities), and the cache line is shared across
+all 40 M readers. Likes/replies storm in: hot-counter aggregation
+absorbs increments; the reply thread's first page is cached. Trending
+sees the spike within a window or two; search indexes it in seconds.
+Nothing about the event was special-cased at write time — the
+*threshold* decision made at fan-out is the entire celebrity
+handling. If asked "what breaks at 10× this?": the celebrity cache's
+read fan-out (add replicas) and the counter pipeline's hottest
+partition (salt the key) — both shard horizontally, which is the
+answer's reassuring final note.
+
+</QA>

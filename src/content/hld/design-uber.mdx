@@ -1,0 +1,200 @@
+---
+title: "Design Uber"
+summary: "The geospatial one: indexing moving drivers, the matching flow, trip state machines, and why this design is about location, not content."
+order: 16
+tags: ["system-design", "geospatial", "matching", "case-study"]
+---
+
+## Prompt
+
+> Design ride-hailing: riders request a trip, nearby drivers are
+> matched, both sides track each other live, pricing responds to
+> demand. Millions of concurrent drivers and riders.
+
+## 1. Requirements
+
+**Functional:** rider requests with pickup/destination; match to a
+nearby available driver; live location tracking both ways; trip
+lifecycle (request → match → pickup → ride → payment); dynamic
+("surge") pricing per area.
+**Non-functional:** matching in a few seconds; location freshness of a
+few seconds; **a trip must never be double-assigned or lost**
+(correctness over availability for the match itself); city-scale
+locality (Mumbai's traffic never needs Chicago's data).
+
+The opening move: *"Unlike the
+[feed](/hld/design-instagram)/[video](/hld/design-youtube) systems,
+the hard data here is a **continuously moving geospatial index** plus
+a **transactional matching** step. I'll deep-dive those two."*
+
+## 2. Estimation (shapes the design)
+
+~5 M drivers online at peak, each phone reporting location every ~4 s
+→ **~1.25 M location writes/sec** — the single biggest stream in the
+system, and it's *ephemeral* (only the latest few points matter).
+Trip requests: ~1 M trips/hour peak ≈ ~300 matches/sec — tiny by
+comparison, but each one is a small distributed transaction. The
+asymmetry **is** the architecture: a firehose of disposable writes
+next to a trickle of precious ones.
+
+## 3. High-level design
+
+<Mermaid chart={`flowchart TD
+  D[Driver app] -->|location / 4s| LGW[Location gateway
+  WebSocket]
+  LGW --> LIDX[(Live geo index
+  in-memory, sharded by city/cell)]
+  R[Rider app] -->|request ride| MATCH[Matching service]
+  MATCH --> LIDX
+  MATCH -->|offer, 15s TTL| D
+  MATCH --> TRIP[(Trip store
+  state machine, durable)]
+  TRIP --> PAY[Payment service]
+  LGW -->|during trip| R
+  LIDX --> SURGE[Surge service
+  demand/supply per cell]
+  SURGE --> R`} />
+
+## 4. Deep dives
+
+### The geospatial index ("find drivers near me")
+
+The naive query — `WHERE distance(driver, rider) < 2km` — computes
+distance to every driver per request. The fix is the same move as
+every index ([B-trees](/dsa/trees-and-bsts),
+[hashes](/dsa/hash-tables)): **precompute structure that narrows the
+search**. For geography, divide the world into **cells**:
+
+- **Geohash / S2 / H3** — encode (lat, lng) into a cell id where
+  nearby points share prefixes (geohash) or neighboring ids (S2/H3
+  hexagons). The index becomes an ordinary
+  [hash map](/dsa/hash-tables): `cell id → set of driver ids`.
+- "Nearby drivers" = look up the rider's cell **plus its 8
+  neighbors** (the neighbor lookup is why purpose-built geo cells beat
+  naive grid squares at the poles/meridians — say "H3" and move on).
+- A driver's 4-second update: remove from old cell's set, add to new —
+  two O(1) operations on an in-memory store
+  ([Redis-class](/hld/caching)), sharded by region. The
+  quadtree/k-d-tree alternative earns a mention for static points
+  ("find restaurants"), but **cells beat trees when everything moves**
+  — constant-time updates, no rebalancing.
+
+Durability stance worth stating: locations are **deliberately not
+durable** — a crashed index shard rebuilds within seconds from the
+next wave of updates ([the same "derived data" argument](/hld/design-instagram)
+as feed caches). Only *trips* are precious.
+
+### Matching (the transactional trickle)
+
+1. Rider requests → matching service queries the geo index → ranks
+   candidates (distance/ETA, driver rating, acceptance rate).
+2. **Offer** the trip to the top driver with a ~15 s TTL — the
+   [seat-lock pattern](/lld/bookmyshow) wearing a seatbelt: the offer
+   *reserves* the driver (state: `OFFERED`), so they're excluded from
+   other matches; expiry releases them automatically.
+3. Accept → atomic check-and-set on the trip (`PENDING → MATCHED`,
+   driver `AVAILABLE → ON_TRIP`). Two matching services racing for
+   one driver is the [double-booking race](/lld/bookmyshow); the
+   driver's state transition is the serialization point.
+4. Decline/timeout → next candidate. Nobody available → expand radius,
+   then surge (below).
+
+The **trip state machine** (`REQUESTED → MATCHED → ARRIVING →
+IN_PROGRESS → COMPLETED/CANCELLED`) lives in a durable, replicated
+store — this is the system's [BookMyShow booking](/lld/bookmyshow) /
+[order saga](/backend/microservices): every transition is an event,
+payments hang off `COMPLETED`, and both apps render *the same machine*.
+
+### Live tracking during a trip
+
+Rider watches the car crawl toward them: the driver's location stream
+is *routed* — during a trip, updates also push to the paired rider
+over the existing [WebSocket machinery](/backend/websockets) (session
+registry says where the rider's socket lives, [the WhatsApp routing
+table](/hld/design-whatsapp)). Client-side smoothing/map-snapping makes
+4-second updates look continuous — a *frontend* trick saving 4× the
+backend load, worth one sentence in any interview.
+
+### Surge pricing
+
+Per cell, per minute: demand (open requests) vs supply (available
+drivers) → a multiplier, computed by a streaming job over the two
+firehoses ([the windowed-aggregation pattern](/hld/design-youtube)
+again — it's everywhere). Published to riders before they request.
+Two honest notes: it's a *control system* (the multiplier exists to
+move supply toward demand), and it's lag-tolerant — a 60-second-stale
+multiplier is fine, which is why it's a streaming aggregate and not a
+synchronous query.
+
+## 5. Bottlenecks & failure modes
+
+- **Geo-index shard dies** → that city's matching degrades for
+  seconds; index rebuilds from live updates. Riders retry; trips
+  in-flight are unaffected (they live in the durable store). This
+  failure story — *ephemeral layer crashes are non-events* — is the
+  payoff of the durability split.
+- **Event spike** (concert ends, rain starts) → request volume × 10 in
+  one cell: matching queue grows, radius expansion + surge are the
+  *designed* relief valves; the geo index itself doesn't care.
+- **Offer storms on the best driver** — serialization on driver state
+  prevents double-assignment; ranking diversity (don't offer everyone
+  the same top driver) prevents convoy effects.
+- **Cross-city is embarrassingly shardable** — Mumbai and Delhi share
+  nothing at runtime; regional isolation is both a scaling and a
+  blast-radius strategy ([cellular architecture](/hld/scalability)).
+
+<QA q="How do you index millions of moving drivers for 'who's near me' queries — and why not a quadtree or PostGIS?">
+
+Divide space into cells (geohash prefixes or hex systems like H3);
+maintain an in-memory map of cell → driver set, sharded by region. A
+location update is two O(1) set operations (leave old cell, join new);
+a proximity query reads the rider's cell plus neighbors and ranks the
+few hundred candidates. Quadtrees/k-d trees answer range queries
+beautifully for *static* data, but millions of moves/sec mean constant
+restructure — cells make updates structural no-ops. A disk-backed
+PostGIS handles the *durable* geo data (city boundaries, places), not
+a 1.25 M write/sec ephemeral stream; the live index belongs in memory,
+rebuilt-on-crash from the stream itself. Close with the H3-hexagon
+note (uniform neighbor distances, no pole distortion) — it signals
+you've met real geo systems, not just the textbook.
+
+</QA>
+
+<QA q="Walk through the matching flow and how you prevent one driver being assigned two trips.">
+
+Query the geo index for candidates near the pickup; rank by ETA and
+quality signals; offer to the top candidate with a 15-second TTL,
+atomically transitioning the driver to OFFERED so concurrent matches
+exclude them — the reservation IS the lock, and the TTL makes
+abandoned offers self-release (the BookMyShow seat-lock pattern). On
+accept, a conditional update commits driver → ON_TRIP and trip →
+MATCHED; the conditional ("only if still OFFERED to this trip") is the
+serialization point — two racing matchers, one winner, the loser moves
+to the next candidate. All trip transitions live in a durable
+replicated store, because trips are the precious data. The follow-up
+to pre-empt: batching — at high request density you match *batches*
+of requests to *batches* of drivers (an assignment problem) rather
+than greedily one-by-one, trading a second of latency for globally
+better ETAs. Naming that greedy-vs-batch trade is the senior close.
+
+</QA>
+
+<QA q="Driver location updates are 1.25M writes/sec but you said they're 'not durable'. Defend that decision.">
+
+Durability has a cost — replication, fsync, ordering — and it buys you
+the ability to *recover the data after a crash*. But a driver location
+is stale in 4 seconds by definition: after any crash, the recovered
+data would be useless before recovery finished, because the next
+update wave rebuilds the entire index organically within seconds. So
+durability would purchase nothing. The system keeps the live index in
+replicated *memory* (replicas for availability, not durability), and
+persists only two derived artifacts: trip-attached location traces
+(for receipts, support, safety — written asynchronously to cheap
+storage) and aggregate heatmaps for surge/analytics. The principle to
+generalize: **classify data by its useful lifetime — ephemeral,
+derived, or precious — and pay durability costs only for precious.**
+The same logic justified [Instagram's rebuildable feed
+cache](/hld/design-instagram); recognizing it as one principle across
+designs is what staff-level answers sound like.
+
+</QA>
