@@ -1,0 +1,420 @@
+---
+title: "Large Language Models (LLMs)"
+summary: "How LLMs work — from tokens to transformers to in-context learning. What prompting, temperature, and context windows mean, and how to build production applications with them."
+order: 3
+difficulty: "Intermediate"
+tags: ["llm", "gpt", "transformers", "prompting", "ai", "nlp"]
+---
+
+## What is a Large Language Model?
+
+A **Large Language Model (LLM)** is a neural network trained on vast amounts of text to predict the next token. That's it — everything else (reasoning, coding, translation, summarization) emerges from doing this prediction task extremely well at massive scale.
+
+```
+Analogy: An LLM is like an incredibly well-read person who has read
+essentially all human writing ever produced — books, code, research,
+websites, conversations. When you ask a question, they draw on all of
+that knowledge to construct the most likely helpful answer.
+```
+
+**Why "large"?** Scale is the key ingredient:
+- GPT-3: 175 billion parameters
+- GPT-4: ~1 trillion parameters (estimated)
+- Trained on trillions of tokens (words/pieces)
+- Requires months on thousands of GPUs
+
+---
+
+## Tokens — The Unit of LLMs
+
+LLMs don't process words or characters — they process **tokens**. Tokens are common subword units:
+
+```
+"Hello, World!" → ["Hello", ",", " World", "!"]           = 4 tokens
+"ChatGPT"       → ["Chat", "G", "PT"]                    = 3 tokens
+"tokenization"  → ["token", "ization"]                    = 2 tokens
+"đ"            → ["å", "đ"]                              = 2 tokens (non-ASCII splits more)
+
+Rule of thumb:
+  1 token ≈ 4 characters ≈ 0.75 words (for English)
+  100 tokens ≈ 75 words
+```
+
+Why tokens matter practically:
+- **Pricing**: APIs charge per token (input + output)
+- **Context window**: models have a max token limit (4K to 1M+)
+- **Weird behavior**: "strawberry has 3 r's" — the model doesn't see letters, it sees tokens
+
+```python
+# Using tiktoken (OpenAI's tokenizer)
+import tiktoken
+
+enc = tiktoken.encoding_for_model("gpt-4o")
+tokens = enc.encode("Hello, how many tokens is this?")
+print(f"Token count: {len(tokens)}")   # 8
+print(f"Tokens: {[enc.decode([t]) for t in tokens]}")
+```
+
+---
+
+## How LLMs Work (Conceptually)
+
+### Pre-training — Learning Language
+
+```
+Objective: predict the next token
+Input:  "The cat sat on the"
+Target: "mat"
+
+Input:  "def fibonacci(n): if n <= 1: return n return fibonacci("
+Target: "n-1"
+
+Repeat for TRILLIONS of examples from the internet, books, code
+→ Model learns grammar, facts, reasoning, coding, math
+```
+
+The model has **parameters** (billions of numbers) that are adjusted during training to make better predictions. After training, these parameters are frozen.
+
+### The Transformer Architecture
+
+Modern LLMs use the **Transformer** architecture (2017, "Attention Is All You Need"):
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       Transformer                             │
+│                                                               │
+│  Input tokens: ["The", "cat", "sat", "on", "the"]            │
+│       ↓                                                       │
+│  Embedding Layer (token → dense vector)                       │
+│       ↓                                                       │
+│  Positional Encoding (add position information)               │
+│       ↓                                                       │
+│  ┌─────────────────────────────────────────┐                 │
+│  │         Self-Attention Layer             │  × N layers    │
+│  │   (each token attends to all others)    │                 │
+│  │         Feed-Forward Layer              │                 │
+│  └─────────────────────────────────────────┘                 │
+│       ↓                                                       │
+│  Output: probability distribution over all tokens             │
+│  → most likely next token: "mat"                             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Self-attention** is the key innovation: each token can "look at" all other tokens to understand context. "bank" in "river bank" vs "national bank" — attention lets the model distinguish based on surrounding words.
+
+### RLHF — Making Models Helpful
+
+Pre-trained models predict text — they don't naturally follow instructions or avoid harmful content. **RLHF** (Reinforcement Learning from Human Feedback) fixes this:
+
+```
+Step 1: Supervised Fine-Tuning (SFT)
+  Human experts write ideal (prompt, response) pairs
+  Fine-tune the base model on these examples
+
+Step 2: Reward Model Training
+  Show humans pairs of model responses
+  Humans pick which is better
+  Train a reward model that predicts human preference
+
+Step 3: RL with PPO
+  Use the reward model to score outputs
+  Fine-tune the LLM to produce higher-reward responses
+  → Model learns to be helpful, harmless, honest
+```
+
+This is how ChatGPT, Claude, and Gemini are turned from raw language models into helpful assistants.
+
+---
+
+## Key Concepts for Developers
+
+### Context Window
+
+The context window is the **maximum number of tokens an LLM can process at once** (input + output combined).
+
+| Model | Context Window |
+|---|---|
+| GPT-3.5-turbo | 16K tokens (~12K words) |
+| GPT-4o | 128K tokens (~96K words) |
+| Claude 3.5 Sonnet | 200K tokens (~150K words) |
+| Gemini 1.5 Pro | 1M tokens (~750K words) |
+
+Everything outside the context window is "forgotten." Long document Q&A requires chunking and retrieval (see [RAG](/aiml/rag)).
+
+### Temperature and Sampling
+
+**Temperature** controls randomness in the model's output:
+
+```python
+# Temperature = 0: always picks the most likely token (deterministic, focused)
+# Best for: code, structured data, factual answers
+
+# Temperature = 1: samples proportionally from the distribution (balanced)
+# Best for: most conversational use cases
+
+# Temperature > 1: more random, creative, surprising
+# Best for: creative writing, brainstorming
+
+# Top-P (nucleus sampling): only sample from the top P% of probability mass
+# top_p=0.9: only consider tokens that together make up 90% of probability
+
+import openai
+
+client = openai.OpenAI()
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Write a poem about databases"}],
+    temperature=0.9,    # creative
+    top_p=0.95,
+    max_tokens=200,
+)
+print(response.choices[0].message.content)
+```
+
+### System Prompts
+
+The **system prompt** sets the LLM's behavior and persona for the entire conversation:
+
+```python
+messages = [
+    {
+        "role": "system",
+        "content": """You are PrepDeck AI, a world-class software engineering mentor.
+Your goal is to help engineers crack FAANG interviews.
+Always explain concepts from first principles.
+When explaining algorithms, always include:
+1. Intuition and analogy
+2. Step-by-step breakdown
+3. Code in Python
+4. Time and space complexity
+5. Common interview variations
+
+Be encouraging but technically rigorous. Never give wrong information."""
+    },
+    {
+        "role": "user",
+        "content": "Explain binary search"
+    }
+]
+```
+
+### Prompt Engineering
+
+**Prompt engineering** is the art of crafting inputs to get better outputs.
+
+```python
+# ❌ Vague prompt
+"Explain sorting"
+
+# ✅ Specific, structured prompt
+"""
+Explain merge sort for a software engineering interview.
+Include:
+1. The problem it solves (and why quicksort isn't always better)
+2. The divide-and-conquer intuition with an example
+3. Python implementation
+4. Time complexity: O(n log n) — explain why
+5. Space complexity and when that matters
+6. One trick interview question about merge sort
+Keep the response under 500 words."""
+
+# ✅ Chain-of-thought prompting (for complex reasoning)
+"""
+A train leaves station A at 9am going 60mph.
+Another train leaves station B at 10am going 90mph.
+The stations are 300 miles apart. When do they meet?
+
+Think step by step:"""
+
+# ✅ Few-shot prompting (show examples)
+"""
+Classify the sentiment:
+Input: "This product is amazing!" → Positive
+Input: "Terrible quality, broke in a day" → Negative
+Input: "It's okay I guess" → Neutral
+Input: "Never buying from here again!" → """
+```
+
+---
+
+## Building with LLMs
+
+### Calling the OpenAI API
+
+```python
+from openai import OpenAI
+import os
+
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+# Simple completion
+def ask(question: str) -> str:
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful coding mentor."},
+            {"role": "user", "content": question}
+        ],
+        temperature=0.7,
+        max_tokens=1000,
+    )
+    return response.choices[0].message.content
+
+# Streaming (show text as it's generated — better UX)
+def ask_streaming(question: str):
+    stream = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": question}],
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+### Multi-Turn Conversations
+
+```python
+class ConversationManager:
+    def __init__(self, system_prompt: str):
+        self.messages = [{"role": "system", "content": system_prompt}]
+        self.max_history = 20  # limit history to control costs
+
+    def chat(self, user_message: str) -> str:
+        self.messages.append({"role": "user", "content": user_message})
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=self.messages[-self.max_history:],  # sliding window
+        )
+        assistant_message = response.choices[0].message.content
+        self.messages.append({"role": "assistant", "content": assistant_message})
+        return assistant_message
+```
+
+### Structured Output — JSON Mode
+
+```python
+from pydantic import BaseModel
+from typing import List
+
+class InterviewQuestion(BaseModel):
+    question: str
+    difficulty: str   # "easy" | "medium" | "hard"
+    topic: str
+    hints: List[str]
+    time_complexity: str
+
+# OpenAI structured output (guaranteed valid JSON)
+response = client.beta.chat.completions.parse(
+    model="gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": "Generate a binary search interview question"
+    }],
+    response_format=InterviewQuestion,
+)
+question = response.choices[0].message.parsed
+print(f"Q: {question.question}")
+print(f"Difficulty: {question.difficulty}")
+print(f"Hints: {question.hints}")
+```
+
+### Function Calling / Tool Use
+
+LLMs can call external functions/APIs:
+
+```python
+import json
+
+# Define tools the LLM can call
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "search_documentation",
+        "description": "Search the PrepDeck documentation for a topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "section": {
+                    "type": "string",
+                    "enum": ["dsa", "hld", "lld", "backend"],
+                    "description": "Which section to search"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+}]
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Find articles about hash tables"}],
+    tools=tools,
+    tool_choice="auto",
+)
+
+# Handle tool calls
+if response.choices[0].message.tool_calls:
+    for tool_call in response.choices[0].message.tool_calls:
+        args = json.loads(tool_call.function.arguments)
+        result = search_documentation(**args)   # your actual function
+        # Add result back to conversation...
+```
+
+---
+
+## Production Considerations
+
+```
+Cost management:
+  - Use smaller models for simple tasks (gpt-4o-mini over gpt-4o)
+  - Cache repeated responses (semantic caching with vector DB)
+  - Limit context window usage
+
+Latency:
+  - Streaming responses feel faster (first token appears quickly)
+  - Parallel calls when queries are independent
+
+Reliability:
+  - Retry with exponential backoff on rate limit errors
+  - Fallback to smaller models on failures
+  - Set max_tokens to prevent runaway costs
+
+Safety:
+  - Input validation (don't let users inject system prompt overrides)
+  - Output filtering (content moderation API)
+  - Never expose your system prompt directly to users
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="How do LLMs work at a high level?">
+
+LLMs are trained on massive text datasets to predict the next token — the most likely word/subword that follows a given sequence. Using the Transformer architecture with self-attention, they learn relationships between tokens across the entire context. After pre-training (learning language from raw text), they're fine-tuned with RLHF to be helpful and safe. At inference time, they generate responses one token at a time, sampling from the learned probability distribution. The "intelligence" emerges from scale — billions of parameters trained on trillions of tokens learn to compress and apply world knowledge.
+
+</QA>
+
+<QA q="What is temperature in LLMs?">
+
+Temperature controls the randomness of token sampling. At temperature 0, the model always picks the highest-probability token (deterministic). At temperature 1, it samples proportionally from the learned distribution. Higher temperatures make outputs more creative and varied but less accurate. For code generation, SQL, or factual answers, use low temperature (0-0.3). For creative writing or brainstorming, higher temperature (0.7-1.0). Temperature doesn't affect what the model knows — only how it samples from what it knows.
+
+</QA>
+
+<QA q="What is the context window and why does it matter?">
+
+The context window is the maximum number of tokens the model can process in one call (input + output together). Everything outside the window is invisible to the model. It matters for: (1) Long document processing — documents longer than the context must be chunked. (2) Long conversations — history beyond the window is lost. (3) Cost — you pay for every token in the context. (4) RAG — retrieve only relevant chunks to fit within the window. Modern models have large windows (128K-1M tokens), but effective performance often degrades on very long contexts ("lost in the middle" problem).
+
+</QA>
+
+## Practice
+
+1. **Basic**: Build a command-line chatbot with conversation history using the OpenAI API. Limit history to the last 10 messages.
+2. **Structured Output**: Create a tool that takes a job description and returns structured data: required skills, seniority level, company stage, and estimated salary range.
+3. **Function Calling**: Build an LLM that can answer questions about your local codebase by calling a `read_file` and `search_files` function.
+4. **Streaming UI**: Build a Next.js chat interface that streams the LLM response token by token using Server-Sent Events.
+
+Next: [RAG](/aiml/rag) — augmenting LLMs with your own data.

@@ -1,0 +1,377 @@
+---
+title: "AI vs ML vs Deep Learning"
+summary: "Understand the landscape from scratch — what AI, ML, and deep learning actually are, how they differ, supervised/unsupervised/reinforcement learning, and how every major company uses them."
+order: 1
+difficulty: "Foundation"
+tags: ["ai", "machine-learning", "deep-learning", "supervised", "unsupervised", "reinforcement-learning"]
+---
+
+## Starting From Zero — What is Artificial Intelligence?
+
+**Artificial Intelligence (AI)** is the broad field of making computers perform tasks that normally require human intelligence: recognizing speech, understanding language, playing chess, diagnosing diseases, driving cars.
+
+```
+Real-world analogy:
+AI is the broad concept of "making machines smart."
+It's like the term "science" — it encompasses physics, chemistry, biology.
+ML and deep learning are specific branches of AI.
+```
+
+**History**:
+- 1950s: Alan Turing proposes the "Turing Test" — can a machine fool a human?
+- 1956: The term "Artificial Intelligence" coined at Dartmouth Conference
+- 1980s-90s: Expert systems (manually coded rules) — limited, brittle
+- 2012: Deep learning revolution (AlexNet wins ImageNet) — everything changed
+- 2017: Transformer architecture (attention is all you need)
+- 2022: ChatGPT — AI enters mainstream
+
+---
+
+## The Three Layers
+
+```
+┌────────────────────────────────────────────────────────┐
+│                  Artificial Intelligence                │
+│            (making machines "smart")                    │
+│                                                         │
+│   ┌──────────────────────────────────────────────┐    │
+│   │              Machine Learning                 │    │
+│   │        (learning from data)                   │    │
+│   │                                               │    │
+│   │   ┌──────────────────────────────────────┐   │    │
+│   │   │           Deep Learning               │   │    │
+│   │   │   (multi-layer neural networks)       │   │    │
+│   │   └──────────────────────────────────────┘   │    │
+│   └──────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────┘
+```
+
+### AI (the umbrella)
+Any technique that gives machines intelligent behavior. This includes:
+- Rule-based systems (if-else logic)
+- Search algorithms (chess engines)
+- Machine learning
+- Robotics
+
+### Machine Learning (a subset of AI)
+Instead of programming explicit rules, ML systems **learn patterns from data**:
+
+```
+Traditional Programming:
+  Rules + Data → Program → Output
+
+Machine Learning:
+  Data + Output → ML → Rules (learned automatically)
+
+Example:
+Traditional: if word == "spam_word" or sender in blacklist: mark_as_spam()
+ML: Feed 1 million emails (labeled spam/not-spam) → model learns the pattern
+    → detects spam you never explicitly programmed for
+```
+
+### Deep Learning (a subset of ML)
+Uses **neural networks** with many layers — particularly powerful for:
+- Images (CNNs — convolutional neural networks)
+- Text and speech (Transformers, RNNs)
+- Complex pattern recognition
+
+Deep learning became dominant after 2012 because:
+1. GPUs enabled training huge networks
+2. Internet provided massive datasets
+3. Algorithmic improvements (better training techniques)
+
+---
+
+## Types of Machine Learning
+
+### Supervised Learning — Learning with Labels
+
+You provide **labeled examples**: inputs + correct outputs. The model learns to map inputs to outputs.
+
+```
+Training data:
+  Email text → "spam"
+  Email text → "not spam"
+  Email text → "spam"
+  ... (millions of examples)
+
+Trained model:
+  New email → predict probability it's spam
+```
+
+**Types of supervised problems**:
+- **Classification**: output is a category (spam/not-spam, cat/dog, cancer/not-cancer)
+- **Regression**: output is a number (house price, temperature tomorrow, stock price)
+
+**Where you see it**:
+- Gmail spam filter
+- Netflix recommendation scores
+- Medical diagnosis (is this X-ray showing cancer?)
+- Credit card fraud detection
+- Face recognition
+
+**Common algorithms**:
+- Linear/Logistic Regression
+- Decision Trees, Random Forests
+- Support Vector Machines (SVM)
+- Neural Networks / Deep Learning
+
+### Unsupervised Learning — Finding Hidden Patterns
+
+No labels provided. The model finds structure in the data on its own.
+
+```
+Input: 10,000 customer purchase histories (no labels)
+Output: "We found 5 distinct customer segments:
+         Group 1: Young high-spenders on electronics
+         Group 2: Families buying household goods
+         ..."
+```
+
+**Types**:
+- **Clustering**: group similar data points (k-means, DBSCAN, hierarchical)
+- **Dimensionality Reduction**: compress data while preserving structure (PCA, t-SNE, UMAP)
+- **Anomaly Detection**: find outliers (fraud, equipment failure)
+- **Association Rules**: "customers who buy X also buy Y" (market basket analysis)
+
+**Where you see it**:
+- Customer segmentation (marketing campaigns)
+- Recommendation systems (collaborative filtering)
+- Anomaly detection in server logs
+- Topic modeling in documents
+- Generating word embeddings (Word2Vec)
+
+### Reinforcement Learning — Learning by Trial and Error
+
+An **agent** takes actions in an **environment** to maximize **cumulative reward**. No labeled data — it learns by doing.
+
+```
+Analogy: Training a dog.
+Action: dog sits → treat (reward +1)
+Action: dog bites furniture → scolding (reward -10)
+Dog learns: sit more, bite furniture less
+
+RL equivalent:
+Agent: AI playing chess
+Environment: chess board
+Action: moves pieces
+Reward: +1 for winning, -1 for losing, 0 otherwise
+Agent learns: sequences of moves that lead to winning
+```
+
+**Where you see it**:
+- AlphaGo / AlphaZero (beat world champion Go players)
+- ChatGPT's RLHF (Reinforcement Learning from Human Feedback) — fine-tuning to be helpful
+- Autonomous vehicles (reward for safe navigation)
+- Robot manipulation
+- Trading algorithms
+- Game AI (Atari games, Dota, StarCraft)
+
+### Self-Supervised Learning (Emerging Paradigm)
+
+The model creates its own "labels" from the data itself:
+
+```
+Example: GPT language models
+  Input: "The cat sat on the ___"
+  Label: "mat" (generated from the actual next token)
+  No human labeling needed!
+  
+Train on all text on the internet → learns language, facts, reasoning
+```
+
+This is how LLMs (ChatGPT, Gemini, Claude) are pre-trained — no humans manually label trillions of tokens.
+
+---
+
+## The Machine Learning Pipeline
+
+```
+1. Problem Definition
+   What are we predicting? What data do we have?
+   Success metric: accuracy, F1, RMSE, revenue impact
+
+2. Data Collection
+   Where does the data come from?
+   How much is enough? (Rule of thumb: 10x examples per feature)
+
+3. Data Preprocessing (most of the work!)
+   - Handle missing values
+   - Remove outliers
+   - Feature engineering (create useful inputs)
+   - Normalize/scale features
+   - Split: train (70%) / validation (15%) / test (15%)
+
+4. Model Selection
+   Start simple (logistic regression), increase complexity if needed
+
+5. Training
+   Feed training data → model adjusts its parameters
+
+6. Evaluation
+   How does it perform on UNSEEN data (validation/test set)?
+
+7. Hyperparameter Tuning
+   Optimize model settings (learning rate, depth, etc.)
+
+8. Deployment
+   Serve predictions via API, monitor for drift
+```
+
+---
+
+## Key ML Concepts Every Engineer Must Know
+
+### Overfitting vs Underfitting
+
+```
+Underfitting (too simple):
+  Model fails even on training data
+  Like memorizing 2+2=4 but not learning how addition works
+
+Overfitting (too complex):
+  Perfect on training data, terrible on new data
+  Like memorizing every question in practice exam without understanding
+
+The goal: good generalization — performs well on UNSEEN data
+
+Fixes for overfitting:
+  - More training data (most effective)
+  - Regularization (L1, L2 — penalize complex models)
+  - Dropout (for neural networks — randomly disable neurons during training)
+  - Early stopping (stop training before the model memorizes training data)
+  - Cross-validation (k-fold CV for reliable evaluation)
+```
+
+### Bias vs Variance
+
+```
+High Bias (underfitting):
+  Model makes the same types of mistakes consistently
+  → Too simple, misses real patterns
+
+High Variance (overfitting):
+  Model makes different mistakes on different data
+  → Too complex, memorizes noise
+
+Goal: find the sweet spot (bias-variance tradeoff)
+```
+
+### Training, Validation, and Test Sets
+
+```python
+from sklearn.model_selection import train_test_split
+
+# NEVER touch test set until final evaluation
+X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+
+# Training set: model learns from this
+# Validation set: tune hyperparameters, make decisions
+# Test set: final unbiased evaluation (touch ONCE, at the end)
+```
+
+### Evaluation Metrics
+
+```python
+# Classification
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+accuracy  = correct_predictions / total_predictions
+# Misleading for imbalanced classes (99% accuracy on fraud when 99% is not fraud)
+
+precision = true_positives / (true_positives + false_positives)
+# "When I say spam, how often am I right?"
+
+recall    = true_positives / (true_positives + false_negatives)
+# "What fraction of actual spam did I catch?"
+
+f1_score  = 2 * (precision * recall) / (precision + recall)
+# Harmonic mean — balances precision and recall
+
+# Regression
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+rmse = sqrt(mean_squared_error(y_true, y_pred))
+mae  = mean_absolute_error(y_true, y_pred)
+```
+
+### A Simple ML Example (End to End)
+
+```python
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+
+# 1. Load data
+df = pd.read_csv("titanic.csv")
+
+# 2. Preprocess
+df["Age"].fillna(df["Age"].median(), inplace=True)
+df["Embarked"].fillna("S", inplace=True)
+df = pd.get_dummies(df, columns=["Sex", "Embarked"])
+features = ["Pclass", "Age", "SibSp", "Parch", "Fare", "Sex_female", "Sex_male"]
+X = df[features]
+y = df["Survived"]
+
+# 3. Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 4. Train
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# 5. Evaluate
+y_pred = model.predict(X_test)
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.3f}")
+print(classification_report(y_test, y_pred))
+
+# 6. Feature importance
+for feat, imp in sorted(zip(features, model.feature_importances_), key=lambda x: -x[1]):
+    print(f"{feat}: {imp:.3f}")
+```
+
+---
+
+## How Major Companies Use ML
+
+| Company | Use Case | Type |
+|---|---|---|
+| **Google** | Search ranking, Maps ETA, Translate, Photos | Supervised, DL |
+| **Netflix** | Show recommendations, thumbnail personalization | Supervised, RL |
+| **Amazon** | Product recommendations, Alexa, fraud detection | Supervised, DL |
+| **Uber** | Surge pricing, ETA prediction, fraud | Supervised, Regression |
+| **Meta/Instagram** | Feed ranking, ad targeting, face detection | Supervised, DL |
+| **Spotify** | Discover Weekly, song features | Unsupervised, Supervised |
+| **Tesla** | Autopilot, obstacle detection | DL, RL |
+
+---
+
+## Common Interview Questions
+
+<QA q="What's the difference between AI, ML, and deep learning?">
+
+AI is the broad field of making computers perform intelligent tasks. Machine learning is a subset of AI where systems learn patterns from data instead of following explicitly programmed rules. Deep learning is a subset of ML that uses multi-layer neural networks, particularly powerful for images, audio, and text. The key distinctions: AI includes non-learning techniques (search, rule systems); ML requires data to learn from; deep learning requires lots of data and compute, but achieves state-of-the-art results.
+
+</QA>
+
+<QA q="Explain supervised vs unsupervised learning.">
+
+Supervised learning trains on labeled data — you provide (input, correct output) pairs, and the model learns to predict outputs for new inputs. Used for classification and regression. Unsupervised learning finds structure in unlabeled data — the model discovers patterns, clusters, or representations without being told what to look for. Used for customer segmentation, anomaly detection, dimensionality reduction. The practical distinction: supervised = you know what you want to predict; unsupervised = you're exploring the data.
+
+</QA>
+
+<QA q="What is overfitting and how do you prevent it?">
+
+Overfitting is when a model performs well on training data but poorly on new (unseen) data — it memorized the training set including its noise. Prevention: (1) get more training data, (2) regularization (L1/L2 penalize complex models), (3) dropout (randomly disable neurons during training), (4) early stopping (stop before training loss continues down but validation loss rises), (5) simpler model architecture, (6) data augmentation. Always evaluate on a held-out test set — never make decisions based on training performance alone.
+
+</QA>
+
+## Practice
+
+1. **Beginner**: Using scikit-learn, train a logistic regression model to classify Iris flowers. Evaluate with precision, recall, and F1 score.
+2. **Core**: Compare Random Forest, SVM, and Gradient Boosting on a tabular dataset. Plot learning curves to diagnose overfitting.
+3. **Advanced**: Build a complete ML pipeline — data preprocessing, feature engineering, model selection with cross-validation, hyperparameter tuning with GridSearchCV, and final test set evaluation.
+
+Next: [Neural Networks](/aiml/neural-networks) — the engines behind deep learning.

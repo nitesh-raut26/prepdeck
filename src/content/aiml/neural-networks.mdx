@@ -1,0 +1,374 @@
+---
+title: "Neural Networks"
+summary: "From single perceptrons to deep networks — how neural networks learn, backpropagation, activation functions, CNNs for images, and building your first network in Python."
+order: 2
+difficulty: "Intermediate"
+tags: ["neural-networks", "deep-learning", "backpropagation", "cnn", "pytorch", "tensorflow"]
+---
+
+## What is a Neural Network?
+
+A **neural network** is a computational system loosely inspired by biological brains — interconnected layers of simple units (neurons) that together can learn extremely complex patterns.
+
+```
+Analogy: A neural network is like a factory assembly line with workers.
+Layer 1 workers: "Is there an edge here?" (detect simple features)
+Layer 2 workers: "Are these edges forming a shape?" (combine features)
+Layer 3 workers: "Does this shape look like a cat?" (classify)
+
+Each worker learns their job by seeing millions of examples
+and being corrected when they get it wrong.
+```
+
+---
+
+## The Perceptron — Building Block
+
+The simplest neuron: takes inputs, multiplies by weights, sums them up, applies an activation function:
+
+```
+Inputs:   x₁ = 0.5  (pixel value)
+          x₂ = 0.8  (another pixel)
+          x₃ = 0.2
+
+Weights:  w₁ = 0.3
+          w₂ = -0.5
+          w₃ = 0.8
+
+Bias:     b = 0.1
+
+Weighted sum: z = (0.5×0.3) + (0.8×-0.5) + (0.2×0.8) + 0.1
+                = 0.15 - 0.40 + 0.16 + 0.10
+                = 0.01
+
+Activation: output = ReLU(0.01) = max(0, 0.01) = 0.01
+```
+
+```python
+import numpy as np
+
+class Neuron:
+    def __init__(self, n_inputs):
+        # Weights initialized randomly (small values)
+        self.weights = np.random.randn(n_inputs) * 0.01
+        self.bias = 0.0
+
+    def forward(self, inputs):
+        z = np.dot(inputs, self.weights) + self.bias
+        return max(0, z)  # ReLU activation
+
+neuron = Neuron(n_inputs=3)
+output = neuron.forward([0.5, 0.8, 0.2])
+```
+
+---
+
+## Activation Functions
+
+Activation functions introduce **non-linearity** — without them, stacking layers would just be matrix multiplication (equivalent to one layer). Non-linearity is what lets networks learn complex patterns.
+
+```python
+import numpy as np
+
+# ReLU (Rectified Linear Unit) — most common for hidden layers
+# Simple: output = max(0, x)
+# Fast, doesn't have vanishing gradient problem
+def relu(x): return np.maximum(0, x)
+# relu(-1) = 0, relu(0.5) = 0.5, relu(3) = 3
+
+# Leaky ReLU — allows small negative values (prevents "dead ReLU" problem)
+def leaky_relu(x, alpha=0.01): return np.where(x > 0, x, alpha * x)
+
+# Sigmoid — squashes output to (0, 1)
+# Used for binary classification output
+# Has vanishing gradient problem at extremes
+def sigmoid(x): return 1 / (1 + np.exp(-x))
+# sigmoid(-10) ≈ 0, sigmoid(0) = 0.5, sigmoid(10) ≈ 1
+
+# Tanh — squashes to (-1, 1)
+# Better than sigmoid for hidden layers (zero-centered)
+def tanh(x): return np.tanh(x)
+
+# Softmax — converts a vector of logits to probabilities that sum to 1
+# Used for multi-class classification output
+def softmax(x):
+    e_x = np.exp(x - np.max(x))  # numerical stability
+    return e_x / e_x.sum()
+# softmax([2, 1, 0.1]) ≈ [0.659, 0.242, 0.099]
+```
+
+**When to use what**:
+- Hidden layers: **ReLU** (default) or variants (LeakyReLU, GELU for transformers)
+- Binary output: **Sigmoid** (outputs probability 0-1)
+- Multi-class output: **Softmax** (outputs class probabilities summing to 1)
+- Regression output: **Linear** (no activation — any real number)
+
+---
+
+## Multi-Layer Network (Forward Pass)
+
+```python
+import numpy as np
+
+class NeuralNetwork:
+    def __init__(self, layer_sizes):
+        # layer_sizes = [784, 128, 64, 10] for MNIST digit classification
+        self.weights = []
+        self.biases = []
+        for i in range(len(layer_sizes) - 1):
+            # He initialization (good for ReLU)
+            W = np.random.randn(layer_sizes[i], layer_sizes[i+1]) * np.sqrt(2/layer_sizes[i])
+            b = np.zeros((1, layer_sizes[i+1]))
+            self.weights.append(W)
+            self.biases.append(b)
+
+    def relu(self, x):
+        return np.maximum(0, x)
+
+    def softmax(self, x):
+        e = np.exp(x - x.max(axis=1, keepdims=True))
+        return e / e.sum(axis=1, keepdims=True)
+
+    def forward(self, X):
+        self.activations = [X]
+        current = X
+        for W, b in zip(self.weights[:-1], self.biases[:-1]):
+            z = current @ W + b
+            current = self.relu(z)
+            self.activations.append(current)
+        # Output layer: softmax for classification
+        z = current @ self.weights[-1] + self.biases[-1]
+        output = self.softmax(z)
+        self.activations.append(output)
+        return output
+
+nn = NeuralNetwork([784, 128, 64, 10])
+X = np.random.randn(32, 784)  # batch of 32 images, 784 pixels each
+output = nn.forward(X)        # shape: (32, 10) — probability for each digit
+```
+
+---
+
+## How Networks Learn — Backpropagation
+
+Training a network = finding weights that minimize prediction error.
+
+### Loss Functions
+
+```python
+# Cross-entropy loss for classification (measures how wrong predictions are)
+def cross_entropy_loss(y_pred, y_true):
+    # y_pred: predicted probabilities (after softmax)
+    # y_true: true labels (one-hot encoded or class indices)
+    eps = 1e-8  # prevent log(0)
+    n = y_true.shape[0]
+    log_likelihood = -np.log(y_pred[range(n), y_true] + eps)
+    return np.mean(log_likelihood)
+
+# MSE loss for regression
+def mse_loss(y_pred, y_true):
+    return np.mean((y_pred - y_true) ** 2)
+```
+
+### Gradient Descent
+
+```python
+# The training loop
+learning_rate = 0.01
+
+for epoch in range(100):
+    # 1. Forward pass: compute predictions
+    y_pred = model.forward(X_train)
+
+    # 2. Compute loss
+    loss = cross_entropy_loss(y_pred, y_train)
+
+    # 3. Backward pass: compute gradients (calculus chain rule)
+    # How much does each weight contribute to the loss?
+    gradients = model.backward(loss)
+
+    # 4. Update weights: move in direction that reduces loss
+    for W, dW in zip(model.weights, gradients):
+        W -= learning_rate * dW
+```
+
+**Backpropagation** (backprop) computes gradients using the chain rule of calculus — it propagates the error signal backward through each layer:
+
+```
+Forward:  input → layer1 → layer2 → output → loss
+Backward: loss → ∂loss/∂layer2 → ∂loss/∂layer1 → ∂loss/∂weights
+```
+
+In practice, you never implement backprop manually — frameworks do it automatically.
+
+---
+
+## PyTorch — Building Networks in Practice
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# Define the network
+class MNISTClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(784, 256),   # input layer → hidden layer
+            nn.ReLU(),
+            nn.Dropout(0.3),       # randomly zero out 30% of neurons during training
+            nn.Linear(256, 128),   # hidden → hidden
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 10),    # hidden → output (10 classes)
+        )
+
+    def forward(self, x):
+        return self.network(x)
+
+# Initialize
+model = MNISTClassifier()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+criterion = nn.CrossEntropyLoss()
+
+# Training loop
+model.train()
+for epoch in range(20):
+    total_loss = 0
+    correct = 0
+
+    for X_batch, y_batch in train_loader:
+        # Forward pass
+        logits = model(X_batch)           # (batch_size, 10)
+        loss = criterion(logits, y_batch)
+
+        # Backward pass
+        optimizer.zero_grad()             # clear previous gradients
+        loss.backward()                   # compute gradients
+        optimizer.step()                  # update weights
+
+        total_loss += loss.item()
+        correct += (logits.argmax(1) == y_batch).sum().item()
+
+    print(f"Epoch {epoch}: loss={total_loss/len(train_loader):.4f}, "
+          f"acc={correct/len(train_dataset):.4f}")
+
+# Evaluation
+model.eval()
+with torch.no_grad():                     # no gradient computation needed
+    test_logits = model(X_test)
+    predictions = test_logits.argmax(1)
+    accuracy = (predictions == y_test).float().mean()
+    print(f"Test accuracy: {accuracy:.4f}")
+```
+
+---
+
+## Convolutional Neural Networks (CNNs)
+
+CNNs are specialized for grid-like data — images, audio spectrograms. Instead of connecting every pixel to every neuron, they use **convolutional filters** that slide across the image:
+
+```
+Image: 28×28 pixels
+Filter (kernel): 3×3 weights
+Convolution: slide the filter across the image, compute dot product at each position
+Output: feature map (detects edges, textures, etc.)
+```
+
+```python
+import torch.nn as nn
+
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv_layers = nn.Sequential(
+            # (batch, 1, 28, 28) → (batch, 32, 26, 26)
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3),
+            nn.ReLU(),
+            # Pooling: reduce spatial dimensions by taking max in 2×2 windows
+            # (batch, 32, 26, 26) → (batch, 32, 13, 13)
+            nn.MaxPool2d(kernel_size=2),
+
+            # (batch, 32, 13, 13) → (batch, 64, 11, 11)
+            nn.Conv2d(32, 64, kernel_size=3),
+            nn.ReLU(),
+            # (batch, 64, 11, 11) → (batch, 64, 5, 5)
+            nn.MaxPool2d(2),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),              # (batch, 64, 5, 5) → (batch, 1600)
+            nn.Linear(64 * 5 * 5, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10),
+        )
+
+    def forward(self, x):
+        x = self.conv_layers(x)
+        return self.classifier(x)
+```
+
+Why CNNs work for images:
+- **Parameter sharing**: one filter learns one feature type (edges in any location)
+- **Translation invariance**: a cat detector works whether the cat is left or right
+- **Hierarchical features**: early layers detect edges → middle layers detect shapes → late layers detect objects
+
+---
+
+## Hyperparameters
+
+Key settings to tune:
+
+```python
+# Learning rate: how big the gradient descent steps are
+# Too high: oscillates, doesn't converge
+# Too low: trains very slowly
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+# Batch size: how many samples per weight update
+# Large: more stable gradients, faster on GPU; requires more memory
+# Small: noisier gradients, can generalize better
+train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+# Epochs: how many times to see the full training set
+# Use early stopping: monitor validation loss and stop when it stops improving
+
+# Learning rate scheduling: reduce LR when training plateaus
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
+
+# Dropout: randomly zero out activations during training (regularization)
+nn.Dropout(p=0.5)  # p = probability of zeroing out
+
+# Weight decay (L2 regularization): penalize large weights
+optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="Why do neural networks need non-linear activation functions?">
+
+Without activation functions, stacking layers is equivalent to one big matrix multiplication — the composition of linear functions is linear. No matter how many layers, the network can only learn linear relationships. Non-linear activations (ReLU, Sigmoid, Tanh) allow each layer to learn non-linear transformations, enabling the network to approximate arbitrarily complex functions (universal approximation theorem). ReLU is preferred because it doesn't suffer from vanishing gradients and is computationally cheap.
+
+</QA>
+
+<QA q="Explain the vanishing gradient problem.">
+
+During backpropagation, gradients are multiplied layer by layer as they flow backward. With sigmoid or tanh activations, gradients are small numbers (<1). Multiplied across many layers, they become exponentially small (vanish toward zero). Layers far from the output learn extremely slowly or not at all. Solutions: (1) ReLU (gradient is 1 for positive values, 0 for negative — doesn't shrink), (2) batch normalization (normalizes activations), (3) residual connections/skip connections (gradient flows directly through shortcuts — the key innovation in ResNets).
+
+</QA>
+
+<QA q="What is overfitting in neural networks and how do you prevent it?">
+
+Overfitting is when the network memorizes training data (achieves very low training loss) but fails to generalize (high validation/test loss). Prevention: (1) Dropout — randomly disable neurons during training (not at inference), forcing the network not to rely on any single neuron. (2) L2 regularization/weight decay — penalize large weights in the loss. (3) Data augmentation — artificially expand the training set (flips, crops, rotations for images). (4) Early stopping — stop training when validation loss stops improving. (5) More data — the most effective solution.
+
+</QA>
+
+## Practice
+
+1. **Beginner**: Train a neural network on the MNIST dataset (handwritten digits) in PyTorch. Achieve >98% test accuracy using a two-layer MLP.
+2. **CNN**: Build a CNN for CIFAR-10 (10-class image classification). Use batch normalization and data augmentation. Target: >80% test accuracy.
+3. **Hyperparameter tuning**: Starting from a baseline MNIST model, experiment with: learning rate (1e-2, 1e-3, 1e-4), batch size (32, 256), dropout rates (0, 0.3, 0.5). Plot training curves and explain the results.
+
+Next: [LLMs](/aiml/llms) — the transformer revolution and large language models.
