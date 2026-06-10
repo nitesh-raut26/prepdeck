@@ -1,0 +1,296 @@
+---
+title: "Indexing & Optimization"
+summary: "How B-tree and hash indexes work, composite index strategies, covering indexes, and a systematic approach to identifying and fixing slow queries."
+order: 4
+difficulty: "Advanced"
+tags: ["indexing", "b-tree", "query-optimization", "performance", "explain"]
+---
+
+## Why Indexes Exist
+
+Without an index, finding a row requires reading every single row in the table — a **full table scan** at O(n). With an index, the database can jump directly to matching rows.
+
+```
+Analogy: Finding a name in a phone book.
+Without index: Read every page left to right until you find the name.
+With index:    Open to the right letter, then to the right page — O(log n).
+```
+
+The cost: indexes are **data structures maintained by the database** — every INSERT, UPDATE, and DELETE must update all relevant indexes. More indexes = slower writes. Index selectively.
+
+---
+
+## B-Tree Index — The Default
+
+Almost every index is a **B-Tree** (Balanced Tree). It keeps data sorted and balanced:
+
+```
+                        [50]
+                    /          \
+              [25]              [75]
+            /      \          /      \
+         [10, 20] [30, 40] [60, 70] [80, 90]
+```
+
+Properties:
+- **O(log n)** search, insert, delete
+- Supports **range queries** (`BETWEEN`, `>`, `<`, `>=`, `<=`)
+- Supports **ORDER BY** (data is already sorted)
+- Supports **equality** (`=`)
+
+```sql
+-- B-tree index (the default)
+CREATE INDEX idx_users_email ON users(email);
+
+-- All of these use the index:
+SELECT * FROM users WHERE email = 'alice@example.com';     -- equality
+SELECT * FROM users WHERE email > 'alice@example.com';     -- range
+SELECT * FROM users WHERE email LIKE 'alice%';              -- prefix scan
+SELECT * FROM users ORDER BY email;                         -- sort
+
+-- This does NOT use the index:
+SELECT * FROM users WHERE email LIKE '%example.com';        -- leading wildcard
+SELECT * FROM users WHERE LOWER(email) = 'alice@example.com'; -- function on column
+```
+
+## Hash Index
+
+Hash indexes are **O(1) for equality lookups** but don't support ranges or sorting.
+
+```sql
+-- PostgreSQL: explicit hash index
+CREATE INDEX idx_sessions_token ON sessions USING HASH (token);
+
+-- Use for: exact equality lookups on high-cardinality columns (tokens, UUIDs)
+-- Don't use for: ranges, LIKE, ORDER BY
+```
+
+In practice, B-tree is almost always better — its O(log n) is fast enough and it handles all query types.
+
+## Composite Indexes
+
+A **composite index** covers multiple columns. The **column order is critical**:
+
+```sql
+-- Index: (a, b, c)
+CREATE INDEX idx_posts_author_status_date ON posts(author_id, status, created_at DESC);
+
+-- Queries that CAN use this index (leftmost prefix rule):
+WHERE author_id = 1                                     -- ✅ uses (author_id)
+WHERE author_id = 1 AND status = 'published'            -- ✅ uses (author_id, status)
+WHERE author_id = 1 AND status = 'published'
+  AND created_at > '2024-01-01'                         -- ✅ uses all three
+WHERE author_id = 1 ORDER BY created_at DESC            -- ✅ index scan + sort
+
+-- Queries that CANNOT use this index:
+WHERE status = 'published'                              -- ❌ skips author_id
+WHERE created_at > '2024-01-01'                        -- ❌ skips author_id and status
+WHERE status = 'published' AND created_at > '2024-01-01' -- ❌ skips author_id
+```
+
+**Index design strategy for composite indexes:**
+
+1. Equality conditions first (they narrow the search most)
+2. Range conditions last (can only use one range condition from the index)
+3. Columns in ORDER BY at the end (for sort elimination)
+
+```sql
+-- Query: get active users by country, sorted by name
+SELECT * FROM users
+WHERE is_active = true AND country = 'US'
+ORDER BY name ASC;
+
+-- Index design:
+-- Column order: equality columns (is_active, country) → sort column (name)
+CREATE INDEX idx_users_active_country_name ON users(is_active, country, name ASC);
+-- PostgreSQL can now: filter on is_active + country, serve ORDER BY from index
+-- Zero sort operation needed!
+```
+
+## Covering Index
+
+A **covering index** contains ALL columns needed by a query — the database never touches the actual table:
+
+```sql
+-- Index that "covers" the query below
+CREATE INDEX idx_posts_covering ON posts(author_id, status, title, created_at);
+
+-- This query is satisfied entirely from the index (Index Only Scan in PG)
+SELECT title, created_at
+FROM posts
+WHERE author_id = 1 AND status = 'published'
+ORDER BY created_at DESC;
+
+-- EXPLAIN will show: "Index Only Scan" instead of "Index Scan" (no heap fetch)
+-- Dramatically faster — no I/O to the main table
+```
+
+Add extra columns to the end of an index purely for covering — even if they're not in WHERE:
+
+```sql
+-- PostgreSQL INCLUDE syntax (doesn't sort by include columns, just covers them)
+CREATE INDEX idx_posts_author ON posts(author_id) INCLUDE (title, created_at);
+```
+
+## Partial Index
+
+A **partial index** only indexes a subset of rows that match a WHERE clause:
+
+```sql
+-- Only index active users — much smaller index, only used for active user queries
+CREATE INDEX idx_active_users_email ON users(email) WHERE is_active = true;
+
+-- Only index unpublished posts
+CREATE INDEX idx_draft_posts ON posts(author_id, created_at) WHERE status = 'draft';
+
+-- Use case: 95% of orders are 'completed', only 5% are 'pending'
+-- Full index: 100% of rows
+-- Partial index on pending: 5% of rows — tiny, fast, exactly what the work queue needs
+CREATE INDEX idx_pending_orders ON orders(created_at) WHERE status = 'pending';
+```
+
+## Functional Index
+
+When you need to query on a transformed value:
+
+```sql
+-- Case-insensitive email lookup
+CREATE INDEX idx_users_lower_email ON users(LOWER(email));
+-- Now this uses the index (before, it did a full scan):
+SELECT * FROM users WHERE LOWER(email) = 'alice@example.com';
+
+-- Extract part of a date
+CREATE INDEX idx_posts_month ON posts(DATE_TRUNC('month', created_at));
+SELECT * FROM posts WHERE DATE_TRUNC('month', created_at) = '2024-01-01';
+
+-- JSON field (PostgreSQL)
+CREATE INDEX idx_events_user_id ON events((payload->>'user_id'));
+```
+
+## Reading EXPLAIN ANALYZE
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT u.name, COUNT(p.id)
+FROM users u LEFT JOIN posts p ON u.id = p.author_id
+GROUP BY u.id;
+```
+
+```
+Hash Join  (cost=1823.50..2131.70 rows=10000 width=28) (actual time=45.231..89.432 rows=10000)
+  Hash Cond: (p.author_id = u.id)
+  Buffers: shared hit=842 read=127
+  ->  Seq Scan on posts p  (cost=0.00..231.45 rows=15000 width=8) (actual=...)
+        Buffers: shared hit=231 read=0
+  ->  Hash  (cost=1589.00..1589.00 rows=10000 width=36) (actual time=44.32..44.33)
+        Buckets: 16384  Batches: 1  Memory Usage: 1025kB
+        ->  Seq Scan on users u  (cost=0.00..1589.00 rows=10000 width=36) (actual=...)
+```
+
+Key things to read:
+- **Node type**: `Seq Scan` (bad for large), `Index Scan` (good), `Index Only Scan` (best), `Bitmap Index Scan` (good for loose matches), `Hash Join`, `Nested Loop`, `Merge Join`
+- **cost=start..total**: estimated cost in arbitrary units (I/O + CPU). The critical number is the total.
+- **actual time=start..total**: real milliseconds. Compare to estimated — huge mismatch = bad statistics.
+- **rows=N**: estimated vs actual. If `rows=1` but `actual rows=100000`, the planner made bad decisions. Run `ANALYZE tablename`.
+- **Buffers: shared hit/read**: `hit` = from memory (fast), `read` = from disk (slow). Lots of reads = working set doesn't fit in memory.
+
+## Common Performance Anti-Patterns
+
+```sql
+-- ❌ 1. Function on indexed column
+WHERE YEAR(created_at) = 2024       -- MySQL: kills index
+WHERE DATE_TRUNC('year', ...) = ... -- PG: kills index unless functional index
+-- ✅ Fix: range query instead
+WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01'
+
+-- ❌ 2. Leading wildcard
+WHERE name LIKE '%john%'            -- full scan always
+-- ✅ Fix: full-text search
+WHERE name LIKE 'john%'             -- prefix: can use index
+
+-- ❌ 3. OR on different columns (can't use a single index)
+WHERE email = 'a@b.com' OR phone = '9999'
+-- ✅ Fix: UNION or handle in application layer
+
+-- ❌ 4. SELECT * with large text/blob columns
+SELECT * FROM articles;             -- fetches MB of content unnecessarily
+-- ✅ Fix: select only needed columns
+SELECT id, title, excerpt, created_at FROM articles;
+
+-- ❌ 5. N+1 query problem
+for user in users:
+    posts = SELECT * FROM posts WHERE author_id = user.id  -- N separate queries!
+-- ✅ Fix: JOIN or IN clause
+SELECT u.*, p.* FROM users u JOIN posts p ON u.id = p.author_id WHERE u.id IN (...)
+
+-- ❌ 6. OFFSET pagination at large offsets
+SELECT * FROM posts ORDER BY created_at DESC LIMIT 20 OFFSET 100000;
+-- Reads 100020 rows, discards 100000
+-- ✅ Fix: cursor-based pagination
+SELECT * FROM posts
+WHERE created_at < '2024-01-15T10:30:00Z'
+ORDER BY created_at DESC LIMIT 20;
+-- Uses index, only reads 20 rows regardless of "page"
+
+-- ❌ 7. Unnecessary COUNT(*)
+SELECT COUNT(*) FROM users;   -- may do full scan without an index covering id
+-- ✅ For approximate counts (PostgreSQL):
+SELECT reltuples::BIGINT FROM pg_class WHERE relname = 'users';
+```
+
+## Index Maintenance
+
+```sql
+-- Unused indexes (waste write performance — drop them)
+SELECT indexname, idx_scan
+FROM pg_stat_user_indexes
+WHERE relname = 'users' AND idx_scan = 0;
+
+-- Bloated indexes (need REINDEX after heavy updates/deletes)
+SELECT indexname,
+  pg_size_pretty(pg_relation_size(indexrelid)) AS index_size
+FROM pg_stat_user_indexes
+WHERE relname = 'posts'
+ORDER BY pg_relation_size(indexrelid) DESC;
+
+-- Rebuild index (locks table! Use CONCURRENTLY for zero-downtime)
+REINDEX INDEX CONCURRENTLY idx_posts_author_id;
+
+-- Update table statistics (so query planner makes good decisions)
+ANALYZE users;
+ANALYZE;  -- analyze all tables
+```
+
+## Common Interview Questions
+
+<QA q="Explain how a B-tree index works.">
+
+A B-tree is a self-balancing tree where each node holds multiple keys in sorted order. The leaves form a doubly-linked list enabling efficient range scans. The tree height stays O(log n) — searching starts at the root, compares with node keys to decide which child branch to follow, and reaches a leaf in O(log n) steps. This makes B-trees great for equality, range, prefix, and sort operations. The linked leaves allow scanning a range without going back up the tree.
+
+</QA>
+
+<QA q="What is the leftmost prefix rule for composite indexes?">
+
+A composite index on (a, b, c) can be used by queries that filter on (a), (a, b), or (a, b, c) — but NOT on (b), (c), or (b, c) alone, because the sort order in the index depends on the earlier columns. The planner can walk the index from the left, but can't skip to an inner column. For range conditions, once you apply a range on a column, the optimizer can't use the index for subsequent columns. So equality conditions come first in index design; range conditions come last.
+
+</QA>
+
+<QA q="When is a full table scan actually preferable to an index?">
+
+When the query matches a large fraction of the table (typically >10-30%). The query planner estimates: index scan = (% of rows) × (table I/O) + (index I/O); seq scan = total table I/O. Sequential reads are much faster than random I/O. Fetching 90% of rows via an index means 90% of the table in random order — slower than a sequential scan. Planners automatically choose seq scan in this case. Also, small tables (fits in a few pages) are always faster with seq scan.
+
+</QA>
+
+<QA q="How would you design indexes for this query?">
+
+The systematic approach: (1) Identify all WHERE equality predicates → leading index columns. (2) Identify WHERE range predicates → next index columns. (3) Identify ORDER BY columns → append at end for sort elimination. (4) Check if covering the query's SELECT columns eliminates table access. (5) Check cardinality — indexing a boolean with 50/50 split rarely helps. (6) Check if a partial index would reduce size (only index the commonly queried subset).
+
+</QA>
+
+## Practice
+
+1. **Composite Index Design**: Given a query `SELECT * FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC`, design the optimal index and explain why.
+2. **EXPLAIN Analysis**: Take a slow query (you can use a sample PostgreSQL dataset like `pagila`), run EXPLAIN ANALYZE, identify the bottleneck, add an index, and measure improvement.
+3. **Covering Index**: Find a query in the PostgreSQL sample database that does an Index Scan (still accesses the table). Convert it to an Index Only Scan by adding a covering index.
+4. **Pagination**: Implement cursor-based pagination for a `posts` table sorted by `created_at DESC` — the cursor should be the `created_at` + `id` of the last item seen.
+
+Next: [Transactions & Locking](/databases/transactions) — concurrency control deep-dive.

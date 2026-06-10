@@ -1,0 +1,335 @@
+---
+title: "PostgreSQL & MySQL"
+summary: "Production SQL databases — ACID guarantees, storage engines, connection pooling, EXPLAIN plans, and the differences that matter in interviews."
+order: 2
+difficulty: "Intermediate"
+tags: ["postgresql", "mysql", "acid", "transactions", "explain", "indexing", "production"]
+---
+
+## PostgreSQL vs MySQL — The Big Picture
+
+Both are open-source relational databases that implement SQL. The choice shapes your architecture.
+
+| | PostgreSQL | MySQL (InnoDB) |
+|---|---|---|
+| License | PostgreSQL (fully open) | GPL (Oracle owns it; MariaDB is the open fork) |
+| ACID | Full ACID, all isolation levels | Full ACID (InnoDB engine only) |
+| JSON | `JSONB` — binary, fully indexable | JSON type, limited indexing |
+| Full-text search | Built-in, good | Built-in, basic |
+| Advanced types | Arrays, hstore, custom types, enums | Limited |
+| Window functions | Full support | Full support (5.7+) |
+| Replication | Streaming, logical, synchronous | Binary log, GTID-based |
+| Concurrency | MVCC (never locks for reads) | MVCC (InnoDB) |
+| Use it for | Complex queries, analytics, PostGIS | High write throughput, simpler queries |
+| Used by | Instagram, GitHub, Heroku, Notion | Twitter (historically), Airbnb, Uber (now PG) |
+
+**FAANG preference**: Most modern FAANG companies default to PostgreSQL for new systems. MySQL remains common in older stacks.
+
+---
+
+## ACID — The Four Guarantees
+
+Every production SQL database guarantees **ACID**:
+
+```
+A — Atomicity:   A transaction is all-or-nothing.
+                 If any step fails, the entire transaction is rolled back.
+
+C — Consistency: A transaction moves the database from one valid state to another.
+                 All constraints (NOT NULL, UNIQUE, FK) are enforced.
+
+I — Isolation:   Concurrent transactions see consistent data.
+                 No dirty reads, no partial results from other transactions.
+
+D — Durability:  Once committed, data survives crashes.
+                 PostgreSQL writes to WAL (Write-Ahead Log) before confirming commit.
+```
+
+```sql
+-- ACID in practice: transfer $100 from Alice to Bob
+BEGIN;
+
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- debit Alice
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;  -- credit Bob
+
+-- If anything goes wrong between these two:
+COMMIT;    -- both changes saved
+ROLLBACK;  -- both changes undone
+```
+
+Without atomicity, a crash between the two UPDATEs would debit Alice but never credit Bob — money vanishes.
+
+## Transactions Deep Dive
+
+```sql
+-- Transaction syntax (PostgreSQL / MySQL identical)
+BEGIN;                            -- or START TRANSACTION
+  INSERT INTO orders (user_id, total) VALUES (1, 99.99);
+  UPDATE inventory SET qty = qty - 1 WHERE product_id = 42;
+COMMIT;
+
+-- Savepoints — partial rollback within a transaction
+BEGIN;
+  INSERT INTO orders ...;
+  SAVEPOINT sp1;
+  INSERT INTO order_items ...;
+  -- Something fails:
+  ROLLBACK TO SAVEPOINT sp1;      -- undo order_items, keep orders
+  -- Try alternative:
+  INSERT INTO order_items ...;    -- different attempt
+COMMIT;
+```
+
+### Isolation Levels
+
+Isolation levels trade consistency for concurrency. Higher isolation = safer but slower.
+
+```
+READ UNCOMMITTED → READ COMMITTED → REPEATABLE READ → SERIALIZABLE
+      (fastest)                                           (slowest)
+```
+
+| Phenomenon | Read Uncommitted | Read Committed | Repeatable Read | Serializable |
+|---|---|---|---|---|
+| Dirty Read | ❌ Can happen | ✅ Prevented | ✅ Prevented | ✅ Prevented |
+| Non-repeatable Read | ❌ Can happen | ❌ Can happen | ✅ Prevented | ✅ Prevented |
+| Phantom Read | ❌ Can happen | ❌ Can happen | ❌ Can happen (PG: ✅) | ✅ Prevented |
+
+- **Dirty Read**: reading data another transaction hasn't committed yet (could roll back)
+- **Non-repeatable Read**: reading the same row twice gets different values (another transaction updated it between reads)
+- **Phantom Read**: re-running a query returns different rows (another transaction inserted/deleted)
+
+```sql
+-- PostgreSQL defaults to READ COMMITTED
+-- MySQL InnoDB defaults to REPEATABLE READ
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+BEGIN;
+-- ... everything here runs as if no other transactions exist
+COMMIT;
+```
+
+**Production default**: Read Committed (PostgreSQL default) is sufficient for most applications. Use Serializable only when correctness requires it — it's slow and can fail with serialization errors that your app must retry.
+
+## MVCC — Multi-Version Concurrency Control
+
+Both PostgreSQL and MySQL (InnoDB) use MVCC — the key to **non-blocking reads**:
+
+```
+Instead of locking a row when writing, MVCC keeps multiple versions:
+- Writers create a NEW version of the row
+- Readers see the version that was committed when their transaction STARTED
+- Reads and writes never block each other
+
+Result: read queries NEVER wait for write locks
+        write queries only conflict with other write queries on the same row
+```
+
+This is why `SELECT` is always fast even under heavy writes — it reads an older snapshot.
+
+**Vacuum in PostgreSQL**: Dead row versions must be cleaned up. PostgreSQL runs `autovacuum` to reclaim space. Neglecting vacuum on high-churn tables causes table bloat and performance degradation — a real production concern.
+
+## Indexing (Introduction)
+
+Indexes dramatically speed up queries at the cost of slower writes and storage:
+
+```sql
+-- Default B-tree index (binary search tree)
+CREATE INDEX idx_users_email ON users(email);
+-- SELECT * FROM users WHERE email = 'a@b.com';  → O(log n) instead of O(n)
+
+-- Composite index — column order matters
+CREATE INDEX idx_posts_author_date ON posts(author_id, created_at DESC);
+-- Useful for: WHERE author_id = X ORDER BY created_at DESC
+
+-- Partial index — index a subset of rows
+CREATE INDEX idx_active_users ON users(email) WHERE is_active = true;
+-- Smaller index, faster for queries that always filter on is_active = true
+
+-- Unique index (enforced as constraint)
+CREATE UNIQUE INDEX idx_users_email_unique ON users(email);
+
+-- Check index usage
+SELECT schemaname, tablename, indexname, idx_scan, idx_tup_read
+FROM pg_stat_user_indexes
+ORDER BY idx_scan;
+-- idx_scan = 0: index never used → consider dropping it
+```
+
+Full indexing deep-dive: [Indexing & Optimization](/databases/indexing).
+
+## EXPLAIN — Understanding Query Plans
+
+`EXPLAIN` is the most important tool for database performance debugging:
+
+```sql
+-- Basic explain (shows plan, not actual execution)
+EXPLAIN SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- EXPLAIN ANALYZE — actually runs the query and measures
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+SELECT u.name, COUNT(p.id) AS posts
+FROM users u
+LEFT JOIN posts p ON u.id = p.author_id
+WHERE u.is_active = true
+GROUP BY u.id;
+```
+
+**Reading EXPLAIN output** (PostgreSQL):
+```
+Seq Scan on users  (cost=0.00..431.00 rows=20000 width=48)
+```
+- `Seq Scan` = reading every row (bad for large tables — missing index)
+- `Index Scan` = using an index (good)
+- `Index Only Scan` = all data from index (best — no heap access needed)
+- `cost=start..total` — estimated cost units (IO + CPU)
+- `rows=N` — estimated row count (if very wrong, run `ANALYZE` to update statistics)
+
+Common performance killers:
+```sql
+-- ❌ Function on indexed column prevents index use
+WHERE LOWER(email) = 'alice@example.com'
+-- ✅ Fix: create a functional index
+CREATE INDEX idx_users_lower_email ON users(LOWER(email));
+
+-- ❌ Leading wildcard kills index
+WHERE name LIKE '%alice%'
+-- ✅ Fix: full-text search with GIN index
+
+-- ❌ Implicit type cast prevents index use
+WHERE user_id = '123'  -- user_id is INTEGER, '123' is TEXT → full scan
+-- ✅ Fix: match types
+WHERE user_id = 123
+```
+
+## Connection Pooling
+
+Every database connection uses ~5-10MB of RAM and has connection overhead. At scale, **connection pooling** is essential:
+
+```
+Without pooling: 1000 concurrent requests = 1000 DB connections = 10GB RAM
+With pooling:    1000 concurrent requests = 20 pooled connections = 200MB RAM
+```
+
+**PgBouncer** (PostgreSQL) sits between your app and database:
+```
+App servers → PgBouncer → PostgreSQL
+            (pool of 20)  (max 100 connections)
+```
+
+PgBouncer modes:
+- **Transaction pooling** (recommended): connection returned to pool after each transaction
+- **Session pooling**: connection held for the entire client session (less efficient)
+
+```javascript
+// Node.js connection pool (pg library)
+import { Pool } from "pg";
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  port: 5432,
+  max: 20,                // max pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Use pool (connections automatically returned after query)
+const { rows } = await pool.query(
+  "SELECT id, name FROM users WHERE is_active = $1",
+  [true]  // parameterized query — prevents SQL injection
+);
+```
+
+**Always use parameterized queries** — never concatenate user input into SQL strings.
+
+## PostgreSQL-Specific Power Features
+
+```sql
+-- JSONB — store and query JSON documents
+CREATE TABLE events (
+  id      SERIAL PRIMARY KEY,
+  type    TEXT,
+  payload JSONB
+);
+
+INSERT INTO events (type, payload) VALUES
+  ('purchase', '{"user_id": 1, "amount": 99.99, "items": ["book", "pen"]}');
+
+-- Query JSONB
+SELECT * FROM events WHERE payload->>'user_id' = '1';    -- text comparison
+SELECT * FROM events WHERE (payload->>'amount')::FLOAT > 50;
+SELECT * FROM events WHERE payload @> '{"items": ["book"]}';  -- contains
+CREATE INDEX idx_events_payload ON events USING GIN(payload);  -- GIN for JSONB
+
+-- Arrays
+CREATE TABLE tags (post_id INTEGER, tags TEXT[]);
+INSERT INTO tags VALUES (1, ARRAY['javascript', 'react', 'nextjs']);
+SELECT * FROM tags WHERE 'react' = ANY(tags);
+
+-- Full-text search
+SELECT title, ts_rank(to_tsvector('english', content), query) AS rank
+FROM posts, to_tsquery('english', 'javascript & react') query
+WHERE to_tsvector('english', content) @@ query
+ORDER BY rank DESC;
+```
+
+## MySQL-Specific Notes
+
+```sql
+-- MySQL uses backticks for identifiers (PostgreSQL uses double quotes)
+SELECT `name` FROM `users`;
+
+-- AUTO_INCREMENT instead of SERIAL
+CREATE TABLE users (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100)
+);
+
+-- MySQL string comparison is case-insensitive by default (depends on collation)
+SELECT * FROM users WHERE name = 'alice';  -- may match 'Alice', 'ALICE'
+
+-- Show slow queries
+SET GLOBAL slow_query_log = ON;
+SET GLOBAL long_query_time = 1;  -- log queries slower than 1 second
+
+-- MySQL EXPLAIN
+EXPLAIN FORMAT=JSON SELECT ...;
+```
+
+## Common Interview Questions
+
+<QA q="What is MVCC and why is it important?">
+
+Multi-Version Concurrency Control keeps multiple versions of rows. Readers see the snapshot from when their transaction started; writers create new versions rather than overwriting. This means reads never block writes and writes never block reads — only write-write conflicts on the same row require locking. MVCC is why SELECT queries are always fast under heavy writes. PostgreSQL uses MVCC throughout; InnoDB in MySQL also uses MVCC for its default isolation level.
+
+</QA>
+
+<QA q="What's the difference between PostgreSQL and MySQL? Which would you choose?">
+
+PostgreSQL has better standards compliance, richer types (arrays, JSONB, enums), more advanced features (CTEs, window functions, partial indexes, GIN/GiST indexes), true serializable isolation, and superior concurrent write handling. MySQL is simpler to operate and has broader hosting support. For new systems requiring complex queries, analytics, or schema flexibility, I'd choose PostgreSQL. For simpler CRUD apps with established MySQL infrastructure, MySQL is fine. Increasingly, PostgreSQL is the default choice at FAANG and high-growth startups.
+
+</QA>
+
+<QA q="How do you debug a slow query?">
+
+1. Run `EXPLAIN (ANALYZE, BUFFERS)` to see the actual query plan.
+2. Look for `Seq Scan` on large tables — missing index.
+3. Check estimated vs actual rows — huge mismatch means stale statistics, run `ANALYZE`.
+4. Look for nested loop joins on large tables — might need hash joins.
+5. Check for function calls on indexed columns preventing index use.
+6. Use `pg_stat_statements` to find the worst queries by total time.
+7. Check `pg_stat_user_indexes` for unused indexes wasting write performance.
+
+</QA>
+
+## Practice
+
+1. **Transactions**: Write a money transfer stored procedure that atomically debits one account and credits another, with proper error handling and rollback.
+2. **EXPLAIN**: Take a slow query from a practice database, run EXPLAIN ANALYZE, identify the bottleneck, add an index, and verify the improvement.
+3. **Isolation**: Write a demonstration of a phantom read — show it occurring at READ COMMITTED and prevented at SERIALIZABLE.
+4. **Production**: Design a connection pool configuration for an app with 50 app server instances, each with 10 concurrent workers.
+
+Next: [MongoDB & Redis](/databases/mongodb-and-redis) — NoSQL databases.

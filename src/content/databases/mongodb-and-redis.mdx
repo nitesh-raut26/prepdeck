@@ -1,0 +1,436 @@
+---
+title: "MongoDB & Redis"
+summary: "The two most important NoSQL databases — MongoDB's document model for flexible schemas, Redis as an in-memory powerhouse for caching, queues, and pub/sub."
+order: 3
+difficulty: "Intermediate"
+tags: ["mongodb", "redis", "nosql", "caching", "document-database", "key-value"]
+---
+
+## The NoSQL Landscape
+
+**NoSQL** ("Not Only SQL") databases break from the relational table model. Different problems call for different data models:
+
+| Type | Database | Best for |
+|---|---|---|
+| Document | MongoDB, Firestore | Flexible schemas, nested data, fast iteration |
+| Key-Value | Redis, DynamoDB | Caching, sessions, simple lookups |
+| Wide-Column | Cassandra, HBase | Time-series, high write throughput at scale |
+| Graph | Neo4j | Relationships, social networks, recommendations |
+
+This article covers **MongoDB** (document) and **Redis** (key-value + more) — the two you'll encounter most in interviews and production systems.
+
+---
+
+## MongoDB — Document Database
+
+### Core Concepts
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SQL                    MongoDB equivalent                    │
+│  Database       →       Database                             │
+│  Table          →       Collection                           │
+│  Row            →       Document (JSON/BSON)                 │
+│  Column         →       Field                                │
+│  Primary Key    →       _id (auto-generated ObjectId)        │
+│  JOIN           →       $lookup (aggregation) or embedding   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+A **document** is a JSON-like record that can have nested objects and arrays:
+
+```json
+{
+  "_id": "ObjectId('64a1b2c3d4e5f6789012345')",
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "address": {
+    "street": "123 Main St",
+    "city": "San Francisco",
+    "country": "US"
+  },
+  "skills": ["Python", "JavaScript", "MongoDB"],
+  "experience": [
+    { "company": "Google", "years": 3, "role": "SDE-2" },
+    { "company": "Startup", "years": 2, "role": "SDE-3" }
+  ],
+  "createdAt": "ISODate('2024-01-15T10:30:00Z')"
+}
+```
+
+**Why documents?**
+- Matches how you actually think about data (user "has" an address)
+- No expensive JOINs for co-located data — one read gets the whole entity
+- Schema flexibility — add fields without migrations
+- Natural fit for APIs that consume/produce JSON
+
+### CRUD Operations
+
+```javascript
+// MongoDB Node.js driver
+const { MongoClient, ObjectId } = require("mongodb");
+const client = new MongoClient(process.env.MONGO_URI);
+const db = client.db("prepdeck");
+const users = db.collection("users");
+
+// INSERT
+const result = await users.insertOne({
+  name: "Alice",
+  email: "alice@example.com",
+  skills: ["JavaScript"],
+  createdAt: new Date(),
+});
+console.log(result.insertedId);  // ObjectId
+
+await users.insertMany([
+  { name: "Bob", email: "bob@example.com" },
+  { name: "Carol", email: "carol@example.com" },
+]);
+
+// READ
+const user = await users.findOne({ email: "alice@example.com" });
+const allUsers = await users.find({ isActive: true }).toArray();
+const firstFive = await users.find({}).limit(5).skip(10).sort({ name: 1 }).toArray();
+
+// Query operators
+const result = await users.find({
+  age: { $gte: 18, $lt: 30 },         // $gte, $gt, $lt, $lte, $ne
+  skills: { $in: ["JavaScript", "Python"] }, // skill is in the array
+  email: { $regex: /@gmail\.com$/i },  // regex match
+  "address.city": "San Francisco",     // dot notation for nested fields
+}).toArray();
+
+// UPDATE
+await users.updateOne(
+  { email: "alice@example.com" },      // filter
+  {
+    $set: { name: "Alice Smith" },     // set specific fields
+    $push: { skills: "TypeScript" },  // add to array
+    $inc: { loginCount: 1 },          // increment
+    $currentDate: { updatedAt: true },
+  }
+);
+
+// Upsert — insert if not found
+await users.updateOne(
+  { email: "new@example.com" },
+  { $setOnInsert: { name: "New User", createdAt: new Date() } },
+  { upsert: true }
+);
+
+// DELETE
+await users.deleteOne({ email: "alice@example.com" });
+await users.deleteMany({ isActive: false, createdAt: { $lt: new Date("2020-01-01") } });
+```
+
+### Indexes in MongoDB
+
+```javascript
+// Single field
+await users.createIndex({ email: 1 }, { unique: true });
+
+// Compound index (order matters — matches leftmost prefix)
+await posts.createIndex({ authorId: 1, createdAt: -1 });
+// Serves queries on: authorId alone, authorId + createdAt
+// Does NOT serve: createdAt alone
+
+// Text index for search
+await posts.createIndex({ title: "text", content: "text" });
+const searchResults = await posts.find({ $text: { $search: "react tutorial" } }).toArray();
+
+// Check index usage
+await users.find({ email: "a@b.com" }).explain("executionStats");
+// Look for: "IXSCAN" (good) vs "COLLSCAN" (bad — full collection scan)
+```
+
+### Aggregation Pipeline
+
+The aggregation pipeline transforms documents through stages (like Unix pipes):
+
+```javascript
+const result = await db.collection("orders").aggregate([
+  // Stage 1: Filter
+  { $match: { status: "completed", createdAt: { $gte: new Date("2024-01-01") } } },
+
+  // Stage 2: Join with users collection
+  { $lookup: {
+    from: "users",
+    localField: "userId",
+    foreignField: "_id",
+    as: "user"
+  }},
+  { $unwind: "$user" },  // Flatten array from $lookup
+
+  // Stage 3: Group and aggregate
+  { $group: {
+    _id: "$user.country",
+    totalRevenue: { $sum: "$amount" },
+    orderCount: { $count: {} },
+    avgOrderValue: { $avg: "$amount" },
+  }},
+
+  // Stage 4: Filter groups
+  { $match: { totalRevenue: { $gt: 10000 } } },
+
+  // Stage 5: Sort
+  { $sort: { totalRevenue: -1 } },
+
+  // Stage 6: Limit
+  { $limit: 10 },
+
+  // Stage 7: Project (shape the output)
+  { $project: {
+    _id: 0,
+    country: "$_id",
+    totalRevenue: { $round: ["$totalRevenue", 2] },
+    orderCount: 1,
+    avgOrderValue: { $round: ["$avgOrderValue", 2] },
+  }},
+]).toArray();
+```
+
+### Data Modeling — Embed vs Reference
+
+The biggest MongoDB design decision:
+
+```javascript
+// EMBED: when you always need the data together, or sub-documents are small
+// User with embedded address and preferences
+{
+  _id: ObjectId("..."),
+  name: "Alice",
+  address: { street: "123 Main", city: "SF" },    // always fetched with user
+  preferences: { theme: "dark", language: "en" }  // small, user-specific
+}
+
+// REFERENCE: when data is large, shared, or queried independently
+// Post with author reference (not embedded user document)
+{
+  _id: ObjectId("..."),
+  title: "React Tutorial",
+  authorId: ObjectId("user-id-here"),  // reference — don't copy user data
+  tags: ["react", "javascript"],
+}
+// Fetch: two queries, or $lookup in aggregation
+
+// Rule of thumb:
+// "Contains" relationship → embed (user contains address)
+// "References" relationship → reference (post references author)
+// High cardinality (user has thousands of posts) → reference
+// Low cardinality, always needed together → embed
+```
+
+---
+
+## Redis — In-Memory Data Store
+
+Redis (Remote Dictionary Server) is an **in-memory** key-value store. It's absurdly fast — sub-millisecond latency — because it stores everything in RAM.
+
+```
+Use Redis for:
+✅ Caching (reduce DB load)
+✅ Session storage
+✅ Rate limiting
+✅ Pub/Sub messaging
+✅ Distributed locks
+✅ Job queues (with Redis Queue / BullMQ)
+✅ Leaderboards (sorted sets)
+✅ Real-time analytics counters
+```
+
+### Data Types
+
+```bash
+# STRING — the basic type (values: strings, integers, binary)
+SET user:1:name "Alice"
+GET user:1:name                   # "Alice"
+INCR page:views                   # atomic increment (thread-safe counter)
+INCRBY page:views 10
+SETNX lock:resource "worker-1"    # Set if Not eXists (primitive distributed lock)
+SETEX session:abc123 3600 "user:1" # Set with TTL (3600 seconds = 1 hour)
+TTL session:abc123                 # time remaining
+
+# HASH — like a mini-object (perfect for user sessions, caching objects)
+HSET user:1 name "Alice" email "alice@example.com" role "admin"
+HGET user:1 name           # "Alice"
+HGETALL user:1             # all fields
+HMGET user:1 name email    # multiple fields
+HINCRBY user:1 loginCount 1
+
+# LIST — ordered, allows duplicates (queues, recent items)
+RPUSH notifications:user:1 "New message" "Friend request"  # push to right
+LPUSH notifications:user:1 "Urgent alert"                  # push to left
+LRANGE notifications:user:1 0 -1                           # all items
+LPOP notifications:user:1                                  # pop from left (queue)
+BLPOP notifications:user:1 30  # blocking pop (wait up to 30s — great for workers)
+
+# SET — unordered, unique values (tags, unique visitors, "who liked this")
+SADD post:1:likes user:1 user:2 user:3
+SISMEMBER post:1:likes user:1   # is user:1 in the set? (1=yes, 0=no)
+SCARD post:1:likes              # count
+SUNION post:1:likes post:2:likes  # union of two sets
+
+# SORTED SET — unique members with a score (leaderboards, rate limiting)
+ZADD leaderboard 1500 "alice" 2300 "bob" 800 "carol"
+ZRANK leaderboard "alice"       # rank (0-indexed, ascending)
+ZREVRANK leaderboard "bob"      # rank (0-indexed, descending = 1st place)
+ZRANGE leaderboard 0 2 WITHSCORES    # bottom 3 with scores
+ZREVRANGE leaderboard 0 2 WITHSCORES # top 3 with scores
+ZINCRBY leaderboard 100 "alice"      # add to alice's score
+```
+
+### Caching Pattern
+
+```javascript
+// Cache-aside pattern (most common)
+async function getUser(id) {
+  const cacheKey = `user:${id}`;
+
+  // 1. Check cache
+  const cached = await redis.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
+  // 2. Cache miss — fetch from DB
+  const user = await db.query("SELECT * FROM users WHERE id = $1", [id]);
+  if (!user) return null;
+
+  // 3. Store in cache with TTL (avoid stale data forever)
+  await redis.setex(cacheKey, 300, JSON.stringify(user));  // 5 minutes
+
+  return user;
+}
+
+// Cache invalidation — delete or update cache when data changes
+async function updateUser(id, updates) {
+  await db.query("UPDATE users SET ...", [id, ...updates]);
+  await redis.del(`user:${id}`);  // invalidate cache
+}
+```
+
+### Rate Limiting
+
+```javascript
+// Sliding window rate limiter using sorted sets
+async function isRateLimited(userId, limit = 100, windowSeconds = 3600) {
+  const now = Date.now();
+  const windowStart = now - windowSeconds * 1000;
+  const key = `ratelimit:${userId}`;
+
+  const pipeline = redis.pipeline();
+  pipeline.zremrangebyscore(key, 0, windowStart);    // remove old entries
+  pipeline.zadd(key, now, `${now}`);                 // add current request
+  pipeline.zcard(key);                               // count requests in window
+  pipeline.expire(key, windowSeconds);               // set TTL
+  const results = await pipeline.exec();
+
+  const requestCount = results[2][1];
+  return requestCount > limit;
+}
+
+// Simple fixed window with strings (faster, less accurate)
+async function simpleRateLimit(key, limit, window) {
+  const count = await redis.incr(key);
+  if (count === 1) await redis.expire(key, window);
+  return count > limit;
+}
+```
+
+### Pub/Sub
+
+```javascript
+// Publisher (one process)
+const publisher = redis.duplicate();
+await publisher.publish("notifications", JSON.stringify({
+  type: "new_message",
+  userId: 1,
+  message: "Hello!"
+}));
+
+// Subscriber (another process)
+const subscriber = redis.duplicate();
+await subscriber.subscribe("notifications");
+subscriber.on("message", (channel, message) => {
+  const data = JSON.parse(message);
+  console.log(`Received on ${channel}:`, data);
+});
+
+// Pattern subscribe (wildcard channels)
+await subscriber.psubscribe("notifications:*");
+```
+
+### Distributed Locks (Redlock)
+
+```javascript
+// Simple lock (single Redis node — for production use Redlock algorithm)
+async function acquireLock(resource, ttl = 30000) {
+  const lockKey = `lock:${resource}`;
+  const token = crypto.randomUUID();
+
+  // NX = set only if not exists, PX = TTL in milliseconds
+  const result = await redis.set(lockKey, token, "NX", "PX", ttl);
+  return result === "OK" ? token : null;
+}
+
+async function releaseLock(resource, token) {
+  const lockKey = `lock:${resource}`;
+  // Use Lua script for atomic check-and-delete (prevent releasing someone else's lock)
+  const script = `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+  `;
+  return redis.eval(script, 1, lockKey, token);
+}
+```
+
+### Redis Persistence
+
+```bash
+# RDB (snapshots) — default; compact, good for backups
+# Saves a snapshot of the dataset at intervals
+save 900 1      # save if >= 1 key changed in 900 seconds
+save 300 10     # save if >= 10 keys changed in 300 seconds
+
+# AOF (Append Only File) — logs every write operation
+appendonly yes
+appendfsync everysec  # sync every second (good balance)
+# or: always (safest, slowest), no (fastest, can lose data)
+
+# Both: use RDB for backups + AOF for durability (recommended for production)
+```
+
+## Common Interview Questions
+
+<QA q="When would you choose MongoDB over PostgreSQL?">
+
+Choose MongoDB when: your schema is dynamic or evolving rapidly (early-stage product), your data naturally fits a document model (hierarchical, nested objects always fetched together), you need to scale horizontally across shards easily, or you're building a catalog with highly variable attributes per item. Choose PostgreSQL when: you need complex transactions, strong consistency, rich SQL queries across multiple related entities, or when you have well-understood relational data. Many companies use both — PostgreSQL for transactional data, MongoDB for flexible catalog/content data.
+
+</QA>
+
+<QA q="What are the common caching strategies?">
+
+- **Cache-aside (lazy loading)**: App checks cache, fetches from DB on miss, populates cache. Data is only cached when needed. Risk: cold start, cache stampede.
+- **Write-through**: Every DB write also writes to cache. Always consistent, but may cache data that's never read.
+- **Write-behind (write-back)**: Write to cache first, asynchronously write to DB. Fast writes, risk of data loss on crash.
+- **Read-through**: Cache sits in front of DB, handles its own population. Cache always hit; DB only accessed by the cache layer.
+
+Cache invalidation strategy matters too: TTL-based (simple, eventually consistent), event-based (delete/update on change, complex but consistent), or versioned keys (new key on change, old expires naturally).
+
+</QA>
+
+<QA q="How does Redis achieve high performance?">
+
+Redis is fast because: (1) everything lives in RAM — no disk I/O for reads/writes, (2) single-threaded event loop — no lock contention between threads (I/O handled by async, computation is single-threaded), (3) simple data structures with O(1) or O(log n) operations, (4) optional persistence is async and doesn't block main thread. The trade-off is that dataset size is limited by RAM, and a crash can lose recent writes if not using AOF.
+
+</QA>
+
+## Practice
+
+1. **MongoDB**: Model a social media app — users, posts, comments, likes. Decide what to embed vs reference. Write aggregation to find the top 10 most-liked posts from the last 7 days.
+2. **Redis Caching**: Implement cache-aside for a product catalog endpoint. Handle cache stampede with a "dog-pile" prevention mechanism.
+3. **Leaderboard**: Use Redis sorted sets to implement a gaming leaderboard — add score, get top 10, get a player's rank, get players around a given rank.
+4. **Rate Limiter**: Implement a sliding window rate limiter using Redis sorted sets that allows 100 requests per minute per IP.
+
+Next: [Indexing & Optimization](/databases/indexing) — making queries fast.

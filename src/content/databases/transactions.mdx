@@ -1,0 +1,361 @@
+---
+title: "Transactions & Locking"
+summary: "ACID transactions, isolation levels, deadlocks, optimistic vs pessimistic locking, and the concurrency bugs that plague real systems."
+order: 5
+difficulty: "Advanced"
+tags: ["transactions", "acid", "locking", "deadlock", "isolation", "concurrency"]
+---
+
+## Why Transactions Exist
+
+Without transactions, concurrent database operations produce corrupted data:
+
+```
+The bank transfer problem — without transactions:
+
+Thread A: Read Alice's balance: $500
+Thread B: Read Alice's balance: $500
+Thread A: Alice - $100 → Write $400
+Thread B: Alice - $100 → Write $400  ← Overwrites A's write! Alice loses $100.
+```
+
+A **transaction** groups multiple operations into an atomic unit: all succeed or all fail, no half-states.
+
+```sql
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- debit Alice
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;  -- credit Bob
+  -- If anything fails here, ROLLBACK undoes both updates
+COMMIT;
+```
+
+---
+
+## The ACID Properties (Deep Dive)
+
+### Atomicity
+
+All operations in a transaction complete, or none do. PostgreSQL uses a **Write-Ahead Log (WAL)**:
+1. Before changing data on disk, write the change to the WAL
+2. On crash: replay WAL to redo committed transactions, undo uncommitted ones
+3. Application never sees partial state
+
+### Consistency
+
+The database moves from one valid state to another. All constraints are enforced atomically:
+
+```sql
+BEGIN;
+  INSERT INTO orders (user_id, total) VALUES (1, 150.00);
+  -- FK check: does user_id=1 exist? If not, ROLLBACK entire transaction
+  -- CHECK constraint: total >= 0? If not, ROLLBACK
+  -- UNIQUE constraint: duplicate order_number? ROLLBACK
+COMMIT;
+```
+
+### Isolation
+
+Concurrent transactions behave as if they ran sequentially. The level of isolation is configurable — more isolation = more safety but less throughput.
+
+### Durability
+
+Once committed, data survives crashes. PostgreSQL achieves this via:
+- WAL written to disk before `COMMIT` returns
+- `fsync()` ensures WAL is truly flushed (not just OS buffer)
+- Checkpoint process periodically writes WAL changes to actual data files
+
+---
+
+## Concurrency Anomalies
+
+Understanding what can go wrong at each isolation level:
+
+### Dirty Read
+```
+Transaction A starts, updates row X (not committed)
+Transaction B reads row X → gets A's uncommitted value
+Transaction A rolls back
+Transaction B now has data that never existed
+```
+
+Prevented at: **Read Committed** and above.
+
+### Non-Repeatable Read
+```
+Transaction A reads row X → gets value 100
+Transaction B commits: UPDATE row X to 200
+Transaction A reads row X again → gets 200 (different!)
+```
+
+Prevented at: **Repeatable Read** and above.
+
+### Phantom Read
+```
+Transaction A queries: SELECT * FROM orders WHERE status = 'pending'
+Transaction B commits: INSERT INTO orders (status) VALUES ('pending')
+Transaction A runs the same query → gets additional row (a "phantom")
+```
+
+Prevented at: **Serializable** only (PostgreSQL's Repeatable Read also prevents phantoms via MVCC).
+
+### Lost Update
+```
+Transaction A reads balance: 100
+Transaction B reads balance: 100
+Transaction A writes: balance + 50 = 150
+Transaction B writes: balance + 30 = 130  ← A's update is lost!
+```
+
+Prevented by: proper locking or optimistic concurrency control.
+
+---
+
+## Isolation Levels in Practice
+
+```sql
+-- Set isolation level for the current transaction
+BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;  -- PostgreSQL default
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+-- Or set session default
+SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+```
+
+**Production guidance**:
+- **Read Committed** (PostgreSQL default): sufficient for most CRUD operations. Prevents dirty reads.
+- **Repeatable Read**: use when a transaction reads the same data multiple times and must see consistent values. Financial reporting, generating documents.
+- **Serializable**: use when correctness requires full isolation. Complex financial operations, inventory management. Has overhead — serialization errors possible, requires retry logic.
+
+---
+
+## Locking — Two Strategies
+
+### Pessimistic Locking — "Lock before you work"
+
+Acquire a lock before reading/writing. Other transactions must wait.
+
+```sql
+-- SELECT FOR UPDATE — locks selected rows until transaction ends
+BEGIN;
+  SELECT * FROM orders WHERE id = 42 FOR UPDATE;
+  -- Other transactions trying to touch order 42 will BLOCK here
+  UPDATE orders SET status = 'processing' WHERE id = 42;
+COMMIT;
+-- Lock released at COMMIT
+
+-- SELECT FOR SHARE — allows concurrent reads, blocks writes
+BEGIN;
+  SELECT balance FROM accounts WHERE id = 1 FOR SHARE;
+  -- Other transactions can read balance concurrently
+  -- But can't UPDATE balance until we COMMIT
+COMMIT;
+
+-- SKIP LOCKED — skip rows already locked (great for job queues)
+BEGIN;
+  SELECT * FROM job_queue WHERE status = 'pending'
+  ORDER BY priority DESC
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED;  -- multiple workers take different jobs, no waiting
+  UPDATE job_queue SET status = 'processing', worker_id = $1 WHERE id = ...;
+COMMIT;
+```
+
+### Optimistic Locking — "Work freely, check for conflicts at commit"
+
+No locks during work. At commit, verify nobody else changed the data.
+
+```sql
+-- Version-based optimistic locking
+-- Table has a `version` column (integer, starts at 1)
+
+-- 1. Read with version
+SELECT id, balance, version FROM accounts WHERE id = 1;
+-- Returns: id=1, balance=500, version=3
+
+-- 2. Do work (in application layer, no DB lock held)
+
+-- 3. Update only if version hasn't changed
+UPDATE accounts
+SET balance = 450, version = version + 1
+WHERE id = 1 AND version = 3;
+-- Returns rowcount=1: success → proceed
+-- Returns rowcount=0: someone else updated first → retry the whole operation
+
+-- In ORM (TypeORM example):
+@Column()
+@VersionColumn()
+version: number;
+// TypeORM automatically adds WHERE id=? AND version=? to every UPDATE
+```
+
+**Choose pessimistic when**: contention is high, retries are expensive, operations are long.
+**Choose optimistic when**: contention is low, retries are cheap, reads are far more common than writes.
+
+---
+
+## Table-Level vs Row-Level Locks
+
+```sql
+-- Row-level locks (default for DML — only locks specific rows)
+UPDATE users SET name = 'Alice' WHERE id = 1;  -- only locks row id=1
+
+-- Table-level locks (explicit, blocks all access to the table)
+LOCK TABLE users IN EXCLUSIVE MODE;
+-- Rarely needed — DDL statements (ALTER TABLE) do this automatically
+
+-- Advisory locks — application-level named locks (not tied to data)
+SELECT pg_advisory_lock(12345);   -- acquire lock named "12345"
+-- ... critical section ...
+SELECT pg_advisory_unlock(12345); -- release
+
+-- Use case: prevent two processes from running the same job simultaneously
+```
+
+---
+
+## Deadlocks
+
+A **deadlock** occurs when two transactions each hold a lock the other needs:
+
+```
+Transaction A: Lock order 1, then try to lock order 2 → WAITING for B
+Transaction B: Lock order 2, then try to lock order 1 → WAITING for A
+Both wait forever → DEADLOCK
+```
+
+PostgreSQL automatically **detects deadlocks** and aborts one transaction (the "victim") with error `ERROR: deadlock detected`. Your application must catch this and retry.
+
+```python
+import psycopg2
+from time import sleep
+import random
+
+def transfer_with_retry(from_id, to_id, amount, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            with connection.cursor() as cur:
+                cur.execute("BEGIN")
+                # Lock in consistent order (always lower ID first) — prevents deadlocks
+                low, high = min(from_id, to_id), max(from_id, to_id)
+                cur.execute("SELECT balance FROM accounts WHERE id IN (%s, %s) FOR UPDATE",
+                            (low, high))
+                cur.execute("UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                            (amount, from_id))
+                cur.execute("UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                            (amount, to_id))
+                cur.execute("COMMIT")
+                return  # success
+        except psycopg2.errors.DeadlockDetected:
+            cur.execute("ROLLBACK")
+            if attempt == max_retries - 1:
+                raise
+            sleep(random.uniform(0.1, 0.5))  # jitter before retry
+```
+
+**Deadlock prevention strategies**:
+1. **Consistent lock ordering** — always acquire locks in the same order (e.g., by ID ascending)
+2. **Short transactions** — hold locks for the minimum time
+3. **Lock all resources upfront** — acquire all needed locks at transaction start
+4. **Retry logic** — deadlocks are expected; handle them gracefully
+
+---
+
+## Two-Phase Locking (2PL)
+
+The theoretical framework behind pessimistic locking:
+
+```
+Growing phase:   Transaction acquires locks, never releases
+Shrinking phase: Transaction releases locks, never acquires new ones
+
+Strict 2PL:     All locks released only at COMMIT/ROLLBACK
+                (this is what PostgreSQL actually uses)
+```
+
+Strict 2PL guarantees **serializability** — transactions appear to have run one at a time.
+
+---
+
+## MVCC vs Locking
+
+PostgreSQL combines MVCC with locking:
+
+```
+READS  → MVCC (see a snapshot, never blocked by writers)
+WRITES → Lock the specific rows being modified
+
+This means:
+SELECT never waits for UPDATE on the same row
+UPDATE waits if another UPDATE already locks the row
+```
+
+```sql
+-- This query NEVER blocks (MVCC snapshot):
+SELECT * FROM orders;  -- sees snapshot from transaction start
+
+-- This query BLOCKS if another transaction has a lock on id=42:
+UPDATE orders SET status = 'done' WHERE id = 42;
+```
+
+---
+
+## Savepoints
+
+```sql
+BEGIN;
+  INSERT INTO users (email) VALUES ('alice@example.com');
+
+  SAVEPOINT sp_user;
+
+  INSERT INTO profiles (user_id, bio) VALUES (LASTVAL(), 'About me');
+
+  -- Something goes wrong with profile creation:
+  ROLLBACK TO SAVEPOINT sp_user;  -- undo profile insert, keep user insert
+
+  -- Try again with different data:
+  INSERT INTO profiles (user_id, bio) VALUES (LASTVAL(), 'Default bio');
+
+COMMIT;  -- user + new profile both committed
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What is the difference between optimistic and pessimistic locking?">
+
+**Pessimistic locking** acquires a database lock before operating on data (`SELECT FOR UPDATE`). It prevents concurrent modifications by blocking other transactions until the lock is released. Best when contention is high and operations are expensive to retry.
+
+**Optimistic locking** reads data without locking, does work, then checks at write time whether the data was modified by another transaction (using a version column or timestamp). If modified, it retries. Best when read:write ratio is high and retries are cheap.
+
+</QA>
+
+<QA q="How does PostgreSQL prevent deadlocks?">
+
+PostgreSQL detects deadlocks by periodically checking for cycles in the lock dependency graph. When detected, it picks a "victim" transaction (the one that would be cheapest to abort) and rolls it back with a `deadlock_detected` error. The other transaction proceeds. Applications must catch this error and retry the transaction. Prevention strategies include: consistent lock ordering (always lock records in the same sequence), short transactions, and acquiring all needed locks at once.
+
+</QA>
+
+<QA q="Explain the difference between Read Committed and Repeatable Read isolation.">
+
+**Read Committed** (PostgreSQL default): each statement sees a fresh snapshot of committed data as of that statement's start. Two SELECTs in the same transaction can see different data if another transaction commits between them (non-repeatable reads).
+
+**Repeatable Read**: the entire transaction sees a snapshot from when it started. The same SELECT always returns the same rows, even if other transactions commit updates. PostgreSQL's MVCC implementation also prevents phantom reads at this level. Use for operations that read data multiple times and need consistency across reads.
+
+</QA>
+
+<QA q="What is the N+1 query problem and how do you fix it?">
+
+The N+1 problem occurs when code fetches a list of N items, then issues N additional queries (one per item). Example: fetch 100 users, then for each user do a `SELECT * FROM posts WHERE author_id = ?`. That's 101 queries instead of 2. Fix: use a JOIN (fetch users + posts together), or use IN clause (`WHERE author_id IN (1,2,3,...)`), or use an ORM's eager loading feature. This is a critical interview topic because it's the most common database performance mistake in production systems.
+
+</QA>
+
+## Practice
+
+1. **Lost Update**: Simulate the lost update problem — two concurrent Python threads both read a counter, increment, and write back. Show the bug, then fix it with `FOR UPDATE` locking.
+2. **Optimistic Locking**: Implement a version-based optimistic lock in Node.js — show a conflict, handle it with a retry, and test with two concurrent requests.
+3. **Deadlock**: Deliberately create a deadlock scenario with two transactions that lock resources in opposite orders. Capture the error and implement retry logic.
+4. **SKIP LOCKED Queue**: Implement a job queue with PostgreSQL where multiple worker processes can pull jobs concurrently without conflicts, using `SELECT FOR UPDATE SKIP LOCKED`.
+
+This covers Level 9 — Databases. Next: [Cloud & DevOps](/devops/cloud-platforms) for Level 10.

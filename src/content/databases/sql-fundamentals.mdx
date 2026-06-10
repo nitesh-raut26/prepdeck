@@ -1,0 +1,402 @@
+---
+title: "SQL Fundamentals"
+summary: "Structured Query Language from the ground up — DDL, DML, joins, aggregates, window functions, subqueries, and interview-critical patterns."
+order: 1
+difficulty: "Core"
+tags: ["sql", "databases", "joins", "aggregates", "window-functions", "query"]
+---
+
+## What is SQL?
+
+**SQL** (Structured Query Language, pronounced "sequel" or "S-Q-L") is the standard language for interacting with **relational databases**. It lets you:
+- Create and modify table structures (DDL)
+- Insert, update, delete, and query data (DML)
+- Control access and permissions (DCL)
+- Manage transactions (TCL)
+
+```
+Analogy: SQL is like speaking to a filing cabinet that contains millions
+of perfectly organized files. You tell it exactly what you want and the
+conditions it must meet, and it finds or modifies the data instantly.
+```
+
+SQL was created in 1974 at IBM, standardized as ANSI SQL, and is used in every major database: PostgreSQL, MySQL, SQLite, Oracle, SQL Server. The core syntax is nearly identical across all of them.
+
+---
+
+## Data Types
+
+```sql
+-- Common SQL types (PostgreSQL syntax)
+INTEGER       -- whole numbers (-2B to 2B)
+BIGINT        -- larger integers
+DECIMAL(p,s)  -- exact decimal (p = total digits, s = decimal places) — use for money
+NUMERIC(p,s)  -- same as DECIMAL
+FLOAT / DOUBLE-- approximate decimal (avoid for money — floating point errors)
+
+VARCHAR(n)    -- variable-length text up to n chars
+TEXT          -- unlimited text
+CHAR(n)       -- fixed-length text, padded (rare in modern use)
+
+BOOLEAN       -- true / false
+DATE          -- 2024-01-15
+TIME          -- 14:30:00
+TIMESTAMP     -- 2024-01-15 14:30:00
+TIMESTAMPTZ   -- timestamp with timezone (use this for production)
+
+UUID          -- universally unique ID (e.g. 550e8400-e29b-41d4-a716-446655440000)
+JSON / JSONB  -- JSON data (JSONB is binary, faster to query)
+SERIAL        -- auto-incrementing integer (shorthand for INTEGER + sequence)
+```
+
+## DDL — Creating and Modifying Tables
+
+```sql
+-- Create table
+CREATE TABLE users (
+  id         SERIAL PRIMARY KEY,               -- auto-increment, unique, not null
+  email      VARCHAR(255) NOT NULL UNIQUE,     -- required, no duplicates
+  name       VARCHAR(100) NOT NULL,
+  role       VARCHAR(20) NOT NULL DEFAULT 'user',
+  is_active  BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE posts (
+  id         SERIAL PRIMARY KEY,
+  title      VARCHAR(500) NOT NULL,
+  content    TEXT,
+  author_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- ON DELETE CASCADE: delete posts when the user is deleted
+  -- ON DELETE SET NULL: set author_id to NULL
+  -- ON DELETE RESTRICT: prevent deleting user if they have posts
+  published  BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Add index (covered in depth in the Indexing article)
+CREATE INDEX idx_posts_author_id ON posts(author_id);
+CREATE INDEX idx_users_email ON users(email);
+
+-- Alter table
+ALTER TABLE users ADD COLUMN bio TEXT;
+ALTER TABLE users ALTER COLUMN name TYPE VARCHAR(200);
+ALTER TABLE users DROP COLUMN bio;
+
+-- Drop table
+DROP TABLE posts;               -- fails if referenced by foreign keys
+DROP TABLE posts CASCADE;       -- also drops dependent objects
+```
+
+## DML — Querying and Modifying Data
+
+```sql
+-- INSERT
+INSERT INTO users (email, name, role)
+VALUES ('alice@example.com', 'Alice', 'admin');
+
+-- Insert multiple rows
+INSERT INTO users (email, name) VALUES
+  ('bob@example.com', 'Bob'),
+  ('carol@example.com', 'Carol');
+
+-- INSERT with ON CONFLICT (upsert)
+INSERT INTO users (email, name)
+VALUES ('alice@example.com', 'Alice Updated')
+ON CONFLICT (email)
+DO UPDATE SET name = EXCLUDED.name, updated_at = NOW();
+
+-- SELECT
+SELECT id, name, email FROM users;          -- specific columns
+SELECT * FROM users;                         -- all columns (avoid in production)
+SELECT DISTINCT role FROM users;             -- unique values
+
+-- WHERE — filtering
+SELECT * FROM users
+WHERE is_active = true
+  AND role = 'admin'
+  AND created_at > '2024-01-01';
+
+-- LIKE — pattern matching (% = any characters, _ = single character)
+SELECT * FROM users WHERE email LIKE '%@gmail.com';
+SELECT * FROM users WHERE name ILIKE 'alice%';  -- case-insensitive (PostgreSQL)
+
+-- IN and NOT IN
+SELECT * FROM users WHERE role IN ('admin', 'moderator');
+SELECT * FROM users WHERE id NOT IN (1, 2, 3);
+
+-- IS NULL / IS NOT NULL
+SELECT * FROM users WHERE bio IS NULL;
+
+-- ORDER BY
+SELECT * FROM users ORDER BY created_at DESC, name ASC;
+
+-- LIMIT and OFFSET (pagination)
+SELECT * FROM posts ORDER BY created_at DESC LIMIT 20 OFFSET 40;  -- page 3
+-- Note: OFFSET pagination is slow for large offsets — use cursor-based for scale
+
+-- UPDATE
+UPDATE users SET name = 'Alice Smith', updated_at = NOW() WHERE id = 1;
+UPDATE posts SET published = true WHERE author_id = 1 AND published = false;
+
+-- DELETE
+DELETE FROM users WHERE id = 1;
+DELETE FROM posts WHERE created_at < NOW() - INTERVAL '1 year';
+```
+
+## Joins — Combining Tables
+
+**Joins** combine rows from two or more tables based on a related column.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  users              posts                                  │
+│  ┌────┬──────┐      ┌────┬──────────┬───────────┐        │
+│  │ id │ name │      │ id │  title   │ author_id │        │
+│  ├────┼──────┤      ├────┼──────────┼───────────┤        │
+│  │  1 │ Alice│      │  1 │ "Post A" │     1     │        │
+│  │  2 │ Bob  │      │  2 │ "Post B" │     1     │        │
+│  │  3 │ Carol│      │  3 │ "Post C" │     2     │        │
+│  └────┴──────┘      └────┴──────────┴───────────┘        │
+└──────────────────────────────────────────────────────────┘
+```
+
+```sql
+-- INNER JOIN: only rows that match in BOTH tables
+SELECT u.name, p.title
+FROM users u
+INNER JOIN posts p ON u.id = p.author_id;
+-- Returns: Alice/Post A, Alice/Post B, Bob/Post C (Carol excluded — no posts)
+
+-- LEFT JOIN: all rows from left table, matched rows from right (or NULL)
+SELECT u.name, p.title
+FROM users u
+LEFT JOIN posts p ON u.id = p.author_id;
+-- Returns: Alice/Post A, Alice/Post B, Bob/Post C, Carol/NULL
+
+-- RIGHT JOIN: all from right, matched from left (rarely used — just swap tables)
+
+-- FULL OUTER JOIN: all rows from both, NULL where no match
+
+-- SELF JOIN: table joins itself (org hierarchy, friends, etc.)
+SELECT e.name AS employee, m.name AS manager
+FROM employees e
+LEFT JOIN employees m ON e.manager_id = m.id;
+
+-- Multiple joins
+SELECT u.name, p.title, c.content AS comment
+FROM users u
+JOIN posts p ON u.id = p.author_id
+JOIN comments c ON p.id = c.post_id
+WHERE u.is_active = true
+ORDER BY p.created_at DESC;
+```
+
+## Aggregates & GROUP BY
+
+```sql
+-- Aggregate functions
+SELECT
+  COUNT(*)                    AS total_users,
+  COUNT(DISTINCT role)        AS unique_roles,
+  AVG(EXTRACT(YEAR FROM NOW()) - EXTRACT(YEAR FROM created_at)) AS avg_age_years,
+  MAX(created_at)             AS latest_signup,
+  MIN(created_at)             AS first_signup,
+  SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS active_users
+FROM users;
+
+-- GROUP BY — aggregate per group
+SELECT role, COUNT(*) AS count
+FROM users
+GROUP BY role
+ORDER BY count DESC;
+
+-- HAVING — filter groups (like WHERE but after GROUP BY)
+SELECT author_id, COUNT(*) AS post_count
+FROM posts
+WHERE published = true
+GROUP BY author_id
+HAVING COUNT(*) > 5            -- only authors with more than 5 published posts
+ORDER BY post_count DESC;
+
+-- Combining with JOIN
+SELECT u.name, COUNT(p.id) AS published_posts
+FROM users u
+LEFT JOIN posts p ON u.id = p.author_id AND p.published = true
+GROUP BY u.id, u.name
+ORDER BY published_posts DESC;
+```
+
+## Subqueries
+
+A subquery is a SELECT inside another SELECT:
+
+```sql
+-- Subquery in WHERE
+SELECT name FROM users
+WHERE id IN (
+  SELECT DISTINCT author_id FROM posts WHERE published = true
+);
+
+-- Subquery in FROM (derived table)
+SELECT dept, avg_salary
+FROM (
+  SELECT department AS dept, AVG(salary) AS avg_salary
+  FROM employees
+  GROUP BY department
+) AS dept_averages
+WHERE avg_salary > 80000;
+
+-- Correlated subquery — references outer query (runs once per row — slow for large tables)
+SELECT name, (
+  SELECT COUNT(*) FROM posts WHERE author_id = u.id
+) AS post_count
+FROM users u;
+-- Better: use a LEFT JOIN + COUNT + GROUP BY
+
+-- EXISTS — often faster than IN for large subqueries
+SELECT name FROM users u
+WHERE EXISTS (
+  SELECT 1 FROM posts WHERE author_id = u.id AND published = true
+);
+```
+
+## Window Functions
+
+**Window functions** perform calculations across rows related to the current row, **without collapsing rows** (unlike GROUP BY).
+
+```sql
+-- ROW_NUMBER: rank rows within a partition
+SELECT
+  name,
+  department,
+  salary,
+  ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) AS rank_in_dept
+FROM employees;
+
+-- RANK vs DENSE_RANK
+-- RANK: 1,1,3 (skips 2 when there's a tie)
+-- DENSE_RANK: 1,1,2 (no gaps)
+
+-- LAG and LEAD: access previous/next row
+SELECT
+  date,
+  revenue,
+  LAG(revenue) OVER (ORDER BY date) AS prev_revenue,
+  revenue - LAG(revenue) OVER (ORDER BY date) AS day_over_day_change
+FROM daily_revenue;
+
+-- Running total
+SELECT
+  date,
+  revenue,
+  SUM(revenue) OVER (ORDER BY date ROWS UNBOUNDED PRECEDING) AS running_total
+FROM daily_revenue;
+
+-- Percentile rank
+SELECT
+  name,
+  salary,
+  PERCENT_RANK() OVER (ORDER BY salary) AS percentile
+FROM employees;
+
+-- Top N per group (classic interview problem)
+SELECT name, department, salary FROM (
+  SELECT
+    name, department, salary,
+    ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) AS rn
+  FROM employees
+) ranked
+WHERE rn <= 3;  -- Top 3 earners per department
+```
+
+## CTEs — Common Table Expressions
+
+CTEs make complex queries readable by naming intermediate results:
+
+```sql
+-- Basic CTE
+WITH active_users AS (
+  SELECT * FROM users WHERE is_active = true
+),
+user_post_counts AS (
+  SELECT author_id, COUNT(*) AS post_count
+  FROM posts
+  WHERE published = true
+  GROUP BY author_id
+)
+SELECT u.name, COALESCE(upc.post_count, 0) AS posts
+FROM active_users u
+LEFT JOIN user_post_counts upc ON u.id = upc.author_id
+ORDER BY posts DESC;
+
+-- Recursive CTE — for hierarchical data (org charts, categories, file trees)
+WITH RECURSIVE org_tree AS (
+  -- Base case: top-level employees (no manager)
+  SELECT id, name, manager_id, 0 AS depth
+  FROM employees
+  WHERE manager_id IS NULL
+
+  UNION ALL
+
+  -- Recursive case: find direct reports
+  SELECT e.id, e.name, e.manager_id, ot.depth + 1
+  FROM employees e
+  JOIN org_tree ot ON e.manager_id = ot.id
+)
+SELECT name, depth FROM org_tree ORDER BY depth, name;
+```
+
+## Common Interview Questions
+
+<QA q="What's the difference between WHERE and HAVING?">
+
+`WHERE` filters rows before aggregation — it can't use aggregate functions. `HAVING` filters groups after `GROUP BY` aggregation — it can use aggregate functions like `COUNT`, `SUM`, `AVG`. Mental model: `WHERE` selects which rows to include in the aggregation; `HAVING` selects which aggregated groups to include in the result.
+
+```sql
+-- WHERE: filter rows before grouping
+SELECT department, COUNT(*) FROM employees
+WHERE salary > 50000          -- exclude rows before grouping
+GROUP BY department
+HAVING COUNT(*) > 10;         -- exclude groups after grouping
+```
+
+</QA>
+
+<QA q="Explain the different types of JOINs.">
+
+- **INNER JOIN**: Returns rows with matches in both tables — the intersection.
+- **LEFT JOIN**: All rows from the left table; matching rows from the right (NULL where no match). Use when the right data is optional.
+- **RIGHT JOIN**: All from right, matched from left — just swap the tables and use LEFT JOIN.
+- **FULL OUTER JOIN**: All rows from both tables, NULL where no match — the union.
+- **CROSS JOIN**: Cartesian product — every row from left combined with every row from right. Rarely intentional.
+
+For most production queries, INNER JOIN and LEFT JOIN cover 95%+ of use cases.
+
+</QA>
+
+<QA q="What's the difference between DELETE, TRUNCATE, and DROP?">
+
+- **DELETE**: Removes specific rows (supports WHERE clause), is transaction-safe, fires triggers, and is slow for large tables (row-by-row).
+- **TRUNCATE**: Removes all rows from a table quickly (doesn't scan row-by-row, no WHERE clause), transaction-safe, usually doesn't fire row-level triggers.
+- **DROP**: Removes the entire table structure and all its data permanently. Can't be undone without a backup.
+
+For clearing all rows in a table quickly: TRUNCATE. For removing specific rows: DELETE. For removing the table itself: DROP.
+
+</QA>
+
+<QA q="What is a window function and when would you use one?">
+
+Window functions perform calculations over a set of rows related to the current row, defined by an OVER clause with PARTITION BY and ORDER BY. Unlike GROUP BY aggregates that collapse rows into one, window functions keep all rows and add the computed value as a new column. Use cases: ranking within groups (top N per category), running totals, moving averages, comparing each row to the previous (LAG/LEAD), percentile calculations. They're the most powerful SQL feature for analytical queries.
+
+</QA>
+
+## Practice
+
+1. **Joins**: Find all users who have never written a post.
+2. **Aggregates**: For each user, show their name, total posts, published posts, and draft posts.
+3. **Window**: Given a `sales` table with `date`, `product_id`, and `amount`, find the top 3 best-selling products per month.
+4. **Recursive**: Given an `employees` table with `id`, `name`, `manager_id`, write a query to find all direct and indirect reports of a given manager.
+
+Next: [PostgreSQL & MySQL](/databases/postgres-and-mysql) — production database systems.
