@@ -1,0 +1,203 @@
+---
+title: "Mock Interviews"
+summary: "How to structure mock interview practice, what to expect in each round, self-evaluation rubrics, and a 12-week prep schedule to get FAANG-ready."
+order: 2
+difficulty: "Essential"
+tags: ["mock-interviews", "interview-prep", "faang", "coding", "system-design", "behavioral"]
+---
+
+## Why Mock Interviews Are Non-Negotiable
+
+The gap between knowing an algorithm and performing it under live interview pressure is enormous. Most people who fail FAANG interviews know the material — they fail because they've never practiced the **performance**.
+
+```
+The interview performance gap:
+
+Your desk:   Familiar environment, no time pressure, can Google, can pause
+Interview:   Stranger watching, 45 minutes, no docs, must explain while coding
+
+Skills needed that no LeetCode session trains:
+  ✓ Thinking out loud (without losing your train of thought)
+  ✓ Asking clarifying questions naturally
+  ✓ Pivoting gracefully when your first approach is wrong
+  ✓ Reading the interviewer for signals
+  ✓ Staying composed when you hit a wall
+```
+
+Mock interviews build these skills. Aim for at least 1 per week in the 8 weeks before your interviews.
+
+---
+
+## The Five Interview Round Types
+
+### 1. Coding / DSA Round (45–60 min)
+
+**Format**: 1-2 LeetCode-style problems. Sometimes preceded by a 5-min behavioral question.
+
+**What you're evaluated on**:
+- Correctness (does it work?)
+- Approach (did you explain your thinking before coding?)
+- Efficiency (time + space complexity)
+- Code quality (readable, no bugs, handles edge cases)
+- Communication (did you verbalize your thoughts?)
+
+**The correct flow**:
+```
+Step 1 (2–3 min): Understand
+  → Repeat the problem in your own words
+  → Ask clarifying questions: "Are the numbers always positive? Can the array be empty?"
+  → Confirm constraints: "Input size up to 10^5, so O(n log n) should be fine?"
+
+Step 2 (5–10 min): Think aloud
+  → "My first thought is brute force: [describe it] — that's O(n²)"
+  → "I can improve with a hash map to get O(n)..."
+  → "Let me trace through this example to verify"
+  → Confirm your approach with the interviewer before coding
+
+Step 3 (15–20 min): Code
+  → Write clean, readable code
+  → Narrate what you're doing: "I'm initializing a seen set to track visited nodes..."
+  → Don't go silent for more than 30 seconds
+
+Step 4 (5 min): Test
+  → Walk through your code with the sample input
+  → Test edge cases: empty input, single element, negative numbers
+
+Step 5 (5 min): Optimize
+  → If time allows, discuss improvements
+  → "This is O(n) time and O(n) space. We could reduce space with a two-pointer approach..."
+```
+
+### 2. System Design / HLD Round (45–60 min)
+
+**Format**: Design a real system (Twitter, YouTube, Rate Limiter, etc.).
+
+**Evaluation**: requirements gathering, estimation, component design, trade-off discussion, depth on key areas.
+
+See [HLD Interview Approach](/hld/approach) for the full framework.
+
+### 3. Low-Level Design / Machine Coding Round (60–90 min)
+
+**Format**: Design and implement classes for a real-world system (parking lot, library, chess).
+
+**Evaluation**: OOP design, SOLID principles, code quality, extensibility.
+
+See [OOP & SOLID](/lld/oop-and-solid) for the patterns.
+
+### 4. Behavioral Round (45 min)
+
+**Format**: 5–8 situational questions. "Tell me about a time when..."
+
+See [STAR Stories](/behavioral/stories) for prepared answers.
+
+### 5. Bar Raiser / Culture Fit Round (Google/Amazon specific)
+
+An independent interviewer who can veto any hire. Evaluates: would this person raise the overall bar? Usually a mix of behavioral + technical discussion.
+
+---
+
+## Mock Interview Platforms
+
+| Platform | Best For | Cost |
+|---|---|---|
+| **Pramp** | Peer-to-peer coding mocks | Free |
+| **interviewing.io** | Real engineers from FAANG | Free (paid for guaranteed) |
+| **Exponent** | PM + SWE behavioral + system design | Paid |
+| **LeetCode Premium** | Mock assessments from company problem banks | Paid |
+| **Peer practice** | Most flexible, free, best with a study partner | Free |
+
+**Best setup**: Weekly peer mocks with a study partner on a shared Google Doc or CoderPad. Rotate who interviews and who is interviewed.
+
+---
+
+## Self-Evaluation Rubric (After Every Mock)
+
+Rate yourself 1-5 on each:
+
+### Coding Round
+```
+[ ] Problem understanding — did I identify all constraints and edge cases?
+[ ] Approach — did I explain my thinking before writing code?
+[ ] Code quality — readable variable names, no redundancy, handles edge cases?
+[ ] Testing — did I trace through with examples?
+[ ] Communication — was I talking through every decision?
+[ ] Time management — did I finish in time? Where did I lose time?
+```
+
+### System Design Round
+```
+[ ] Requirements gathering — functional + non-functional?
+[ ] Estimation — back-of-envelope done confidently?
+[ ] Component selection — justified choices with trade-offs?
+[ ] Deep dives — went deep on at least 2 components?
+[ ] Bottlenecks — proactively identified scaling limits?
+[ ] Drove the conversation — or just responded to prompts?
+```
+
+---
+
+## 12-Week Interview Prep Schedule
+
+```
+Weeks 1–4: Foundation
+  DSA: Arrays, Strings, Linked Lists, Stacks, Queues, Hash Tables
+  1 mock interview/week (peer)
+  LeetCode: 3 easy + 2 medium/day
+
+Weeks 5–8: Patterns
+  DSA: Trees, Graphs, Heaps, Sliding Window, Two Pointers, Binary Search, DP
+  LLD: 2 design problems/week
+  1 mock interview/week (interviewing.io)
+  LeetCode: 2 medium + 1 hard/day
+
+Weeks 9–10: System Design
+  HLD: 1 full design/day (WhatsApp, Twitter, Netflix, Uber, YouTube)
+  Coding mocks: 2/week
+  System design mocks: 1/week
+
+Weeks 11–12: Full Loop Simulation
+  1 complete mock loop/week (coding + system design + behavioral same day)
+  Simulate real timing (45 min coding, 60 min system design)
+  Focus on weak areas identified in previous mocks
+  Prepare and practice 8–10 behavioral stories (STAR format)
+```
+
+---
+
+## Handling Common Sticking Points
+
+### "I got stuck and went silent for 2 minutes"
+Practice saying: *"Let me think through this out loud..."* and then actually thinking out loud, even if your thoughts are incomplete. Silence is worse than imperfect thinking.
+
+### "I finished but had no time to test"
+Always leave 5 minutes for testing. Set a mental timer: if you're not coding by minute 15, your approach exploration took too long. Practice transitions: "I have my approach — let me start coding."
+
+### "My solution was wrong and I panicked"
+Being wrong and recovering gracefully is actually a signal interviewers look for. Say: *"I see the issue — my approach doesn't handle [edge case]. Let me reconsider from [X]."* A calm pivot impresses more than a panicked one.
+
+### "I bombed a mock interview"
+That's the point. Bombing in a mock is free. Extract the learning, fix the gap, move on. Track every failure in a weakness log.
+
+---
+
+## Common Interview Questions
+
+<QA q="How should you handle a question you've never seen before?">
+
+Most candidates think they need to have seen the exact problem. They don't. Interviewers want to see your problem-solving process. The correct approach: (1) Identify the pattern — does this look like a graph traversal, a sliding window, a greedy choice? (2) Start with brute force and say it out loud — this shows you understand the problem. (3) Optimize from there. The interviewer will often give hints if you're stuck. Asking for a hint after acknowledging your stuck point is fine — staying silent and staring is not.
+
+</QA>
+
+<QA q="How many problems should you practice before FAANG interviews?">
+
+Quality over quantity. 150 well-understood problems beat 500 rushed ones. The Grind 75 / Blind 75 are the minimum. For each problem: solve it, understand why the solution works, recognize what pattern it exemplifies, re-solve it from scratch 3 days later without looking. If you can explain why you're making each decision — not just that it works — you're ready. A 300-problem spread with pattern recognition beats 500 brute-forced solutions.
+
+</QA>
+
+## Action Steps
+
+1. **This week**: Schedule your first peer mock. Use a Google Doc as your "whiteboard."
+2. **Today**: Download the self-evaluation rubric and use it after your next practice session.
+3. **Ongoing**: Log every mistake in a weakness doc. Review it weekly. The same mistakes will recur — and catching them early is how you fix them.
+
+Next: [Salary Negotiation](/career/salary-negotiation) — convert offers into the best possible package.
