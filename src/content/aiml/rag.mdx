@@ -1,0 +1,302 @@
+---
+title: "RAG — Retrieval-Augmented Generation"
+summary: "Give LLMs access to your own data — how RAG works, vector embeddings, chunking strategies, re-ranking, and building production RAG pipelines."
+order: 4
+difficulty: "Intermediate"
+tags: ["rag", "llm", "embeddings", "vector-database", "retrieval", "ai"]
+---
+
+## The LLM Knowledge Problem
+
+LLMs have a fixed knowledge cutoff — they don't know about your internal documents, your codebase, your company's Notion wiki, or anything that happened after training.
+
+```
+Problem:
+  User: "What did our Q3 revenue report say about APAC growth?"
+  LLM: "I don't have access to your Q3 report."
+  
+  OR worse — it halluccinates a confident-sounding answer.
+
+Solution: RAG
+  Retrieve the relevant document chunks at query time →
+  Inject them into the LLM's context →
+  LLM answers based on actual, up-to-date information
+```
+
+**RAG** (Retrieval-Augmented Generation) combines a retrieval system (search) with a generative model (LLM). It's the most practical way to ground LLMs in private, current, or large-scale knowledge.
+
+---
+
+## How RAG Works
+
+```
+INDEXING PHASE (done once, or on updates):
+
+  Documents → Chunk → Embed → Store in Vector DB
+
+  1. Load documents (PDFs, Notion, Confluence, GitHub, etc.)
+  2. Split into chunks (e.g., 500 tokens with 50-token overlap)
+  3. Generate embeddings (dense vectors) for each chunk
+  4. Store chunks + their vectors in a vector database
+
+RETRIEVAL PHASE (every query):
+
+  User query → Embed query → Search vector DB → Retrieve top-K chunks
+       ↓
+  Inject retrieved chunks into LLM prompt (as context)
+       ↓
+  LLM generates answer grounded in the retrieved context
+
+The LLM never sees the full knowledge base — only the most relevant pieces.
+```
+
+---
+
+## Embeddings — The Core Primitive
+
+An **embedding** is a dense vector (list of floating-point numbers) that represents the semantic meaning of text. Similar meanings → similar vectors → close in vector space.
+
+```python
+from openai import OpenAI
+client = OpenAI()
+
+def embed(text: str) -> list[float]:
+    response = client.embeddings.create(
+        model="text-embedding-3-small",  # 1536 dimensions, cheap
+        # or: text-embedding-3-large    # 3072 dimensions, better
+        input=text,
+    )
+    return response.data[0].embedding
+
+# Example
+vec1 = embed("Python is a programming language")
+vec2 = embed("NumPy is a Python library for numerical computation")
+vec3 = embed("The Eiffel Tower is in Paris")
+
+# vec1 and vec2 will be much closer (cosine similarity ~0.85)
+# than vec1 and vec3 (~0.30)
+```
+
+**Common embedding models**:
+- `text-embedding-3-small` (OpenAI) — fast, cheap, good quality
+- `text-embedding-3-large` (OpenAI) — best quality, more expensive
+- `all-MiniLM-L6-v2` (Sentence Transformers, open-source) — great for self-hosted
+- `voyage-large-2` (Voyage AI) — often best for code/technical content
+
+---
+
+## Chunking Strategies
+
+How you split documents significantly affects RAG quality:
+
+```python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# Fixed-size chunking with overlap
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,        # ~375 words
+    chunk_overlap=50,      # overlap prevents context being cut in half
+    separators=["\n\n", "\n", " ", ""],  # try to split on natural boundaries
+)
+
+chunks = splitter.split_text(document_text)
+
+# Each chunk becomes a separate record in the vector DB
+```
+
+**Chunking strategies and tradeoffs**:
+
+| Strategy | Good For | Watch Out |
+|---|---|---|
+| Fixed-size (e.g., 500 tokens) | Simple, consistent | May cut mid-sentence or mid-concept |
+| Semantic (paragraph-based) | Natural boundaries | Variable chunk sizes |
+| Hierarchical (doc → section → paragraph) | Complex documents | More complex retrieval |
+| Sliding window | Dense technical content | Redundant overlap |
+
+**Practical rules**:
+- Shorter chunks (200-400 tokens): precise retrieval, less context per chunk
+- Longer chunks (800-1200 tokens): more context, may dilute relevance score
+- Always include metadata: document source, page number, created date, section title
+
+---
+
+## Building a RAG Pipeline
+
+```python
+import os
+from openai import OpenAI
+import chromadb
+
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+# 1. Initialize vector store (ChromaDB — local, easy to start with)
+chroma = chromadb.Client()
+collection = chroma.get_or_create_collection("knowledge_base")
+
+def embed(text: str) -> list[float]:
+    return client.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    ).data[0].embedding
+
+# 2. INDEX: add documents to the vector store
+def index_document(doc_id: str, text: str, metadata: dict):
+    chunks = split_into_chunks(text, chunk_size=500, overlap=50)
+    for i, chunk in enumerate(chunks):
+        embedding = embed(chunk)
+        collection.add(
+            ids=[f"{doc_id}-chunk-{i}"],
+            embeddings=[embedding],
+            documents=[chunk],
+            metadatas=[{**metadata, "chunk_index": i}]
+        )
+
+# Index your knowledge base
+index_document("q3-report", q3_report_text, {"source": "Q3 Report", "year": 2024})
+index_document("docs/api", api_docs_text, {"source": "API Docs", "version": "v2"})
+
+# 3. RETRIEVE: find relevant chunks for a query
+def retrieve(query: str, top_k: int = 5) -> list[dict]:
+    query_embedding = embed(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+    )
+    return [
+        {"text": doc, "metadata": meta}
+        for doc, meta in zip(results["documents"][0], results["metadatas"][0])
+    ]
+
+# 4. GENERATE: answer the query using retrieved context
+def rag_answer(question: str) -> str:
+    # Retrieve relevant chunks
+    chunks = retrieve(question, top_k=5)
+
+    # Build context string
+    context = "\n\n---\n\n".join(
+        f"[Source: {c['metadata']['source']}]\n{c['text']}"
+        for c in chunks
+    )
+
+    # Generate answer with context
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": """You are a helpful assistant. Answer questions based ONLY on the provided context.
+If the context doesn't contain enough information to answer, say so clearly.
+Never make up information."""
+            },
+            {
+                "role": "user",
+                "content": f"""Context:
+{context}
+
+Question: {question}"""
+            }
+        ],
+        temperature=0,  # factual retrieval → low temperature
+    )
+    return response.choices[0].message.content
+
+# Usage
+answer = rag_answer("What did the Q3 report say about APAC growth?")
+print(answer)
+```
+
+---
+
+## Advanced RAG Techniques
+
+### Hybrid Search (BM25 + Vector)
+
+Pure vector search misses exact keyword matches. Hybrid combines both:
+
+```python
+# BM25: keyword-based (finds "APAC" even if embedding misses it)
+# Vector: semantic (finds "Asia Pacific" when query says "APAC")
+
+# Reciprocal Rank Fusion (RRF) to combine results:
+def hybrid_search(query: str, top_k: int = 5):
+    keyword_results = bm25_search(query, top_k=top_k * 2)
+    vector_results  = vector_search(query, top_k=top_k * 2)
+    
+    # RRF: combine ranks
+    scores = {}
+    for rank, result in enumerate(keyword_results):
+        scores[result.id] = scores.get(result.id, 0) + 1 / (60 + rank)
+    for rank, result in enumerate(vector_results):
+        scores[result.id] = scores.get(result.id, 0) + 1 / (60 + rank)
+    
+    return sorted(scores, key=scores.get, reverse=True)[:top_k]
+```
+
+### Re-ranking
+
+Retrieve more candidates (top-20), then re-rank with a cross-encoder (reads query + document together — much more accurate but slow):
+
+```python
+from sentence_transformers import CrossEncoder
+
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+def retrieve_and_rerank(query: str, final_k: int = 5):
+    # Retrieve large candidate set
+    candidates = retrieve(query, top_k=20)
+    
+    # Re-rank with cross-encoder (reads query+chunk together)
+    pairs = [(query, c["text"]) for c in candidates]
+    scores = reranker.predict(pairs)
+    
+    # Sort by cross-encoder score
+    ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+    return [c for c, _ in ranked[:final_k]]
+```
+
+### Metadata Filtering
+
+```python
+# Only retrieve from a specific document or date range
+results = collection.query(
+    query_embeddings=[embed(query)],
+    n_results=10,
+    where={"source": "API Docs", "version": "v2"},  # filter by metadata
+)
+```
+
+---
+
+## Common Failure Modes & Fixes
+
+| Problem | Cause | Fix |
+|---|---|---|
+| LLM ignores context, uses training data | Weak system prompt | Explicitly instruct "use ONLY the provided context" |
+| Wrong chunks retrieved | Poor chunking / embedding mismatch | Use domain-specific embeddings; improve chunking |
+| Context too long, LLM loses focus | Too many chunks retrieved | Reduce top-K, use re-ranking |
+| Hallucination in retrieved answer | Context doesn't contain the answer | Add "I don't know" path; use grounding checks |
+| Slow retrieval | Unindexed vector DB | Add HNSW index; use ANN (approximate nearest neighbor) |
+
+---
+
+## Common Interview Questions
+
+<QA q="What is RAG and why is it better than fine-tuning for private data?">
+
+RAG (Retrieval-Augmented Generation) retrieves relevant document chunks at query time and injects them into the LLM's context. Fine-tuning bakes knowledge into the model weights. RAG is better for private/dynamic data because: (1) data can be updated without retraining, (2) sources are cited (grounded, auditable), (3) much cheaper — no training cost. Fine-tuning is better for style/behavior changes (tone, output format, domain-specific reasoning patterns) rather than knowledge injection.
+
+</QA>
+
+<QA q="How do you evaluate RAG quality?">
+
+Key metrics: (1) **Retrieval recall** — are the right chunks being retrieved? (measure: does the ground-truth chunk appear in top-K?). (2) **Answer faithfulness** — does the answer stick to retrieved context? (use an LLM judge). (3) **Answer relevance** — does the answer actually address the question? Frameworks: RAGAS (open-source RAG evaluation), TruLens. The most common RAG failure is retrieval failure — if you retrieve the wrong chunks, no amount of LLM sophistication helps.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Build a RAG system over a set of your own markdown notes. Use ChromaDB + OpenAI embeddings. Ask questions about the notes.
+2. **Pipeline**: Add metadata filtering, source citation in answers, and a "no relevant information found" fallback.
+3. **Advanced**: Compare pure vector search vs hybrid search (BM25 + vector) on a technical document set. Measure retrieval quality.
+
+Next: [Agents](/aiml/agents) — giving LLMs tools and autonomy.

@@ -1,0 +1,310 @@
+---
+title: "AI Agents"
+summary: "Autonomous AI systems that plan, use tools, and execute multi-step tasks — how agents work, the ReAct pattern, tool use, memory, and building your first agent."
+order: 5
+difficulty: "Advanced"
+tags: ["agents", "llm", "tool-use", "react", "autonomous-ai", "ai"]
+---
+
+## What is an AI Agent?
+
+An **AI agent** is an LLM that can autonomously plan and execute multi-step tasks by using tools, retaining memory, and adapting based on feedback — rather than just responding to a single prompt.
+
+```
+LLM chatbot (not an agent):
+  User: "What's the weather in Mumbai?"
+  LLM:  "I don't have real-time data, but Mumbai typically..."
+  → One turn. No action taken.
+
+AI agent:
+  User: "Book me a flight to Mumbai for next Friday under ₹8,000"
+  Agent: 
+    1. Search flights for next Friday Mumbai
+    2. Filter by price < ₹8,000
+    3. Check seat availability
+    4. Confirm with user
+    5. Complete booking
+  → Multi-step. Real actions. Real results.
+```
+
+Agents unlock capabilities that single-turn LLMs can't achieve: searching the web, writing and running code, reading and writing files, calling APIs, interacting with databases.
+
+---
+
+## The ReAct Pattern — Think, Act, Observe
+
+**ReAct** (Reasoning + Acting) is the foundation of most agent architectures:
+
+```
+Loop until task complete:
+  1. THINK (Reason): given the current state, what should I do next?
+  2. ACT: call a tool (search, code, API, etc.)
+  3. OBSERVE: receive the tool's result
+  4. THINK again: does this result complete the task? What's next?
+```
+
+```python
+# ReAct agent loop (simplified)
+def run_agent(task: str, tools: dict, max_steps: int = 10):
+    messages = [
+        {"role": "system", "content": build_system_prompt(tools)},
+        {"role": "user", "content": task}
+    ]
+
+    for step in range(max_steps):
+        # LLM decides next action
+        response = llm_call(messages, tools=tools)
+
+        if response.finish_reason == "stop":
+            # LLM produced a final answer (no more tool calls)
+            return response.content
+
+        if response.tool_calls:
+            # Execute the tool call
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.function.name
+                tool_args = json.loads(tool_call.function.arguments)
+
+                # Add the assistant's tool call to message history
+                messages.append({"role": "assistant", "tool_calls": [tool_call]})
+
+                # Execute the tool
+                result = tools[tool_name](**tool_args)
+
+                # Add tool result to messages (LLM sees what happened)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": str(result)
+                })
+
+    return "Max steps reached without completion"
+```
+
+---
+
+## Tools — The Agent's Hands
+
+Tools extend what an agent can do. Any Python function can become a tool:
+
+```python
+import json
+from openai import OpenAI
+
+client = OpenAI()
+
+# --- Define tools ---
+def search_web(query: str) -> str:
+    """Search the web and return relevant results."""
+    # Real: use SerpAPI, Tavily, Bing Search API
+    return f"Search results for '{query}': [result1, result2...]"
+
+def run_python(code: str) -> str:
+    """Execute Python code and return the output."""
+    import io, sys, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            exec(code, {})
+        except Exception as e:
+            return f"Error: {e}"
+    return buf.getvalue()
+
+def read_file(path: str) -> str:
+    """Read a file and return its contents."""
+    try:
+        with open(path) as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"File not found: {path}"
+
+# --- OpenAI tool schema (what the LLM sees) ---
+tools_schema = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Search the web for current information",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": "Execute Python code and return the output. Use for calculations, data processing, or any computational task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code to execute"}
+                },
+                "required": ["code"]
+            }
+        }
+    }
+]
+
+# Tool registry — maps name → function
+tool_registry = {
+    "search_web": search_web,
+    "run_python": run_python,
+    "read_file": read_file,
+}
+```
+
+---
+
+## Memory — Giving Agents a Working History
+
+Agents need different types of memory:
+
+```python
+class AgentMemory:
+    """Three types of memory for AI agents."""
+
+    # 1. In-context memory — everything in the current conversation
+    #    Limited by context window. Lost when conversation ends.
+    self.messages = []
+
+    # 2. Episodic memory — summaries of past conversations
+    #    Stored externally (database), retrieved when relevant
+    def save_episode(self, summary: str):
+        db.save({"type": "episode", "summary": summary, "timestamp": now()})
+
+    def recall_episodes(self, query: str) -> list[str]:
+        # Retrieve semantically similar past episodes
+        return vector_search(query, collection="episodes", top_k=3)
+
+    # 3. Semantic memory — learned facts, user preferences
+    def remember_fact(self, key: str, value: str):
+        db.save({"type": "fact", "key": key, "value": value, "user_id": self.user_id})
+
+    def recall_fact(self, key: str) -> str:
+        return db.get({"type": "fact", "key": key, "user_id": self.user_id})
+
+# Example: persistent user preferences
+class PersonalAssistantAgent:
+    def __init__(self, user_id: str):
+        self.memory = AgentMemory(user_id)
+
+    def chat(self, message: str) -> str:
+        # Retrieve relevant past context
+        past_context = self.memory.recall_episodes(message)
+        preferences = self.memory.recall_facts()
+
+        system = f"""You are a personal assistant.
+User preferences: {preferences}
+Relevant past context: {past_context}"""
+
+        response = run_agent(message, system_prompt=system)
+
+        # Save this episode to memory
+        self.memory.save_episode(f"User asked: {message}. Agent responded: {response[:200]}")
+        return response
+```
+
+---
+
+## Multi-Agent Systems
+
+Complex tasks can be broken across specialized agents:
+
+```python
+# Orchestrator pattern — one coordinator, multiple specialists
+
+class ResearchAgent:
+    """Specialized in web search and summarization"""
+    tools = ["search_web", "summarize"]
+
+class CodeAgent:
+    """Specialized in writing and running code"""
+    tools = ["run_python", "read_file", "write_file"]
+
+class WriterAgent:
+    """Specialized in drafting reports and documents"""
+    tools = ["write_to_doc", "format_markdown"]
+
+class OrchestratorAgent:
+    """Breaks tasks, delegates to specialists, assembles results"""
+
+    def run(self, task: str) -> str:
+        # Break task into sub-tasks
+        plan = self.plan(task)
+
+        results = {}
+        for step in plan:
+            if step.type == "research":
+                results[step.id] = ResearchAgent().run(step.query)
+            elif step.type == "code":
+                results[step.id] = CodeAgent().run(step.code_task)
+            elif step.type == "write":
+                results[step.id] = WriterAgent().run(step.content, results)
+
+        return self.assemble(task, results)
+```
+
+**When to use multi-agent**:
+- Task requires different specializations (research + coding + writing)
+- Tasks can be parallelized (research 5 topics simultaneously)
+- Context window is a constraint (different agents have different contexts)
+
+---
+
+## Frameworks
+
+You rarely build agents from scratch in production:
+
+| Framework | Good For | Language |
+|---|---|---|
+| **LangChain** | Quickest to get started, huge ecosystem | Python/JS |
+| **LangGraph** | Complex, stateful multi-agent workflows | Python |
+| **CrewAI** | Role-based multi-agent teams | Python |
+| **AutoGen** (Microsoft) | Conversational multi-agent | Python |
+| **Pydantic AI** | Type-safe, production-ready single agents | Python |
+| **OpenAI Assistants API** | Managed agent with built-in memory + tools | Any |
+
+```python
+# LangGraph example — stateful agent with tools
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+tools = [search_web_tool, run_python_tool]  # LangChain tool objects
+
+agent = create_react_agent(llm, tools)
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Research the top 5 vector databases and compare their features"}]
+})
+print(result["messages"][-1].content)
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What makes an LLM an 'agent'?">
+
+An LLM becomes an agent when it can: (1) **use tools** to interact with external systems (search, code execution, APIs), (2) **plan** multi-step solutions rather than single-turn responses, (3) **observe** results and adapt based on what happened, and (4) optionally **maintain memory** across interactions. The key distinction from a chatbot: an agent takes actions with real-world consequences, not just text responses.
+
+</QA>
+
+<QA q="What are the key failure modes of AI agents?">
+
+(1) **Tool misuse** — calling the wrong tool or with wrong arguments. Mitigation: clear tool descriptions, type validation. (2) **Infinite loops** — the agent keeps calling tools without making progress. Mitigation: max step limits, loop detection. (3) **Hallucinated tool results** — LLM assumes a tool result without calling it. Mitigation: strict prompting, always require tool calls for external data. (4) **Context overflow** — long agentic loops fill the context window. Mitigation: summarize old steps, keep only relevant history. (5) **Compounding errors** — a mistake in step 2 corrupts all subsequent steps. Mitigation: human-in-the-loop checkpoints for critical actions.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Build an agent that can answer questions by searching the web (use Tavily or SerpAPI) and returns grounded answers with source citations.
+2. **Code Agent**: Build an agent that accepts a data analysis task, writes Python code to solve it, executes the code, and returns the results. Handle errors with retry.
+3. **Multi-Agent**: Build a research assistant — one agent searches the web, another analyzes and summarizes, a third formats a final report.
+
+Next: [Vector Databases](/aiml/vector-databases) — the storage layer powering RAG and agents.

@@ -1,0 +1,262 @@
+---
+title: "Vector Databases"
+summary: "How vector databases store and search embeddings — HNSW, IVF, product quantization, and a comparison of Pinecone, Weaviate, ChromaDB, and pgvector."
+order: 6
+difficulty: "Intermediate"
+tags: ["vector-database", "embeddings", "hnsw", "ann", "pinecone", "chromadb", "pgvector"]
+---
+
+## Why Vector Databases Exist
+
+Traditional databases answer exact queries: `WHERE id = 42` or `WHERE name LIKE 'alice%'`. They can't answer semantic queries: "find me the 10 most similar documents to this paragraph."
+
+```
+Traditional DB query:
+  SELECT * FROM docs WHERE content = 'machine learning'
+  → Only exact matches. Misses "deep learning", "neural networks", "AI".
+
+Vector DB query:
+  query_vector = embed("machine learning")
+  search(query_vector, top_k=10)
+  → Returns "neural networks tutorial", "deep learning guide",
+    "introduction to AI" — semantically similar content.
+```
+
+Vector databases are optimized for one specific operation: **Approximate Nearest Neighbor (ANN) search** in high-dimensional spaces (typically 384–3072 dimensions).
+
+---
+
+## How Vector Search Works
+
+### Exact Nearest Neighbor (Slow)
+
+```
+For each document vector:
+  distance = cosine_similarity(query_vector, document_vector)
+Sort by distance, return top-K
+
+Complexity: O(n × d) — n documents, d dimensions
+For 10M docs × 1536 dims: ~15 billion operations per query
+Way too slow.
+```
+
+### Approximate Nearest Neighbor (ANN)
+
+Sacrifice a tiny bit of accuracy for massive speed gains (1000x+):
+
+**HNSW (Hierarchical Navigable Small World)** — the most common index:
+
+```
+Analogy: HNSW is like a highway system.
+  Top layer: interstate highways — few nodes, long-range connections
+  Middle layers: state highways — more nodes
+  Bottom layer: every neighborhood — all documents
+
+Query navigation:
+  1. Start at top layer (few connections, fast traversal)
+  2. Find the approximate best direction to travel
+  3. Move to a denser layer and refine
+  4. Repeat until at the bottom layer
+  5. Return the nearby nodes as results
+
+Query time: O(log n) — logarithmic, incredibly fast
+```
+
+**IVF (Inverted File Index)** — cluster-based approach:
+```
+1. K-means cluster all vectors into N clusters (e.g., 1000 clusters)
+2. At query time: find the nearest K clusters, search only within those
+3. Trade-off: faster, but can miss vectors in neighboring clusters
+```
+
+---
+
+## Key Similarity Metrics
+
+```python
+import numpy as np
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Most common for text embeddings. Range: -1 to 1."""
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+def dot_product(a: np.ndarray, b: np.ndarray) -> float:
+    """Fast when vectors are normalized (same as cosine similarity for unit vectors)."""
+    return np.dot(a, b)
+
+def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """L2 distance. Good for image embeddings."""
+    return np.linalg.norm(a - b)
+
+# Most text embedding models output normalized vectors
+# → dot product = cosine similarity, and it's faster to compute
+```
+
+---
+
+## Vector Database Comparison
+
+| | **ChromaDB** | **Pinecone** | **Weaviate** | **pgvector** | **Qdrant** |
+|---|---|---|---|---|---|
+| Type | Open-source | Managed cloud | Open-source / cloud | PostgreSQL extension | Open-source |
+| Best for | Dev, prototypes | Production, scale | Multi-modal, semantic search | Already on Postgres | High performance, filtering |
+| Setup | 1 line of Python | API key | Docker / cloud | `CREATE EXTENSION` | Docker / cloud |
+| Filtering | Metadata WHERE | Metadata filter | GraphQL | SQL WHERE | Rich filter |
+| Scale | Millions | Hundreds of millions | Large scale | Millions (with tuning) | Large scale |
+| Cost | Free (self-hosted) | Paid (usage-based) | Free/paid | Free (self-hosted) | Free/paid |
+
+---
+
+## ChromaDB — Start Here for Development
+
+```python
+import chromadb
+from openai import OpenAI
+
+client = OpenAI()
+chroma = chromadb.Client()                        # in-memory
+# chroma = chromadb.PersistentClient("./chroma") # persist to disk
+
+collection = chroma.get_or_create_collection(
+    name="documents",
+    metadata={"hnsw:space": "cosine"}
+)
+
+def add_documents(docs: list[dict]):
+    """docs: list of {id, text, metadata}"""
+    embeddings = [
+        client.embeddings.create(model="text-embedding-3-small", input=d["text"]).data[0].embedding
+        for d in docs
+    ]
+    collection.add(
+        ids=[d["id"] for d in docs],
+        embeddings=embeddings,
+        documents=[d["text"] for d in docs],
+        metadatas=[d.get("metadata", {}) for d in docs],
+    )
+
+def search(query: str, top_k: int = 5, filter: dict = None) -> list[dict]:
+    query_embedding = client.embeddings.create(
+        model="text-embedding-3-small", input=query
+    ).data[0].embedding
+
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+        where=filter,  # e.g., {"source": "Q3-report"}
+    )
+    return [
+        {"text": doc, "metadata": meta, "distance": dist}
+        for doc, meta, dist in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0]
+        )
+    ]
+
+# Usage
+add_documents([
+    {"id": "1", "text": "Python is a dynamically-typed language", "metadata": {"source": "docs"}},
+    {"id": "2", "text": "TypeScript adds static typing to JavaScript", "metadata": {"source": "docs"}},
+    {"id": "3", "text": "The Eiffel Tower is in Paris, France", "metadata": {"source": "travel"}},
+])
+
+results = search("statically typed programming languages", top_k=2)
+# Returns: TypeScript doc, Python doc (both about typing)
+# NOT the Eiffel Tower (different semantic space)
+```
+
+---
+
+## pgvector — Vectors in PostgreSQL
+
+If you're already using PostgreSQL, `pgvector` is often the simplest option — no new infrastructure:
+
+```sql
+-- Install the extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Create table with a vector column
+CREATE TABLE documents (
+    id          SERIAL PRIMARY KEY,
+    content     TEXT NOT NULL,
+    embedding   vector(1536),           -- OpenAI text-embedding-3-small dimension
+    source      TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create HNSW index for fast ANN search
+CREATE INDEX idx_documents_embedding ON documents
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+-- m: connections per node (more = better recall, more memory)
+-- ef_construction: build-time search depth (higher = better quality, slower build)
+
+-- Insert a document with its embedding
+INSERT INTO documents (content, embedding, source)
+VALUES ('Python is a dynamically typed language', '[0.1, 0.2, ...]'::vector, 'docs');
+
+-- Similarity search (cosine distance — lower = more similar)
+SELECT content, source, embedding <=> query_embedding AS distance
+FROM documents
+ORDER BY embedding <=> '[0.05, 0.18, ...]'::vector  -- your query embedding
+LIMIT 5;
+
+-- Hybrid: combine with metadata filtering
+SELECT content, embedding <=> $1 AS distance
+FROM documents
+WHERE source = 'docs'
+  AND created_at > NOW() - INTERVAL '30 days'
+ORDER BY distance
+LIMIT 10;
+```
+
+```python
+# Python with psycopg2 + pgvector
+import psycopg2
+from pgvector.psycopg2 import register_vector
+
+conn = psycopg2.connect(DATABASE_URL)
+register_vector(conn)  # enables the vector type
+
+def search_postgres(query_embedding: list[float], top_k: int = 5) -> list[dict]:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT content, source, embedding <=> %s AS distance
+            FROM documents
+            ORDER BY embedding <=> %s
+            LIMIT %s
+        """, (query_embedding, query_embedding, top_k))
+        return [{"content": row[0], "source": row[1], "distance": row[2]}
+                for row in cur.fetchall()]
+```
+
+---
+
+## Common Interview Questions
+
+<QA q="What is a vector database and how does it differ from a traditional database?">
+
+A vector database stores embeddings (dense numerical vectors representing semantic meaning) and is optimized for similarity search — finding the most semantically similar items to a query vector. Traditional databases store structured data and answer exact/range queries. Vector DBs use ANN (Approximate Nearest Neighbor) algorithms like HNSW or IVF to search billions of vectors in milliseconds with sub-second latency. Use cases: RAG knowledge bases, semantic search, recommendation engines, image/video similarity, anomaly detection.
+
+</QA>
+
+<QA q="What is HNSW and why is it used for vector search?">
+
+HNSW (Hierarchical Navigable Small World) is a graph-based ANN algorithm. It builds a multi-layer graph where each vector is a node with connections to nearby vectors. The top layers have few nodes with long-range connections (highway-like), bottom layers have all nodes with local connections. Search starts at the top (fast, coarse) and moves to denser layers (accurate, local). HNSW achieves sub-millisecond query times with >95% recall at scale, making it the standard choice for production vector search.
+
+</QA>
+
+<QA q="When would you use pgvector vs a dedicated vector database like Pinecone?">
+
+Use pgvector when: you already use PostgreSQL, your dataset is under ~10M vectors, you need SQL joins between vectors and relational data, or you want to minimize infrastructure complexity. Use Pinecone/Weaviate/Qdrant when: your dataset is very large (100M+ vectors), you need horizontal scaling and managed operations, or you need advanced features (multi-tenancy, multi-modal search). Many production systems start with pgvector and migrate to dedicated vector DBs when they hit scale limits.
+
+</QA>
+
+## Practice
+
+1. **Basic**: Create a semantic search engine over 100 Wikipedia articles using ChromaDB + OpenAI embeddings. Compare results with keyword search.
+2. **pgvector**: Set up pgvector in PostgreSQL, store product descriptions as embeddings, and build "similar products" search.
+3. **RAG integration**: Combine your vector DB with an LLM to build a Q&A bot over a document collection. Add metadata filtering by document date.
+
+Next: [Fine-tuning](/aiml/fine-tuning) — customizing LLMs for specific domains.
