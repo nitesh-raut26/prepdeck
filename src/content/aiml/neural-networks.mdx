@@ -355,7 +355,7 @@ Without activation functions, stacking layers is equivalent to one big matrix mu
 
 <QA q="Explain the vanishing gradient problem.">
 
-During backpropagation, gradients are multiplied layer by layer as they flow backward. With sigmoid or tanh activations, gradients are small numbers (<1). Multiplied across many layers, they become exponentially small (vanish toward zero). Layers far from the output learn extremely slowly or not at all. Solutions: (1) ReLU (gradient is 1 for positive values, 0 for negative — doesn't shrink), (2) batch normalization (normalizes activations), (3) residual connections/skip connections (gradient flows directly through shortcuts — the key innovation in ResNets).
+During backpropagation, gradients are multiplied layer by layer as they flow backward. With sigmoid or tanh activations, gradients are small numbers (less than 1). Multiplied across many layers, they become exponentially small (vanish toward zero). Layers far from the output learn extremely slowly or not at all. Solutions: (1) ReLU (gradient is 1 for positive values, 0 for negative — doesn't shrink), (2) batch normalization (normalizes activations), (3) residual connections/skip connections (gradient flows directly through shortcuts — the key innovation in ResNets).
 
 </QA>
 
