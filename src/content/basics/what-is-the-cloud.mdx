@@ -1,0 +1,191 @@
+---
+title: "What is the Cloud?"
+summary: "The cloud is other people's computers, rented by the minute — data centers, AWS, and why nobody buys servers anymore."
+order: 7
+difficulty: "Level 0"
+tags: ["basics", "cloud", "aws", "infrastructure"]
+---
+
+## The one-sentence version
+
+The **cloud** is computers you rent instead of own — millions of servers in
+giant buildings (**data centers**), hired out over the internet by the minute.
+
+There is no fluff in the sky. "Your photos are in the cloud" means: your
+photos are on a company's computers in a warehouse, probably in Virginia,
+Dublin or Mumbai.
+
+## The electricity analogy
+
+A century ago, factories generated their own power on-site — expensive
+machinery, dedicated staff, wasted capacity. Then power grids arrived: plug
+in, pay for what you use, let specialists run the generators.
+
+The cloud did the same thing to computing:
+
+| Own generators | Power grid | |
+| --- | --- | --- |
+| Buy servers, install them, hire people to maintain them | Rent capacity from AWS/Google/Microsoft | |
+| Pay for peak capacity even at 3 AM | Pay only for what you use, per minute | |
+| Adding capacity takes months | Adding capacity takes **seconds** | |
+
+Before the cloud (roughly pre-2006), launching a web app meant buying physical
+servers, renting rack space, and guessing your future traffic. Guess low and
+you crash on launch day; guess high and you've burned your funding on idle
+metal. **AWS (Amazon Web Services)** changed this in 2006 by renting Amazon's
+spare computers via an [API](/basics/what-is-an-api) — and accidentally
+created what is now Amazon's most profitable business.
+
+## What a data center is
+
+A **data center** is a warehouse-sized building filled with racks of servers —
+stripped-down computers (no screens, no keyboards) optimized to run 24/7:
+
+- Hundreds of thousands of machines per building
+- Industrial cooling (those machines produce serious heat)
+- Redundant power: grid + batteries + diesel generators
+- Multiple fat internet connections
+- Security somewhere between a bank and an airport
+
+The big three cloud providers — **AWS**, **Microsoft Azure**, **Google Cloud
+(GCP)** — each run dozens of these around the planet, grouped into
+**regions** (e.g. `us-east-1` in Virginia, `ap-south-1` in Mumbai). You pick
+regions close to your users, because physics: every 1,000 km adds
+milliseconds (see [The Internet](/basics/the-internet)).
+
+## What you can actually rent
+
+Log into AWS and the "menu" (it's all APIs, of course) looks like:
+
+- **Virtual servers** — a computer of any size, ready in 60 seconds, billed
+  per second (AWS calls this EC2)
+- **File storage** — effectively unlimited, pay per gigabyte (S3)
+- **Managed databases** — a [PostgreSQL database](/basics/what-is-a-database)
+  where AWS handles the backups, updates and failover (RDS)
+- Plus ~200 more: AI models, video streaming, email sending, queues…
+
+"**Managed**" is the key word that justifies cloud prices: you get the
+database; *they* get woken at 3 AM when its disk fails.
+
+<Mermaid chart={`flowchart LR
+  U[Users worldwide] --> APP[Your app's servers<br/>rented, Mumbai region]
+  APP --> DB[(Managed database<br/>rented)]
+  APP --> S3[(File storage<br/>rented)]
+  subgraph AWS data center
+    APP
+    DB
+    S3
+  end`} />
+
+## The killer feature: elasticity
+
+**Elasticity** means growing and shrinking on demand — and it's the real
+reason the cloud won.
+
+Think of a food-delivery app: traffic spikes 10× every day at lunch, and 50×
+on New Year's Eve. Owning 50× the servers for one night a year is absurd.
+In the cloud, you rent 50× for six hours and hand it back. Modern setups do
+this automatically (**auto-scaling**): more users arrive → more servers spin
+up → traffic drops → they vanish, along with their cost.
+
+This is also why startups can exist as they do: two students with a credit
+card get, for a few dollars, infrastructure that would have required millions
+in hardware twenty years ago. Instagram served 30 million users with ~13
+engineers and zero owned servers — then sold for a billion dollars.
+
+## IaaS, PaaS, SaaS — three depths of renting
+
+Three acronyms you'll hear constantly, ordered by how much you manage
+yourself — the **pizza analogy** is the standard way to remember them:
+
+| Model | Meaning | Pizza version | Example |
+| --- | --- | --- | --- |
+| **IaaS** (Infrastructure as a Service) | Rent raw machines; you install everything | Buy ingredients, cook at home | AWS EC2 |
+| **PaaS** (Platform as a Service) | Push your code; the platform runs it | Order delivery | Vercel, Heroku |
+| **SaaS** (Software as a Service) | Just use finished software in a browser | Eat at the restaurant | Gmail, Notion, Figma |
+
+This very study site is the stack in action: a static site (this code)
+deployed on **Vercel** (PaaS), which itself runs on AWS (IaaS), edited with
+tools like GitHub (SaaS). Turtles all the way down — every layer renting from
+the one below.
+
+## Industry perspective
+
+- **Netflix runs entirely on AWS** — they own essentially no servers, while
+  *competing with Amazon* in video. The economics of the cloud beat the
+  awkwardness.
+- Cloud skills are a hiring filter: **Level 10 (Cloud & DevOps)** — AWS,
+  Docker, Kubernetes, CI/CD — is where this roadmap makes you employable on
+  this front.
+- The monthly **cloud bill** is a real engineering concern. "We optimized the
+  service and cut the bill 40%" is a resume bullet that gets interviews;
+  accidentally leaving servers running is a rite of passage.
+- Interview vocabulary from this page: region, managed service, auto-scaling,
+  IaaS/PaaS/SaaS — all reappear in Level 6 system design discussions.
+
+## Common beginner mistakes
+
+- **"The cloud is safer/vaguer than a real place."** It's a physical
+  building. Data is subject to that country's laws — which is why companies
+  choose regions carefully (and why "data residency" is a thing).
+- **"Cloud is always cheaper."** Per-hour, renting costs more than owning —
+  like taxis vs owning a car. It wins on flexibility, zero maintenance staff
+  and elasticity. At huge steady scale, some companies (Dropbox famously)
+  move *off* the cloud to save money.
+- **"Serverless means no servers."** It means *you* don't think about the
+  servers — they're still there, managed by the provider.
+- **Confusing "the cloud" with "the internet."** The internet is the road
+  network; the cloud is rentable buildings you reach via those roads.
+
+## Interview perspective
+
+<QA q="What is cloud computing, in plain terms, and why did it take over?">
+
+Cloud computing is renting computing resources — servers, storage, databases —
+over the internet, paying for what you use, instead of buying and operating
+your own hardware. It took over because of speed (provision in seconds, not
+months), elasticity (scale up for spikes, down after, paying accordingly),
+and outsourced operations (the provider handles failures, security patches,
+and 3 AM disk swaps). It converted a huge upfront capital cost into a small
+variable cost, which is also what made the modern startup ecosystem possible.
+
+</QA>
+
+<QA q="Explain IaaS vs PaaS vs SaaS with examples.">
+
+They differ in how much you manage. IaaS rents raw infrastructure — virtual
+machines, networks — and you install and run everything (AWS EC2). PaaS rents
+a platform: you hand over application code and it handles servers, scaling
+and deployment (Vercel, Heroku). SaaS is complete software consumed in a
+browser — you manage nothing (Gmail, Figma). Rule of thumb: IaaS = maximum
+control, SaaS = maximum convenience, PaaS = the developer sweet spot.
+
+</QA>
+
+<QA q="Why might a company choose a server region in Mumbai vs Virginia? Name two reasons.">
+
+(1) **Latency** — physical distance adds round-trip time; serving Indian
+users from Mumbai instead of Virginia can cut 200+ ms per request, which
+directly affects user experience. (2) **Data laws** — many countries regulate
+where citizens' data may be stored (data residency); choosing the region is a
+compliance decision, not just a technical one. (Cost differences and disaster
+recovery — keeping copies in a second region — are bonus answers.)
+
+</QA>
+
+## Check yourself
+
+1. Your side project gets featured on the news and traffic jumps 100× for one
+   afternoon. Walk through what happens if you own one server vs run
+   auto-scaled cloud servers.
+2. Classify: renting a virtual machine and installing Node.js on it; pushing
+   this site to Vercel; using Google Docs. Which is IaaS/PaaS/SaaS?
+3. Where, physically, are your WhatsApp photos? Be as specific as the concepts
+   on this page allow.
+
+🎉 **That's Level 0 complete.** You now have the full vocabulary: computers
+run software; the internet connects them; websites are files browsers render;
+frontends talk to backends through APIs; data lives in databases; and it all
+runs on rented computers in the cloud. Next:
+[Level 1 — Choosing a Language](/programming/choosing-a-language), where you
+start writing software yourself.

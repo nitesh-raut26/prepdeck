@@ -1,0 +1,181 @@
+---
+title: "Frontend vs Backend"
+summary: "Every app is really two programs: one running on the user's device, one on a server. What each side does and how they talk."
+order: 4
+difficulty: "Level 0"
+tags: ["basics", "frontend", "backend", "client-server"]
+---
+
+## The one-sentence version
+
+The **frontend** is the part of an app running on *your* device that you see
+and touch; the **backend** is the part running on the company's servers that
+holds the data and enforces the rules.
+
+Nearly every app you use — Instagram, Gmail, Swiggy, your bank — is these two
+programs in constant conversation.
+
+## The restaurant analogy
+
+This is the analogy the whole industry uses, because it maps perfectly:
+
+| Restaurant | App | Technical term |
+| --- | --- | --- |
+| Dining room, menu, waiter | What the user sees & interacts with | **Frontend** (client) |
+| Kitchen | Where the real work happens, hidden | **Backend** (server) |
+| Order slip passed to the kitchen | Structured request for data/action | **API request** |
+| The dish that comes back | The response data | **API response** |
+| Pantry & inventory | Stored information | **Database** |
+
+You never enter the kitchen. You order through a fixed, agreed-upon menu — and
+that menu is the **API** (next page).
+
+## What the frontend does
+
+The frontend (also called the **client**) runs on the user's device — in a
+browser as HTML/CSS/JavaScript (the [previous page](/basics/websites-and-browsers)),
+or as a mobile app installed from the store. Its jobs:
+
+- **Display** — turn data into pixels: the feed, the buttons, the charts
+- **Interact** — react instantly to taps, scrolls and typing
+- **Validate politely** — "that doesn't look like an email address" *before*
+  bothering the server
+- **Request** — ask the backend for data and send the user's actions to it
+
+The defining property: **the frontend runs on hardware you don't control,
+in front of eyes you can't verify.** Anyone can open dev tools and read or
+modify the frontend code they received.
+
+## What the backend does
+
+The backend runs on **servers** — computers in a data center owned (or
+rented — see [the cloud](/basics/what-is-the-cloud)) by the company. Users
+never see this code. Its jobs:
+
+- **Store and fetch data** — usually via a [database](/basics/what-is-a-database)
+- **Enforce the rules** — *this* is the big one. "You can only see your own
+  messages." "You can't withdraw more than your balance." "This coupon is
+  single-use."
+- **Authenticate** — verify who is asking (passwords, sessions, tokens)
+- **Coordinate** — talk to other services: payments, email, maps, AI models
+
+<Callout type="danger" title="The iron law: never trust the client">
+Because users control the frontend, **every security rule must be enforced on
+the backend**. Frontend checks are a courtesy for honest users; a malicious
+user can bypass all of them and talk to your server directly. "Validate on
+the server" is possibly the single most important sentence in this entire
+roadmap — interviews at every level probe whether you understand it.
+</Callout>
+
+## How they talk: the request/response loop
+
+<Mermaid chart={`sequenceDiagram
+  participant U as User
+  participant F as Frontend (your phone)
+  participant B as Backend (server)
+  participant D as Database
+  U->>F: taps "Like" on a post
+  F->>F: instantly fills the heart icon
+  F->>B: POST /posts/123/like
+  B->>B: is this user logged in? allowed?
+  B->>D: record the like
+  D-->>B: saved
+  B-->>F: 200 OK, like count = 1,042
+  F->>F: shows final count`} />
+
+Walk through a single Instagram like:
+
+1. You tap the heart. The **frontend** fills it in immediately (so the app
+   feels fast) and sends a request to the backend.
+2. The **backend** checks you're logged in and allowed to see that post,
+   then writes the like to the **database**.
+3. It responds "saved, new count is 1,042," and the frontend settles on the
+   real number.
+
+Every action in every app is some version of this loop, usually completing in
+under half a second.
+
+## Where the boundary sits (and why it moves)
+
+Could the frontend just do everything? No — and seeing *why* cements the
+concepts:
+
+- Data must be **shared** between users → it has to live somewhere all users
+  can reach: a server.
+- Rules must be **trusted** → they must run where users can't tamper: a server.
+- Secrets (payment keys, other users' data) must stay **secret** → server.
+
+But anything that's *instant feedback on your own screen* belongs on the
+frontend: animations, input validation hints, a half-typed draft. Deciding
+what goes on which side is a daily engineering judgment call, and a classic
+interview discussion at Level 7–8.
+
+## Industry perspective
+
+- Job titles map directly: **frontend engineer** (Level 8), **backend
+  engineer** (Level 7), **full-stack engineer** (both). At FAANG scale, teams
+  often split even further (mobile, web, API, infrastructure).
+- Real products have *many* backends: Netflix runs hundreds of small backend
+  services (**microservices** — Level 7) behind one app.
+- This study site is interesting: it's almost all frontend — the content is
+  pre-built into static files (a **static site**), so it needs no backend or
+  database at all. Knowing when you *don't* need a backend is also a skill.
+
+## Common beginner mistakes
+
+- **Enforcing security in the frontend.** Hiding the "Delete" button from
+  non-admins is fine UI; *not checking again on the server* is a breach
+  waiting to happen.
+- **"Backend = database."** The backend is a *program*; the database is where
+  that program keeps data. Different things (next two pages).
+- **Thinking "server" means special hardware.** A server is just a computer
+  running a program that answers requests. Your laptop can be one — and will
+  be, constantly, during development ("localhost").
+- **Assuming one app = one frontend + one backend.** Mature products have
+  several frontends (web, iOS, Android) sharing many backend services.
+
+## Interview perspective
+
+<QA q="Explain frontend vs backend to a non-technical person.">
+
+The frontend is everything the user sees and touches — it runs on their phone
+or browser, like a restaurant's dining room and menu. The backend is the
+kitchen: programs on the company's servers that store the data, apply the
+business rules and prepare what the frontend displays. They communicate by
+sending structured requests and responses over the internet, like order slips
+passing between the waiter and the kitchen.
+
+</QA>
+
+<QA q="Why must validation and authorization happen on the backend even if the frontend already checks them?">
+
+Because the frontend runs on devices the company doesn't control. A user can
+modify the JavaScript, use browser dev tools, or skip the app entirely and
+send hand-crafted requests to the API. Frontend checks exist for fast, polite
+feedback; backend checks are the actual security boundary. Any rule enforced
+only client-side is effectively not enforced.
+
+</QA>
+
+<QA q="When you tap 'Like' and the heart fills instantly, but the request actually fails — what happened, and why do apps work this way?">
+
+The app used **optimistic UI**: it showed the success state immediately,
+assuming the server would agree, then sent the request in the background. If
+the request fails, the app rolls back (the heart un-fills, maybe with an
+error). Apps do this because round-trips take hundreds of milliseconds, and
+waiting for the server on every tap makes the product feel sluggish. It's a
+deliberate trade of momentary truth for perceived speed.
+
+</QA>
+
+## Check yourself
+
+1. For a food-delivery app, sort these onto frontend or backend: showing the
+   map animation; calculating delivery fees; checking the coupon hasn't been
+   used; remembering your dark-mode preference; storing restaurant ratings.
+2. Your friend "secures" an admin page by hiding the link from regular users.
+   What's the attack, and what's the fix?
+3. Why does this study site work without any backend at all?
+
+Next: [What is an API?](/basics/what-is-an-api) — the menu the frontend orders
+from, formalized.

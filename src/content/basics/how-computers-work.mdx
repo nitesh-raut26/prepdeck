@@ -1,0 +1,194 @@
+---
+title: "How Computers Work"
+summary: "What a computer actually is — hardware, software, the CPU, memory and the operating system — explained with zero assumed knowledge."
+order: 1
+difficulty: "Level 0"
+tags: ["basics", "hardware", "software", "operating-system"]
+---
+
+## The one-sentence version
+
+A **computer** is a machine that follows instructions, very fast. That's it.
+Everything else — apps, games, websites, AI — is just very long lists of very
+simple instructions executed billions of times per second.
+
+<Callout type="info" title="Why this matters">
+Every concept later in this roadmap — programming, servers, databases, the
+cloud — is built on this one idea: *machines that follow written instructions*.
+If you get this page, nothing later will feel like magic.
+</Callout>
+
+## Hardware vs software
+
+Two words you'll hear constantly:
+
+| Term | What it is | Real-world analogy |
+| --- | --- | --- |
+| **Hardware** | The physical parts you can touch: chips, screen, keyboard, disk | A kitchen: stove, fridge, counters |
+| **Software** | The instructions that tell hardware what to do | The recipes the cook follows |
+
+The same kitchen can produce a thousand dishes depending on the recipe; the
+same laptop can be a video editor, a game console or a calculator depending on
+the software it runs. **Hardware without software does nothing. Software
+without hardware is just text.**
+
+## The four parts that matter
+
+Open up any computer — laptop, phone, or a server in a data center — and you'll
+find the same four roles:
+
+<Mermaid chart={`flowchart LR
+  IN[Input<br/>keyboard, mouse, touch] --> CPU[CPU<br/>the worker]
+  CPU <--> RAM[RAM<br/>the desk]
+  CPU <--> DISK[(Storage<br/>the filing cabinet)]
+  CPU --> OUT[Output<br/>screen, speakers]`} />
+
+1. **CPU (Central Processing Unit)** — the "brain", though a better analogy is
+   a *very fast, very obedient worker*. It can only do tiny things: add two
+   numbers, compare two values, move data around. It just does **billions of
+   these per second** (a 3 GHz CPU does ~3 billion cycles per second).
+2. **RAM (Random Access Memory)** — the worker's **desk**. Whatever the CPU is
+   actively working on sits here, because the desk is fast to reach.
+   It's small and **temporary**: power off, and the desk is wiped clean.
+3. **Storage (hard disk / SSD)** — the **filing cabinet**. Big, permanent, but
+   slower to reach. Your files, apps and the operating system live here and
+   are copied to RAM when needed.
+4. **Input / Output (I/O)** — how the world talks to the machine (keyboard,
+   mouse, network) and how it answers (screen, speakers, network again).
+
+<Callout type="tip" title="The speed gap is the whole story">
+Reaching RAM is ~100× faster than reaching an SSD, which is ~1,000× faster
+than fetching data over the internet. A huge amount of software engineering —
+caching, databases, system design — is just working around this speed gap.
+Remember "desk vs filing cabinet vs warehouse across town"; it comes back at
+Level 6 (System Design).
+</Callout>
+
+## Everything is numbers (binary)
+
+Computers store and process everything — text, photos, music, this page — as
+numbers, and they represent numbers using only two symbols: `0` and `1`. Each
+0-or-1 is called a **bit**; a group of 8 bits is a **byte**.
+
+Why only two symbols? Because hardware is built from switches, and a switch
+has two reliable states: off (`0`) and on (`1`). Billions of microscopic
+switches (**transistors**) make up a CPU.
+
+- The letter `A` is stored as the number `65` → `01000001`
+- A photo is millions of pixels, each pixel three numbers (red, green, blue)
+- A song is thousands of measurements per second of a sound wave, as numbers
+
+So "1 GB of RAM" simply means "room for about one billion bytes of numbers."
+
+## What is software, exactly?
+
+**Software** is a list of instructions for the CPU, written by people. The
+instructions a CPU understands directly (**machine code**) are unreadably
+low-level, so humans write in friendlier **programming languages** (Python,
+Java, C++ — Level 1) which get translated down to machine code.
+
+Two big categories:
+
+- **System software** — runs the machine itself. The most important example is
+  the **operating system**.
+- **Application software** — what users actually use: browsers, games,
+  WhatsApp, Excel.
+
+## What is an operating system?
+
+The **operating system (OS)** — Windows, macOS, Linux, Android, iOS — is the
+**manager** that sits between hardware and every app. Apps never talk to the
+hardware directly; they ask the OS.
+
+It exists because hundreds of programs share one CPU, one RAM and one disk.
+Without a manager, every app would have to know how to drive every brand of
+keyboard and would happily overwrite each other's memory. The OS:
+
+- **Schedules** which program gets the CPU and for how long (this is why your
+  laptop can play music *while* you type)
+- **Allocates memory** so apps can't read or destroy each other's data
+- **Manages files** so apps see folders and filenames, not raw disk sectors
+- **Talks to devices** through drivers, so apps don't care which printer brand
+  you own
+
+<Callout type="info" title="Industry perspective">
+Almost every server that runs the internet — Google, Amazon, Netflix, your
+favorite startup — runs **Linux**, a free, open-source OS. That's why
+backend engineers live in the Linux terminal, and why Level 10 (Cloud & DevOps)
+will get you comfortable there.
+</Callout>
+
+## From power button to desktop (what "booting" is)
+
+1. You press power; a tiny program burned into the motherboard (the
+   **firmware**) wakes up.
+2. It finds the OS in storage and copies its core into RAM.
+3. The OS takes over: starts background services, draws the login screen.
+4. Every app you then open is copied from storage into RAM and handed to the
+   CPU as a running **process**.
+
+That word **process** — a program that is currently running — will follow you
+through your entire career.
+
+## Common beginner mistakes
+
+- **Confusing memory and storage.** "My laptop has 512 GB of memory" usually
+  means *storage*. RAM (memory) is the small fast desk (8–32 GB); storage is
+  the big slow cabinet (256 GB–2 TB).
+- **Thinking the computer is smart.** It isn't. It executes instructions
+  exactly as written, including wrong ones. Every bug you'll ever fix is a
+  machine doing *precisely what someone told it to do*.
+- **Thinking phones aren't computers.** A phone is a computer with a touch
+  input, a battery and a radio. Same CPU/RAM/storage/OS structure.
+- **Believing "the cloud" is not a computer.** It's *someone else's* computer
+  in a data center — see [What is the cloud?](/basics/what-is-the-cloud).
+
+## Interview perspective
+
+At this level interviewers (for internships and entry screenings) test whether
+your mental model is right, not vocabulary:
+
+<QA q="What's the difference between RAM and disk storage, and why do computers need both?">
+
+RAM is fast, small and temporary — it loses everything when power goes off.
+Disk/SSD storage is slower, large and permanent. Computers need both because
+fast memory is expensive and volatile while permanent storage is cheap but
+slow: programs and files *live* on disk and are *copied into RAM* while being
+used, so the CPU works at desk speed instead of filing-cabinet speed.
+
+</QA>
+
+<QA q="What does an operating system actually do? Name three responsibilities.">
+
+It manages shared hardware on behalf of all running programs: (1) **CPU
+scheduling** — deciding which process runs when, giving the illusion of
+everything running at once; (2) **memory management** — giving each process
+its own protected memory so apps can't corrupt each other; (3) **file systems
+and device drivers** — exposing simple interfaces (files, folders, "print
+this") over messy hardware. Bonus: user permissions and security.
+
+</QA>
+
+<QA q="Why do computers use binary instead of decimal?">
+
+Because the underlying hardware is made of transistors — switches with two
+reliable, easily-distinguished states (on/off, high/low voltage). Two states
+map naturally to two digits. Building hardware that reliably distinguishes ten
+voltage levels per element would be slower, more error-prone and more
+expensive. Everything (text, images, sound) is then encoded as binary numbers.
+
+</QA>
+
+## Check yourself
+
+You're ready for the next page if you can answer these without looking up:
+
+1. A friend says "my game is slow, I'll buy a bigger hard drive." Why is that
+   probably the wrong fix, and what part would you upgrade instead?
+2. In the kitchen analogy, what are the recipe, the cook, the counter and the
+   pantry?
+3. What happens, step by step, between pressing the power button and seeing
+   your desktop?
+
+Next up: [The Internet](/basics/the-internet) — what happens when billions of
+these machines start talking to each other.

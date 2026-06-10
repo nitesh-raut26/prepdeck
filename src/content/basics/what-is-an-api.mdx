@@ -1,0 +1,206 @@
+---
+title: "What is an API?"
+summary: "The contract that lets programs talk to each other — requests, responses, JSON and HTTP methods, from zero."
+order: 5
+difficulty: "Level 0"
+tags: ["basics", "api", "http", "json", "rest"]
+---
+
+## The one-sentence version
+
+An **API (Application Programming Interface)** is a menu of things one program
+agrees to do for another program — what you can ask for, how to ask, and what
+you'll get back.
+
+The frontend/backend conversation from the [previous page](/basics/frontend-and-backend)
+happens entirely through APIs. So does almost everything else in software.
+
+## The menu analogy, completed
+
+In the restaurant analogy, the API is the **menu plus the ordering rules**:
+
+- The menu lists *exactly* what the kitchen offers — you can't order what's
+  not on it.
+- Each item has a fixed name; you order by that name, not by describing the
+  recipe.
+- You don't need to know *how* the kitchen works — only what to ask for and
+  what arrives.
+
+That last point is the deep idea: an API is a **contract that hides
+complexity**. When your weather app shows tomorrow's forecast, it called a
+weather service's API. It has no idea how forecasts are computed — and doesn't
+need to.
+
+## "Interface" is the key word
+
+You already use interfaces everywhere. A car's interface is the steering
+wheel and pedals: identical whether the engine is petrol or electric. A wall
+socket is an interface to a power grid you never think about.
+
+An API is exactly this, for software: **a fixed surface in front of a
+changeable implementation.** The weather service can rewrite its entire
+forecasting engine; as long as the API stays the same, every app using it
+keeps working untouched. This idea — *program against the interface, not the
+implementation* — returns as a design principle in Level 5 (LLD).
+
+## What an API call actually looks like
+
+Most APIs you'll meet are **web APIs**: requests sent over HTTP (the same
+protocol browsers use — see [The Internet](/basics/the-internet)). A request
+has four parts:
+
+```
+POST /v1/orders          ← method + path: what action, on what thing
+Host: api.pizzaplace.com ← which server
+Authorization: Bearer eyJhbG...   ← headers: metadata, like "who's asking"
+Content-Type: application/json
+
+{ "item": "margherita", "size": "large" }   ← body: the details
+```
+
+And the response:
+
+```
+201 Created              ← status code: how it went
+
+{ "orderId": 4521, "status": "preparing", "etaMinutes": 25 }
+```
+
+### HTTP methods — the verbs
+
+| Method | Meaning | Example |
+| --- | --- | --- |
+| `GET` | Read something, change nothing | `GET /orders/4521` — check my order |
+| `POST` | Create something new | `POST /orders` — place an order |
+| `PUT` / `PATCH` | Update something | `PATCH /orders/4521` — change the size |
+| `DELETE` | Remove something | `DELETE /orders/4521` — cancel it |
+
+### Status codes — the outcomes
+
+| Code | Meaning | Restaurant version |
+| --- | --- | --- |
+| `200` / `201` | Success / created | "Here's your food" |
+| `400` | Bad request — *you* messed up | "We don't sell that size" |
+| `401` / `403` | Not logged in / not allowed | "Members only" |
+| `404` | Not found | "No such item on the menu" |
+| `500` | Server error — *they* messed up | Kitchen on fire |
+
+Memorize the families: **2xx success, 4xx caller's fault, 5xx server's
+fault.** Engineers debug with these daily.
+
+### JSON — the lingua franca
+
+The `{ "item": "margherita" }` format is **JSON (JavaScript Object
+Notation)** — the near-universal way programs exchange structured data. It's
+just nested pairs of names and values:
+
+```json
+{
+  "orderId": 4521,
+  "items": ["margherita", "garlic bread"],
+  "delivered": false,
+  "customer": { "name": "Nitesh", "city": "Mumbai" }
+}
+```
+
+Human-readable, machine-parseable, language-independent — a Python backend
+and a JavaScript frontend both speak it natively.
+
+## Try one right now
+
+APIs aren't abstract — paste this into a new browser tab:
+
+```
+https://api.github.com/users/torvalds
+```
+
+That's you making a `GET` request to GitHub's public API; the JSON that
+appears is the response. Every app on your phone is doing this hundreds of
+times a day on your behalf.
+
+<Mermaid chart={`flowchart LR
+  APP[Pizza app<br/>frontend] -->|POST /orders| API[Pizza API<br/>backend]
+  API --> DB[(Database)]
+  API -->|charge card| PAY[Stripe API]
+  API -->|send receipt| MAIL[Email API]
+  PAY -.->|response| API
+  API -.->|201 Created + JSON| APP`} />
+
+Note the diagram's right side: **backends call APIs too.** The pizza backend
+takes payments through Stripe's API and sends email through an email API.
+Modern software is programs standing on each other's APIs all the way down.
+
+## Industry perspective
+
+- **Companies sell APIs as products.** Stripe (payments), Twilio (SMS),
+  OpenAI/Anthropic (AI models) are multi-billion-dollar businesses whose
+  product *is* an API.
+- **"REST API"** — a naming/structure convention for web APIs (resources as
+  paths, HTTP verbs as actions, like the tables above). The full treatment is
+  in Level 5's [API design](/lld/api-design) and Level 7.
+- **Amazon's famous 2002 mandate**: Jeff Bezos ordered that all internal teams
+  expose their work *only* through APIs. That decision is why AWS — renting
+  out infrastructure via APIs — could exist at all (see
+  [the cloud](/basics/what-is-the-cloud)).
+
+## Common beginner mistakes
+
+- **"API = website for robots" is close, but "API = database" is wrong.** The
+  API is the *doorway with rules*; data lives behind it. You never query a
+  company's database directly — you ask their API, which decides what you may
+  see.
+- **Forgetting APIs are promises.** If you publish an API and then rename a
+  field, every app depending on it breaks. That's why APIs are *versioned*
+  (`/v1/`, `/v2/`) and why "breaking change" is a scary phrase in code review.
+- **Reading 4xx errors as "the API is broken."** 4xx means *your request* is
+  wrong — wrong path, missing auth, bad data. 5xx means it's their problem.
+- **Sending passwords or keys in the URL.** URLs get logged everywhere;
+  secrets go in headers or the body, over HTTPS.
+
+## Interview perspective
+
+<QA q="What is an API? Explain it to someone non-technical, then technically.">
+
+Non-technical: an API is a menu that one program publishes so other programs
+can order from it — a fixed list of requests it accepts and the answers it
+returns, hiding how the work is actually done. Technical: it's a defined
+interface (endpoints, methods, parameters, response formats, error codes)
+through which software components interact without sharing internals. Web APIs
+typically run over HTTP exchanging JSON, but the concept covers libraries and
+OS calls too — any contract between code and code.
+
+</QA>
+
+<QA q="What do the HTTP status code families 2xx, 4xx and 5xx mean? Give an example of each.">
+
+2xx = success: `200 OK` (got the data), `201 Created` (resource made). 4xx =
+the client made a mistake: `400` malformed request, `401` not authenticated,
+`403` authenticated but not allowed, `404` no such resource. 5xx = the server
+failed: `500` unhandled error, `503` overloaded or down for maintenance. The
+families matter operationally: a spike in 4xx suggests a broken client or an
+attack; a spike in 5xx means *your* service is failing.
+
+</QA>
+
+<QA q="Why do companies version their APIs (/v1/, /v2/)?">
+
+Because an API is a contract that other people's code depends on. Changing or
+removing fields would instantly break every consumer. Versioning lets the
+provider evolve — `/v2/` with the new shape — while `/v1/` keeps working until
+consumers migrate. The discipline applies inside companies too: a team
+changing its internal API can break dozens of sibling teams, which is why
+backward compatibility is a recurring interview theme at senior levels.
+
+</QA>
+
+## Check yourself
+
+1. Map a Swiggy/Uber Eats order onto API terms: what might the method, path,
+   body and a success/failure response look like?
+2. Your app gets a `401` from an API that worked yesterday. What's your first
+   guess? What if it were a `503`?
+3. In the socket/steering-wheel sense, name two non-software interfaces you
+   used today and what implementation they hide.
+
+Next: [What is a database?](/basics/what-is-a-database) — where everything
+behind the API actually lives.

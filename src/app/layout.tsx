@@ -19,11 +19,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "PrepDeck — SDE2 Interview Prep",
+    default: "PrepDeck — Zero to FAANG Learning Path",
     template: "%s · PrepDeck",
   },
   description:
-    "A personal SDE2 interview-prep workspace: project deep-dives, system design, LLD, DSA, fundamentals and behavioral — built from a real engineering portfolio.",
+    "A thirteen-level software engineering learning path — computer basics, programming, DSA, LLD, HLD, backend, frontend, databases, cloud, AI and career — built from a real engineering portfolio.",
   robots: { index: false, follow: false },
 };
 

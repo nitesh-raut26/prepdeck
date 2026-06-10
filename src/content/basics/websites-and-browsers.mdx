@@ -1,0 +1,197 @@
+---
+title: "Websites & Browsers"
+summary: "What a website is made of — HTML, CSS and JavaScript — and how a browser turns files into the pages you see."
+order: 3
+difficulty: "Level 0"
+tags: ["basics", "web", "browser", "html", "css", "javascript"]
+---
+
+## The one-sentence version
+
+A **website** is a set of files sitting on someone else's computer; a
+**browser** is a program on *your* computer that fetches those files and draws
+them on screen.
+
+That's genuinely it. Reading this page right now: your browser downloaded some
+files from a server and is rendering them.
+
+## The three languages of every web page
+
+Every page on the web — Google, Instagram, this site — is built from the same
+three ingredients. The classic analogy is a human body:
+
+| Language | Role | Body analogy | Example |
+| --- | --- | --- | --- |
+| **HTML** | Structure & content | Skeleton | "There is a heading here, then a paragraph, then an image" |
+| **CSS** | Appearance | Skin & clothing | "Headings are dark blue, 32px, with space below" |
+| **JavaScript** | Behavior | Muscles | "When this button is clicked, open the menu" |
+
+### HTML — the structure
+
+**HTML (HyperText Markup Language)** describes *what's on the page* using
+tags in angle brackets:
+
+```html
+<h1>My Bakery</h1>
+<p>We sell fresh bread daily.</p>
+<img src="bread.jpg" alt="A loaf of bread">
+<a href="/menu">See the menu</a>
+```
+
+`<h1>` is a top-level heading, `<p>` a paragraph, `<img>` an image, `<a>` a
+link. The "HyperText" part — links between pages — is the idea the whole web
+is named after.
+
+HTML is a **markup language**, not a programming language: it labels content,
+it can't make decisions or compute anything.
+
+### CSS — the appearance
+
+**CSS (Cascading Style Sheets)** describes *how it should look*:
+
+```css
+h1 {
+  color: darkblue;
+  font-size: 32px;
+}
+p {
+  line-height: 1.6;
+}
+```
+
+"Every `h1` is dark blue and 32px tall." Same HTML + different CSS = a
+completely different-looking site.
+
+### JavaScript — the behavior
+
+**JavaScript (JS)** is a full programming language that runs *inside the
+browser* and makes pages interactive:
+
+```js
+const button = document.querySelector("#order-button");
+button.addEventListener("click", () => {
+  alert("Order placed!");
+});
+```
+
+Menus that open, feeds that load more posts as you scroll, forms that check
+your email format as you type — all JavaScript. (Despite the name, it is
+unrelated to Java. It will be your main tool in Level 8.)
+
+## What a browser actually does
+
+A **browser** (Chrome, Safari, Firefox, Edge) is one of the most complex
+programs ever written, but its job loop is simple to state:
+
+<Mermaid chart={`flowchart LR
+  URL[You enter a URL] --> F[Fetch files<br/>from the server]
+  F --> P[Parse HTML<br/>build the page tree]
+  P --> S[Apply CSS<br/>compute styles]
+  S --> R[Render<br/>paint pixels]
+  P -->|scripts found| J[Run JavaScript]
+  J -->|changes the page| S`} />
+
+1. **Fetch** — request the HTML over the network (the [previous page](/basics/the-internet)).
+2. **Parse** — read the HTML into a tree of elements in memory (the **DOM** —
+   Document Object Model; you'll meet it properly in Level 8).
+3. **Style** — match CSS rules to each element.
+4. **Render** — compute positions and paint actual pixels.
+5. **Run JavaScript** — which can modify the tree, which triggers re-styling
+   and re-painting. That's how a page updates without reloading.
+
+The browser also enforces **security**: a page from one website can't read
+your files or spy on another website's data. This "sandbox" is why running a
+random website is safe but running a random downloaded program is not.
+
+## Static vs dynamic websites
+
+- A **static site** serves the same files to everyone — a restaurant's menu
+  page, a blog, this study site. Simple, fast, cheap to host.
+- A **dynamic site** builds the page per person, per moment — your Instagram
+  feed, your bank dashboard. This needs a program running on the server (the
+  **backend** — two pages from now) and usually a database.
+
+This split is the single most useful question to ask about any site you use:
+*"is everyone seeing the same thing, or is this page made just for me?"*
+
+## A URL, dissected
+
+`https://www.example.com/menu?item=bread#prices`
+
+| Piece | Name | Meaning |
+| --- | --- | --- |
+| `https://` | Scheme | Which protocol — HTTPS = encrypted HTTP |
+| `www.example.com` | Domain | Which server to talk to (via DNS) |
+| `/menu` | Path | Which page or resource on that server |
+| `?item=bread` | Query string | Extra parameters, key=value |
+| `#prices` | Fragment | A position *within* the page (never sent to the server) |
+
+## Industry perspective
+
+- Companies obsess over rendering speed: Amazon famously found ~100 ms of
+  extra load time measurably cut sales; Google ranks slow sites lower.
+- "Frontend engineer" (Level 8) ≈ professional at HTML/CSS/JS and the
+  frameworks built on them (React, Next.js — what this very site is built with).
+- The browser's developer tools (right-click → *Inspect* in Chrome) let you
+  see the HTML, CSS, JS and every network request of any site you visit. It's
+  the single best free learning tool on the web — open it on your favorite
+  site today.
+
+## Common beginner mistakes
+
+- **"HTML is a programming language."** It's markup — labels for content. It
+  can't loop, decide or calculate. Saying this in an interview is a red flag.
+- **Confusing Java and JavaScript.** Unrelated languages; the name was 1995
+  marketing. Java runs servers and Android apps; JavaScript runs in browsers
+  (and on servers via Node.js — Level 7).
+- **"A website is one file."** Even simple pages pull dozens of files: HTML,
+  stylesheets, scripts, images, fonts — each a separate network request. The
+  browser's Network tab shows them all.
+- **Thinking the browser is the internet.** The browser is a *client* — one of
+  many programs (like email apps and games) that use the internet.
+
+## Interview perspective
+
+<QA q="What are HTML, CSS and JavaScript, and what is each responsible for?">
+
+HTML provides the structure and content of a page (headings, paragraphs,
+images, links) as a tree of elements. CSS controls presentation — colors,
+sizes, layout, responsiveness. JavaScript provides behavior: it's a real
+programming language running in the browser that can react to user events and
+modify the page on the fly. Separation matters: structure, style and behavior
+can change independently, which keeps large sites maintainable.
+
+</QA>
+
+<QA q="What's the difference between a static and a dynamic website, and when would you pick each?">
+
+A static site serves pre-built files identical for every visitor — perfect for
+content that rarely changes (docs, blogs, marketing pages): it's faster,
+cheaper and harder to hack. A dynamic site generates responses per request
+using server-side code and a database — necessary when content is
+personalized or constantly changing (feeds, dashboards, carts). Many modern
+sites mix both: static shell, dynamic data fetched by JavaScript.
+
+</QA>
+
+<QA q="Roughly what does a browser do between receiving HTML and showing pixels?">
+
+It parses the HTML into the DOM tree; downloads and applies CSS to compute
+each element's style; runs layout to calculate sizes and positions; paints
+pixels; and executes JavaScript, which may modify the DOM and trigger parts of
+that pipeline again. Frontend performance work (Level 8) is largely about
+minimizing how much of this pipeline re-runs.
+
+</QA>
+
+## Check yourself
+
+1. Right-click this page → Inspect. Find an `<h1>` or `<p>` element. Change
+   its text in the developer tools. Why doesn't your change affect anyone
+   else's view of the site?
+2. In the body analogy: a site where the buttons look beautiful but nothing
+   happens when clicked is missing which ingredient?
+3. Is your bank's account page static or dynamic? How do you know?
+
+Next: [Frontend vs Backend](/basics/frontend-and-backend) — where your code
+runs, and why every app is really two programs.

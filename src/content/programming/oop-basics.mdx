@@ -1,0 +1,299 @@
+---
+title: "OOP Basics"
+summary: "Classes, objects, methods and the four pillars — your first object-oriented programs in Python, Java and C++."
+order: 5
+difficulty: "Level 1"
+tags: ["programming", "oop", "classes", "objects"]
+---
+
+## The problem OOP solves
+
+So far, data ([variables](/programming/variables-and-data-types)) and
+behavior ([functions](/programming/functions)) live separately. Model a bank
+account that way:
+
+```python
+balance = 1000
+owner = "Asha"
+
+def deposit(balance, amount):
+    return balance + amount
+```
+
+Now model *two* accounts. Now ten thousand. Now make sure no code ever sets a
+balance negative, and that every withdrawal checks the limit… With loose
+variables and functions, nothing *enforces* that the right data and the right
+rules travel together.
+
+**Object-oriented programming (OOP)** fixes this by bundling data and the
+functions that operate on it into one unit: an **object**.
+
+## Classes and objects
+
+A **class** is a blueprint; an **object** (or **instance**) is one concrete
+thing built from it. *Cookie cutter vs cookies. Architectural plan vs actual
+houses.*
+
+```python
+# Python
+class BankAccount:
+    def __init__(self, owner, balance):   # constructor: runs at creation
+        self.owner = owner                 # attributes: the object's data
+        self.balance = balance
+
+    def deposit(self, amount):             # method: a function on the object
+        self.balance += amount
+
+    def withdraw(self, amount):
+        if amount > self.balance:
+            return "Insufficient funds"
+        self.balance -= amount
+        return "OK"
+
+asha = BankAccount("Asha", 1000)    # one object...
+rahul = BankAccount("Rahul", 500)   # ...another, fully independent
+asha.deposit(250)
+print(asha.balance)                  # 1250
+print(rahul.balance)                 # 500 — untouched
+```
+
+```java
+// Java
+public class BankAccount {
+    private String owner;       // "private": only this class can touch these
+    private double balance;
+
+    public BankAccount(String owner, double balance) {  // constructor
+        this.owner = owner;
+        this.balance = balance;
+    }
+
+    public void deposit(double amount) {
+        this.balance += amount;
+    }
+
+    public double getBalance() {
+        return balance;
+    }
+}
+
+BankAccount asha = new BankAccount("Asha", 1000);
+asha.deposit(250);
+```
+
+```cpp
+// C++
+class BankAccount {
+private:
+    std::string owner;
+    double balance;
+
+public:
+    BankAccount(std::string owner, double balance)
+        : owner(owner), balance(balance) {}
+
+    void deposit(double amount) { balance += amount; }
+    double getBalance() const { return balance; }
+};
+
+BankAccount asha("Asha", 1000);
+asha.deposit(250);
+```
+
+Vocabulary:
+
+- **Constructor** — the special function that runs when an object is created
+  (`__init__` / class-named method), setting up its starting data.
+- **Attribute / field** — a variable living *inside* an object (`balance`).
+- **Method** — a function living inside a class, acting on a specific object.
+- **`self` / `this`** — the method's handle on *which* object it was called
+  on. `asha.deposit(250)` means "run deposit with self = asha."
+
+You've been using objects all along: in Python, `"hello".upper()` is a
+method call on a string object; a list is an object whose methods include
+`append`. OOP just lets you define your *own* kinds.
+
+## The four pillars
+
+Interviewers love asking for these by name; here they are at Level-1 depth
+(Level 5's [OOP & SOLID](/lld/oop-and-solid) goes to interview depth).
+
+### 1. Encapsulation — data with a bodyguard
+
+Bundle data with its rules, and **hide the raw data** so the rules can't be
+bypassed. In the Java/C++ versions, `balance` is `private`: outside code
+*cannot* do `asha.balance = -5000`; it must go through `deposit`/`withdraw`,
+which enforce the rules. The object exposes a small public surface — exactly
+the [interface idea](/basics/what-is-an-api) again, at the scale of one
+object. (Python signals "keep out" by underscore convention, `_balance`,
+trusting you; Java/C++ bring a compiler-enforced bodyguard.)
+
+### 2. Abstraction — usable without understanding
+
+You call `car.start()`; you don't manage fuel injection. A well-designed
+class is operated through simple methods that hide genuinely complex
+machinery — `file.read()`, `model.predict(image)`. Abstraction is *why*
+encapsulation is worth it: hide the internals, and users think at your
+interface's level, not your implementation's.
+
+### 3. Inheritance — "is a special kind of"
+
+A class can extend another, inheriting its data and methods and adding its
+own:
+
+```python
+class SavingsAccount(BankAccount):          # SavingsAccount IS A BankAccount
+    def __init__(self, owner, balance, rate):
+        super().__init__(owner, balance)    # run the parent's constructor
+        self.rate = rate
+
+    def add_interest(self):                 # new ability
+        self.deposit(self.balance * self.rate)
+```
+
+`SavingsAccount` gets `deposit` and `withdraw` for free. Use inheritance
+only for true "is-a" relationships — a savings account *is an* account; a
+car *has an* engine (that's **composition**: put an Engine object inside the
+Car). Beginners over-inherit; the industry preference is "composition over
+inheritance," a phrase you'll meet again in Level 5.
+
+### 4. Polymorphism — same call, different behavior
+
+Code that works on the parent type automatically works on every child, each
+responding in its own way:
+
+```python
+class Cat(Animal):
+    def speak(self): return "Meow"
+
+class Dog(Animal):
+    def speak(self): return "Woof"
+
+for pet in [Cat(), Dog(), Cat()]:
+    print(pet.speak())        # Meow / Woof / Meow — one line, many behaviors
+```
+
+The loop never asks "what kind are you?" — no if/elif chain over types. Add a
+`Parrot` class tomorrow and this loop handles it unchanged. That
+open-for-extension quality is the heart of the design patterns in Level 5.
+
+<Mermaid chart={`classDiagram
+  class BankAccount {
+    -owner
+    -balance
+    +deposit(amount)
+    +withdraw(amount)
+  }
+  class SavingsAccount {
+    -rate
+    +addInterest()
+  }
+  class CurrentAccount {
+    -overdraftLimit
+  }
+  BankAccount <|-- SavingsAccount
+  BankAccount <|-- CurrentAccount`} />
+
+*(This diagram style is **UML** — the standard sketch language for class
+design, and the whiteboard language of Level 5 interviews.)*
+
+## Industry perspective
+
+- Java is OOP-mandatory (all code lives in classes); Python and C++ are
+  multi-paradigm — you choose when objects help. Knowing *when* is the skill:
+  a 10-line script needs no classes; a banking system with 400 entity types
+  can't live without them.
+- Every major framework hands you its power through classes you extend or
+  objects you configure — Android Activities, Spring services (Level 7),
+  React components historically (Level 8).
+- **LLD interviews (Level 5) are OOP interviews**: "design a parking lot"
+  means "show me your classes, their responsibilities and relationships."
+  What you learned here — plus SOLID and patterns — is exactly that round.
+
+## Common beginner mistakes
+
+- **Classes for everything.** A function returning a value doesn't need a
+  `Calculator` class. Reach for a class when *data and its rules* belong
+  together and you'll need *several* of them.
+- **The God object** — one `Manager` class holding all the data and methods.
+  That's procedural code in an OOP costume. Many small classes, one
+  responsibility each.
+- **Public everything** — exposing every field defeats encapsulation: any
+  code can now break your invariants, and you can never change internals
+  without breaking users.
+- **Deep inheritance towers** — `A > B > C > D > E` where a change at the top
+  breaks everything below. Prefer shallow trees and composition.
+- **Forgetting objects are references** — `account2 = account1` aliases one
+  object ([as with lists](/programming/functions)); both names see every
+  change.
+
+## Interview perspective
+
+<QA q="What are the four pillars of OOP? One sentence and one example each.">
+
+**Encapsulation** — bundle data with methods and restrict direct access, so
+rules can't be bypassed (private `balance`, modified only via `deposit`).
+**Abstraction** — expose a simple interface and hide the machinery
+(`car.start()` hides ignition details). **Inheritance** — a child class
+reuses and extends a parent, modeling "is-a" (`SavingsAccount extends
+BankAccount`). **Polymorphism** — code written against the parent works with
+any child, each behaving its own way (a loop calling `pet.speak()` over cats
+and dogs). Strong answers add: encapsulation/abstraction are about *hiding*,
+inheritance/polymorphism about *reuse and extension*.
+
+</QA>
+
+<QA q="Class vs object — what's the difference?">
+
+A class is the blueprint: a definition of what attributes and methods a kind
+of thing has. An object is a concrete instance built from it, with its own
+actual data in memory. One `BankAccount` class; millions of account objects,
+each with its own balance. The class exists once in code; objects are created
+and destroyed at runtime.
+
+</QA>
+
+<QA q="When would you choose composition over inheritance?">
+
+Inheritance models "is-a" and couples the child to the parent's
+implementation — changes ripple down, and you only get one parent. Composition
+("has-a") builds objects out of other objects — a `Car` *has an* `Engine` —
+which keeps parts swappable and independently testable. Choose inheritance
+only for genuine is-a relationships where you want polymorphism; default to
+composition otherwise. Classic test: "a Stack is-a List?" No — a Stack *uses*
+a list; inheriting would expose `insert`-anywhere and break the stack's
+guarantees.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Write a `Rectangle` class: constructor takes width and height; methods
+   `area()` and `perimeter()`. Create three rectangles and print their areas.
+2. Add an `is_square()` method returning a boolean. Then explain: why is this
+   better as a method than as a free function taking width and height?
+
+**Intermediate**
+
+3. Build a `Library` system: a `Book` class (title, author, checked_out) and
+   a `Library` class holding a list of books with methods `add_book`,
+   `checkout(title)`, `return_book(title)`. Enforce: a checked-out book can't
+   be checked out again.
+4. Make `EBook` inherit from `Book` with a `file_size` attribute, and
+   override its `describe()` method. Loop over a mixed list printing
+   descriptions — polymorphism in action.
+
+**Advanced**
+
+5. Write the `BankAccount` in Java or C++ with truly private balance, and try
+   to set it directly from outside — read the compiler error carefully.
+   Then add a `transfer(other, amount)` method that's safe even when funds
+   are insufficient. Which earlier concept (transactions, from
+   [Level 0](/basics/what-is-a-database)) is this a tiny version of?
+
+**This completes the Level 1 starter set.** Exceptions, collections and file
+handling land next in this section — then Level 2's
+[data structures](/dsa/study-plan) await. For the interview-grade version of
+today's ideas, see [OOP & SOLID](/lld/oop-and-solid).

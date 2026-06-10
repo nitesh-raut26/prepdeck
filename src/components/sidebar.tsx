@@ -5,13 +5,22 @@ import { usePathname } from "next/navigation";
 import {
   Binary,
   Boxes,
+  BrainCircuit,
+  Briefcase,
+  Cloud,
+  Code2,
   Cpu,
+  Database,
   FolderGit2,
   GraduationCap,
+  Laptop,
   LayoutDashboard,
+  Map,
   MessagesSquare,
   Network,
+  PanelsTopLeft,
   ScrollText,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -19,12 +28,20 @@ import { useProgress } from "@/components/progress-provider";
 import type { NavSection } from "@/lib/content";
 
 const ICONS: Record<string, LucideIcon> = {
-  FolderGit2,
-  Network,
-  Boxes,
+  Laptop,
+  Code2,
   Binary,
+  Boxes,
+  Network,
+  Server,
+  PanelsTopLeft,
+  Database,
+  Cloud,
+  BrainCircuit,
   Cpu,
+  FolderGit2,
   MessagesSquare,
+  Briefcase,
   ScrollText,
 };
 
@@ -82,6 +99,19 @@ export function Sidebar({
         >
           <LayoutDashboard className="size-4" />
           Dashboard
+        </Link>
+        <Link
+          href="/roadmap"
+          onClick={onNavigate}
+          className={cn(
+            "mb-1 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            pathname === "/roadmap"
+              ? "bg-surface-3 text-ink"
+              : "text-subtle hover:bg-surface-2 hover:text-ink",
+          )}
+        >
+          <Map className="size-4" />
+          Roadmap
         </Link>
 
         {nav.map((section) => {

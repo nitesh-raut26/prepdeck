@@ -1,0 +1,190 @@
+---
+title: "The Internet"
+summary: "How billions of computers talk to each other — IP addresses, DNS, packets and what actually happens when you type a URL."
+order: 2
+difficulty: "Level 0"
+tags: ["basics", "internet", "networking", "dns"]
+---
+
+## The one-sentence version
+
+The **internet** is billions of computers connected by cables and radio waves,
+all agreeing to speak the same language so any one of them can send data to
+any other.
+
+No company owns it. There's no central computer running it. It's closer to the
+global postal system than to a single machine: lots of independent carriers,
+one shared addressing scheme, agreed-upon rules for handing parcels along.
+
+## The postal system analogy
+
+Keep this analogy — it maps almost perfectly:
+
+| Postal system | Internet | Technical name |
+| --- | --- | --- |
+| House address | A computer's numeric address | **IP address** (e.g. `142.250.77.46`) |
+| Phone book: name → address | Domain name → IP address | **DNS** |
+| A parcel | A small chunk of data | **Packet** |
+| Sorting offices that route parcels | Machines that forward packets hop by hop | **Routers** |
+| Rules for packaging & delivery confirmation | Rules for splitting, sending, confirming data | **Protocols** (TCP/IP) |
+
+## IP addresses — every machine needs an address
+
+An **IP address** (Internet Protocol address) is a number that identifies a
+machine on a network, like `142.250.77.46`. If a computer wants to receive
+data, it needs one — exactly like a house needs an address to receive mail.
+
+Your laptop gets one from your Wi-Fi router; your router gets a public one
+from your **ISP** (Internet Service Provider — the company you pay for
+internet, like Jio or Comcast). Servers that host websites have stable,
+well-known addresses.
+
+## DNS — the internet's phone book
+
+Humans are bad at remembering `142.250.77.46`, so we use names:
+`google.com`. **DNS (Domain Name System)** is the worldwide directory that
+translates names into IP addresses.
+
+When you type `google.com`, your computer first asks a DNS server "what's the
+IP for google.com?", gets back the number, and *then* makes the real
+connection — the same way you look up a friend's address before mailing a
+letter.
+
+<Callout type="tip" title="Why engineers care">
+DNS is one of the most common real-world failure points — "is it DNS?" is a
+running joke among engineers. It's also an interview favorite: "What happens
+when you type google.com and press Enter?" is asked at every level from intern
+to senior. This page is that answer, in beginner form.
+</Callout>
+
+## Packets — data travels in small pieces
+
+The internet doesn't send your photo as one big blob. It chops everything into
+**packets** — chunks of roughly a thousand bytes, each labeled with the
+sender's address, the destination address and a sequence number, like numbered
+parcels.
+
+Why bother?
+
+- **Sharing** — small packets from millions of users interleave on the same
+  cables, so nobody hogs the line.
+- **Resilience** — if one packet is lost or one route dies, just that packet
+  is re-sent, possibly along a different path.
+- **No single path needed** — each packet can take whatever route is open,
+  and the receiver reassembles them in order.
+
+**Routers** are the sorting offices: each one reads a packet's destination and
+forwards it one hop closer. A packet from Mumbai to a server in Virginia might
+pass through 15–20 routers and an undersea fiber-optic cable, in about 200
+milliseconds.
+
+## Protocols — the agreed-upon rules
+
+A **protocol** is just a rulebook both sides agree to follow. The internet is
+a stack of them, each solving one problem:
+
+- **IP** (Internet Protocol) — addressing and routing: *where does this packet
+  go?*
+- **TCP** (Transmission Control Protocol) — reliability: numbers the packets,
+  confirms receipt, re-sends lost ones, reassembles in order. Like a courier
+  with delivery confirmation.
+- **HTTP** (HyperText Transfer Protocol) — the language browsers and websites
+  speak on top of TCP: *"GET me this page"*, *"here it is"*. **HTTPS** is the
+  same conversation inside an encrypted envelope so nobody along the route can
+  read it.
+
+<Mermaid chart={`flowchart LR
+  A[Your browser] -->|1. DNS: what is google.com?| D[DNS server]
+  D -->|2. It's 142.250.77.46| A
+  A -->|3. HTTPS request via routers| S[Google's server]
+  S -->|4. Response: the page, in packets| A`} />
+
+## What happens when you type google.com and press Enter
+
+The classic question, end to end:
+
+1. **DNS lookup** — the browser asks DNS for `google.com`'s IP address
+   (checking its own cache first).
+2. **Connection** — it opens a TCP connection to that IP and performs the
+   HTTPS encryption handshake.
+3. **Request** — it sends an HTTP request: `GET / HTTP/1.1 Host: google.com`.
+4. **Routing** — the request, split into packets, hops router-to-router to a
+   Google data center.
+5. **Response** — Google's server builds the page and streams it back as
+   packets, which your machine reassembles.
+6. **Rendering** — the browser turns the response (HTML, CSS, JavaScript —
+   next page) into pixels on your screen.
+
+Total time: typically 100–500 ms. Each of these six steps becomes a whole
+field of engineering later in the roadmap.
+
+## Industry perspective
+
+- **Google/Netflix/Meta** place servers physically close to users (**CDNs** —
+  Content Delivery Networks, covered in Level 6) because even at the speed of
+  light, distance costs milliseconds, and milliseconds cost users.
+- **WhatsApp** keeps a single long-lived connection open per phone instead of
+  reconnecting per message — that's why messages feel instant.
+- Every outage headline you read ("X is down") is one of the layers above
+  failing: DNS misconfigured, routes withdrawn, servers overloaded.
+
+## Common beginner mistakes
+
+- **"The internet and the web are the same thing."** The internet is the
+  *network* (roads); the **World Wide Web** is one service running on it
+  (websites, via HTTP). Email, video calls and online games use the internet
+  but aren't the web.
+- **"Wi-Fi is the internet."** Wi-Fi is just the wireless link from your
+  device to your router — the last 10 meters of a journey that's thousands of
+  kilometers of fiber.
+- **Thinking data goes directly from A to B.** It hops through many routers,
+  ISPs and cables owned by different organizations, none of which see the
+  whole picture.
+
+## Interview perspective
+
+<QA q="What happens when you type a URL into a browser and press Enter? (the classic)">
+
+(1) The browser resolves the domain name to an IP address via DNS, using
+caches where possible. (2) It opens a TCP connection to that IP and, for
+HTTPS, performs a TLS handshake to encrypt the channel. (3) It sends an HTTP
+GET request. (4) The request travels as packets, routed hop-by-hop to the
+server. (5) The server responds with HTML/CSS/JS/data, also as packets.
+(6) The browser parses and renders the page, firing more requests for images,
+scripts and styles as it discovers them. At senior levels you'd add caching
+layers, CDNs and load balancers at the appropriate steps.
+
+</QA>
+
+<QA q="What is DNS and why does the internet need it?">
+
+DNS (Domain Name System) is a distributed directory that maps human-friendly
+domain names (`google.com`) to machine-routable IP addresses
+(`142.250.77.46`). It exists because humans can't remember numeric addresses
+and because the mapping must be able to change — a site can move servers or
+spread across hundreds of them without users noticing. It's hierarchical and
+heavily cached, which makes it fast but also a famous source of "it works on
+my machine" outages when stale entries linger.
+
+</QA>
+
+<QA q="Why is data sent in packets instead of as one continuous stream?">
+
+Packets let millions of conversations share the same physical cables by
+interleaving; a lost or corrupted chunk means re-sending one small packet, not
+the whole file; and individual packets can route around congestion or failures
+independently. TCP then re-orders and re-requests packets so applications see
+a clean, reliable stream despite the chaos underneath.
+
+</QA>
+
+## Check yourself
+
+1. Your friend's website is unreachable, but you can still reach google.com.
+   Using the postal analogy, list three different places the failure could be.
+2. What's the difference between your Wi-Fi, your ISP and the internet?
+3. Why does a video call to a nearby city feel snappier than one to another
+   continent, even on fast connections?
+
+Next: [Websites & Browsers](/basics/websites-and-browsers) — what's actually
+inside the pages that travel over these wires.

@@ -4,23 +4,39 @@ import Link from "next/link";
 import {
   Binary,
   Boxes,
+  BrainCircuit,
+  Briefcase,
+  Cloud,
+  Code2,
   Cpu,
+  Database,
   FolderGit2,
+  Laptop,
   MessagesSquare,
   Network,
+  PanelsTopLeft,
   ScrollText,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 import { useProgress } from "@/components/progress-provider";
 import type { NavSection } from "@/lib/content";
 
 const ICONS: Record<string, LucideIcon> = {
-  FolderGit2,
-  Network,
-  Boxes,
+  Laptop,
+  Code2,
   Binary,
+  Boxes,
+  Network,
+  Server,
+  PanelsTopLeft,
+  Database,
+  Cloud,
+  BrainCircuit,
   Cpu,
+  FolderGit2,
   MessagesSquare,
+  Briefcase,
   ScrollText,
 };
 

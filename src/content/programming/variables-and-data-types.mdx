@@ -1,0 +1,249 @@
+---
+title: "Variables & Data Types"
+summary: "Named boxes in memory, the types that describe what's inside them, and the bugs that happen when you get types wrong — in Python, Java and C++."
+order: 2
+difficulty: "Level 1"
+tags: ["programming", "variables", "types", "memory"]
+---
+
+## What a variable is
+
+A **variable** is a named piece of memory. Recall from
+[Level 0](/basics/how-computers-work) that running programs live in RAM —
+a variable is you telling the language: *"reserve a spot on the desk, put
+this value in it, and let me refer to it by this name."*
+
+```python
+# Python
+age = 25
+name = "Asha"
+price = 99.50
+is_member = True
+```
+
+```java
+// Java — the type comes first, and it's mandatory
+int age = 25;
+String name = "Asha";
+double price = 99.50;
+boolean isMember = true;
+```
+
+```cpp
+// C++
+int age = 25;
+std::string name = "Asha";
+double price = 99.50;
+bool isMember = true;
+```
+
+The label-on-a-box analogy: the **name** (`age`) is the label, the **value**
+(`25`) is what's inside, and the **type** (`int`) is the shape of the box —
+what kind of thing fits in it.
+
+Variables *vary*: assigning again replaces the contents.
+
+```python
+score = 10
+score = score + 5   # read current value, add 5, store back → 15
+score += 5          # shorthand for the same thing → 20
+```
+
+That `x = x + 5` line bothers everyone at first: `=` is not math equality,
+it's the **assignment** instruction — "compute the right side, store it in
+the left side."
+
+## The core data types
+
+A **data type** describes what a value is and what you can do with it
+(you can divide two numbers; you can't divide two names). Every language has
+the same basic set, under slightly different names:
+
+| Concept | Python | Java | C++ | Example |
+| --- | --- | --- | --- | --- |
+| Whole number | `int` | `int` / `long` | `int` / `long long` | `42`, `-7` |
+| Decimal number | `float` | `double` | `double` | `3.14`, `-0.5` |
+| Text | `str` | `String` | `std::string` | `"hello"` |
+| True/false | `bool` | `boolean` | `bool` | `True` / `true` |
+| Single character | (1-char `str`) | `char` | `char` | `'A'` |
+| Nothing/absent | `None` | `null` | `nullptr` | — |
+
+Two beginner-critical details:
+
+- **`"42"` is not `42`.** Text that looks like a number is still text. `"42" +
+  "1"` is `"421"` in Python (text gluing — **concatenation**), while `42 + 1`
+  is `43`. Most "weird bug" moments in week one are a string where a number
+  was intended — often fresh from user input, which always arrives as text.
+- **Decimals are approximate.** `0.1 + 0.2` gives `0.30000000000000004` in
+  *every* language, because binary can't represent 0.1 exactly — same as ⅓
+  in decimal. Rule: never use floats for money; store paise/cents as
+  integers. (Yes, this is an interview question.)
+
+### Converting between types
+
+```python
+# Python
+age = int("25")        # text → number
+label = str(25)        # number → text
+print(int(7.9))        # 7 — truncates, doesn't round
+```
+
+```java
+// Java
+int age = Integer.parseInt("25");
+String label = String.valueOf(25);
+```
+
+```cpp
+// C++
+int age = std::stoi("25");
+std::string label = std::to_string(25);
+```
+
+## Static vs dynamic typing, now hands-on
+
+The [previous page](/programming/choosing-a-language) introduced this split;
+here's what it feels like in practice:
+
+```python
+# Python — dynamic: the TYPE LIVES WITH THE VALUE, names are free
+x = 42        # x holds an int
+x = "hello"   # ...now a str. Legal. Sometimes a bug you wanted caught.
+```
+
+```java
+// Java — static: the TYPE LIVES WITH THE NAME, forever
+int x = 42;
+x = "hello";   // ❌ compile error — caught before the program ever runs
+```
+
+Dynamic typing is freedom (fast to write, easy to start); static typing is a
+seatbelt (a whole bug category — wrong type reaching distant code — cannot
+exist). Industry verdict, worth internalizing early: on large codebases the
+seatbelt wins, which is why typed Python and TypeScript took over.
+
+## Naming: the first skill interviewers actually judge
+
+Code is read far more often than written. Compare:
+
+```python
+# bad
+d = 86400
+x = t / d
+
+# good
+SECONDS_PER_DAY = 86400
+days_elapsed = elapsed_seconds / SECONDS_PER_DAY
+```
+
+Conventions to follow from day one:
+
+- Names describe **contents, not type**: `customer_count`, not `num` or `n2`
+- Python/C++: `snake_case` variables; Java: `camelCase`
+- Constants in `ALL_CAPS`; booleans read as questions: `is_member`,
+  `has_paid`
+- One-letter names only for tiny scopes (`i` in a short loop — fine)
+
+<Callout type="tip" title="Interview signal">
+In machine-coding rounds (Level 5), reviewers consistently cite naming as a
+top differentiator between candidates with identical logic. `inventory` vs
+`arr2` is the difference between "reads like a professional" and "reads like
+homework."
+</Callout>
+
+## What's actually in the box: a first look at references
+
+One more idea, planted now because Levels 2 and 5 depend on it. For simple
+types (numbers, booleans), the box holds **the value itself**. For big things
+(lists, objects), the box usually holds **a reference** — the *address* of the
+data, not the data ("the warehouse shelf number, not the warehouse").
+
+```python
+a = [1, 2, 3]
+b = a            # copies the ADDRESS, not the list
+b.append(4)
+print(a)         # [1, 2, 3, 4]  ← a changed too! Same list, two labels.
+```
+
+If that surprised you, good — hold the thought. Copying a reference copies
+*access to* the thing, not the thing. This single fact explains a huge family
+of bugs in every language, and we'll formalize it on the
+[Functions](/programming/functions) page (pass-by-value vs pass-by-reference).
+
+## Common beginner mistakes
+
+- **Using a variable before assigning it** — `NameError` (Python) / compile
+  error (Java, C++). Boxes must be filled before opening.
+- **Comparing with `=` instead of `==`.** `=` stores; `==` asks "equal?".
+  C++ will happily compile `if (x = 5)` and assign inside the condition — a
+  classic trap.
+- **String arithmetic surprises:** `"5" * 3` is `"555"` in Python (string
+  repetition), an error in Java. Convert first.
+- **Integer division:** `7 / 2` is `3.5` in Python 3 but `3` in Java/C++
+  (two ints → int, decimals dropped). Python's `7 // 2` gives the
+  truncating version on purpose.
+- **Float equality:** `if (a == 0.3)` after float math fails randomly.
+  Compare with a tolerance: `abs(a - 0.3) < 1e-9`.
+
+## Interview perspective
+
+<QA q="Why does 0.1 + 0.2 != 0.3 in every mainstream language, and what do you do about it?">
+
+Floating-point numbers are stored in binary with a fixed number of bits
+(IEEE 754). 0.1 and 0.2 have no exact binary representation — like ⅓ in
+decimal — so each is stored slightly off, and the error shows after addition:
+0.30000000000000004. Handling: compare floats within a tolerance (epsilon),
+never with `==`; for money, avoid floats entirely — use integer minor units
+(paise/cents) or decimal types (`BigDecimal` in Java, `decimal` in Python).
+
+</QA>
+
+<QA q="What's the difference between value types and reference types? Why does it matter?">
+
+A value-type variable contains the data itself; copying it produces an
+independent copy (numbers, booleans). A reference-type variable contains the
+address of data living elsewhere; copying it produces a second name for the
+*same* data — mutate through either and both see it (lists, objects, in
+Python/Java; C++ gives you explicit choice). It matters because aliasing is a
+top source of bugs ("function modified my list!"), it determines what
+passing arguments does, and shallow-vs-deep copying questions hinge on it.
+
+</QA>
+
+<QA q="Integer overflow — what is it and when did it last matter in the real world?">
+
+Fixed-size integers wrap or overflow past their maximum (~2.1 billion for a
+32-bit signed int). Real cases: YouTube's view counter broke on Gangnam Style
+crossing 2³¹ views (they moved to 64-bit); the 2038 problem — 32-bit Unix
+timestamps overflow in January 2038; binary search's famous `(lo + hi) / 2`
+overflow bug lived in the JDK for years (`lo + (hi - lo) / 2` is the fix —
+relevant in Level 3). Python sidesteps it with arbitrary-precision ints;
+Java/C++ engineers must choose sizes consciously.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Create variables for your name, age, height in meters and whether you're a
+   student; print a sentence using all four. (All three languages if you can.)
+2. Predict, then verify: `print("3" + "4")`, `print(3 + 4)`,
+   `print(int("3") + 4)` — and the Java/C++ equivalents of each.
+
+**Intermediate**
+
+3. Swap two variables without a third (Python: `a, b = b, a`; how would you
+   do it in Java?). Then explain to an imaginary junior why
+   `a = b; b = a;` fails.
+4. Write the list-aliasing example above, then fix it so `b` is a true
+   independent copy (`b = list(a)` / `a.copy()`).
+
+**Advanced**
+
+5. In Python, run `x = 10**100` and print it. Try the same value in Java with
+   `long`. What does this tell you about how each language stores integers,
+   and what's the cost of Python's approach?
+
+Next: [Control Flow](/programming/control-flow) — making programs decide and
+repeat.

@@ -1,0 +1,212 @@
+---
+title: "Choosing a Language"
+summary: "Python, Java and C++ — where each came from, what each is for, how FAANG uses them, and which one you should start with."
+order: 1
+difficulty: "Level 1"
+tags: ["programming", "python", "java", "cpp", "beginner"]
+---
+
+## What a programming language is
+
+A **programming language** is a precise, human-readable notation for
+instructions that will ultimately run on a CPU
+([Level 0 refresher](/basics/how-computers-work)). "Precise" is the point:
+English tolerates ambiguity, computers don't. Every language is a different
+trade-off between *easy for humans to write* and *easy for machines to run
+fast*.
+
+This roadmap teaches three — **Python, Java and C++** — because between them
+they cover the whole trade-off spectrum, dominate industry and interviews,
+and once you know these three, every other language is a weekend of
+adjustment.
+
+## The same program, three ways
+
+Print the squares of 1–5, skipping 3:
+
+```python
+# Python
+for i in range(1, 6):
+    if i == 3:
+        continue
+    print(i * i)
+```
+
+```java
+// Java
+public class Squares {
+    public static void main(String[] args) {
+        for (int i = 1; i <= 5; i++) {
+            if (i == 3) continue;
+            System.out.println(i * i);
+        }
+    }
+}
+```
+
+```cpp
+// C++
+#include <iostream>
+
+int main() {
+    for (int i = 1; i <= 5; i++) {
+        if (i == 3) continue;
+        std::cout << i * i << "\n";
+    }
+    return 0;
+}
+```
+
+Same logic, same structure — different ceremony. That observation should be
+encouraging: **you are learning programming once, in three accents.**
+
+## Python — the language that reads like pseudocode
+
+- **Born:** 1991, Guido van Rossum, Netherlands. Design goal: code should be
+  *readable* — whitespace and plain words over braces and symbols.
+- **How it runs:** an **interpreter** executes your file directly — no
+  separate compile step. Type, run, see results. (It's also **dynamically
+  typed** — more on that next page.)
+- **Strengths:** fastest language to write and learn; enormous libraries —
+  it is *the* language of AI/ML (Level 11), data science and scripting.
+- **Weaknesses:** slow to *execute* relative to Java/C++ (often 10–100× for
+  pure computation); dynamic typing lets some bugs hide until runtime.
+- **Industry:** Google (massive Python user), Instagram (backend is Django,
+  a Python framework), Netflix, every AI lab; the default glue language of
+  the industry.
+- **Interviews:** the most popular interview language — concise code means
+  more thinking time. All DSA solutions in Levels 2–4 lead with Python.
+
+## Java — the language of big systems
+
+- **Born:** 1995, James Gosling at Sun Microsystems. Pitch: **"write once,
+  run anywhere"** — Java compiles to **bytecode** that runs on the **JVM**
+  (Java Virtual Machine), a program that makes all operating systems look
+  identical to your code.
+- **How it runs:** compile → bytecode → JVM executes it (with heavy
+  optimization at runtime). **Statically typed:** every variable's type is
+  declared and checked *before* the program runs.
+- **Strengths:** types catch bugs early; outstanding tooling; the JVM is
+  battle-tested over 30 years; threads and concurrency are first-class. Built
+  for codebases with hundreds of engineers.
+- **Weaknesses:** verbose (see the ceremony above); slower iteration than
+  Python; "enterprise" reputation earned honestly.
+- **Industry:** Amazon's backend is famously Java-heavy; LinkedIn, Uber,
+  Netflix's services, most banks; Android apps (via Kotlin, Java's modern
+  cousin); **Spring Boot** (Level 7) is the dominant enterprise backend
+  framework.
+- **Interviews:** extremely common; for LLD/machine-coding rounds (Level 5),
+  Java's explicit interfaces and access modifiers actually *help* you
+  demonstrate design.
+
+## C++ — the language closest to the metal
+
+- **Born:** 1985, Bjarne Stroustrup at Bell Labs — C (the 1972 systems
+  language) extended with object-oriented features. "C with classes."
+- **How it runs:** a **compiler** translates your code straight to machine
+  code for a specific CPU — no interpreter, no virtual machine, nothing
+  between you and the hardware. Statically typed.
+- **Strengths:** the fastest of the three, with **manual control of memory**
+  — you decide exactly what is allocated and freed. When microseconds or
+  megabytes matter, C++ (or its young rival Rust) is the answer.
+- **Weaknesses:** that control is work and risk — memory bugs (crashes,
+  security holes) that Java/Python make impossible are everyday hazards in
+  C++; the language is huge; the learning curve is real.
+- **Industry:** game engines (Unreal), browsers (Chrome is C++), trading
+  systems where nanoseconds are money, operating systems, embedded devices,
+  the internals of Python and the JVM themselves.
+- **Interviews:** the traditional choice of competitive programmers (fastest
+  execution under tight limits); some infrastructure teams interview in it.
+
+## Side-by-side summary
+
+| | Python | Java | C++ |
+| --- | --- | --- | --- |
+| Typing | Dynamic | Static | Static |
+| Runs via | Interpreter | JVM | Native machine code |
+| Speed (rough) | 1× | ~10–30× | ~30–100× |
+| Memory management | Automatic | Automatic (garbage collector) | Manual |
+| Code length for same task | Shortest | Longest | Middle |
+| Killer domain | AI/ML, scripting, interviews | Enterprise backends, Android | Games, trading, systems |
+| First job titles | Data/ML/backend engineer | Backend/Android engineer | Systems/game/quant engineer |
+
+<Callout type="tip" title="So which one first?">
+**Start with Python.** You'll spend your effort on *concepts* — variables,
+loops, functions — instead of ceremony, and concepts are what transfer.
+Then learn Java when you hit Level 5 (LLD) and OOP-heavy design, and add C++
+if you go toward competitive programming or systems work. This entire Level 1
+shows every example in all three, so you're never locked in.
+</Callout>
+
+## Common beginner mistakes
+
+- **Language-hopping.** Two weeks of Python, then "should I switch to
+  JavaScript?", then Rust… Pick one, reach "can build a small project,"
+  *then* branch. Depth transfers; dabbling doesn't.
+- **Believing "X is dead."** Python (1991), Java (1995) and C++ (1985) have
+  outlived every obituary. Companies run on decades-old code that needs
+  decades more of engineers.
+- **Confusing "easy to start" with "less professional."** Python's
+  simplicity runs Instagram and trains GPT-class models. Simple ≠ toy.
+- **Thinking speed of the language is speed of the product.** Most products
+  are limited by network and database time
+  ([Level 0](/basics/the-internet)), not CPU. Engineer time is usually the
+  scarcer resource — which is exactly why "slow" Python thrives.
+
+## Interview perspective
+
+<QA q="What's the difference between a compiled and an interpreted language?">
+
+A compiled language (C++) is translated entirely into machine code *before*
+running; you distribute and execute the binary, which runs at full hardware
+speed. An interpreted language (Python) is executed by another program — the
+interpreter — reading your source more or less line by line, which is slower
+but means instant edit-run cycles and portability. Java sits between: source
+compiles to bytecode, which the JVM interprets *and* compiles to machine code
+at runtime (JIT — just-in-time compilation), recovering most of the speed.
+The lines blur in practice, but the trade-off — upfront translation for speed
+vs on-the-fly execution for flexibility — is the durable idea.
+
+</QA>
+
+<QA q="What is static vs dynamic typing, and what does each buy you?">
+
+Static typing (Java, C++): every variable has a declared type checked before
+the program runs — `int x = 5; x = "hello"` is rejected at compile time. It
+catches a whole class of bugs early, documents intent, and enables better
+tooling and performance. Dynamic typing (Python): variables can hold anything;
+types are checked only when code executes — faster to write and more flexible,
+but type errors surface at runtime, possibly in production. Industry
+compromise: type *hints* in Python and TypeScript over JavaScript — dynamic
+languages retrofitted with static checking, the strongest endorsement of
+static typing there is.
+
+</QA>
+
+<QA q="Why is Python slower than C++ yet used everywhere, including at FAANG?">
+
+Because most real workloads aren't CPU-bound in the application layer — they
+wait on networks and databases, where language speed is irrelevant — and
+because engineer productivity usually matters more than machine efficiency.
+Where Python *does* need speed, its heavy lifting is delegated to libraries
+written in C/C++ (NumPy, PyTorch): Python orchestrates, native code computes.
+And when a hot path truly needs rewriting, companies rewrite that one service
+in a faster language — keeping Python everywhere else.
+
+</QA>
+
+## Practice
+
+1. **Setup:** install Python (python.org), then run `print("hello, world")` —
+   first from the interactive prompt, then from a file. (Java and C++ setups
+   come when you need them; an online editor like replit.com works for all
+   three today.)
+2. Modify the squares program above to print cubes of 1–10, skipping
+   multiples of 4 — in Python first, then port it to one other language and
+   notice exactly what changed.
+3. In one sentence each: which of the three languages would you pick to (a)
+   train an ML model, (b) build a bank's transaction backend, (c) write a
+   game engine's physics loop — and why?
+
+Next: [Variables & Data Types](/programming/variables-and-data-types) — your
+first real building blocks.

@@ -1,13 +1,17 @@
-# PrepDeck — SDE2 Interview Prep
+# PrepDeck — Zero to FAANG Learning Path
 
-A personal, deployable study workspace that turns a real engineering portfolio
-(**LandAI · StockVision · StockStump · Praxivo**) into interview-ready material
-across **project deep-dives, system design (HLD), low-level design (LLD), DSA,
-CS fundamentals, behavioral**, and **cheat sheets**.
+A deployable learning platform structured as a **thirteen-level roadmap**
+(`/roadmap`): computer basics → programming fundamentals → DSA → LLD → HLD →
+backend → frontend → databases → cloud & DevOps → AI/ML → career prep —
+grounded in a real engineering portfolio
+(**LandAI · StockVision · StockStump · Praxivo**) with project deep-dives and
+cheat sheets running alongside.
 
-Built as a docs-style study wiki: a section sidebar, **⌘K full-text search**,
-**click-to-reveal Q&A flashcards** with self-rating, **localStorage progress
-tracking**, syntax-highlighted code, and **Mermaid** architecture diagrams.
+Level 0 (Basics) assumes zero prior knowledge; upper levels reach
+SDE2-interview depth. Built as a docs-style study wiki: a section sidebar,
+**⌘K full-text search**, **click-to-reveal Q&A flashcards** with self-rating,
+**localStorage progress tracking**, syntax-highlighted code, and **Mermaid**
+architecture diagrams.
 
 ## Stack
 
@@ -52,18 +56,22 @@ The answer, revealed on click, with a "Knew it / Revise again" toggle.
 ```
 
 Sections live in `src/lib/nav.ts`; the content registry that powers nav/search
-is `src/lib/content.ts`.
+is `src/lib/content.ts`. The Level 0–12 roadmap is data in `src/lib/roadmap.ts` —
+each topic names a `"section/slug"` doc and links itself automatically once
+that MDX file exists (planned topics render dimmed until then).
 
 ## Project structure
 
 ```
 src/
-  app/                     # routes: dashboard, [section], [section]/[slug]
+  app/                     # routes: dashboard, roadmap, [section], [section]/[slug]
   components/              # app shell, sidebar, search palette, progress
     mdx/                   # MDX components: QA, Mermaid, Callout, Figure
-  lib/                     # nav config + content registry (fs + gray-matter)
+  lib/                     # nav config, roadmap data + content registry
   content/                 # the MDX study material, by section
-    projects/ hld/ lld/ dsa/ fundamentals/ behavioral/ cheatsheets/
+    basics/ programming/ dsa/ lld/ hld/ fundamentals/
+    projects/ behavioral/ cheatsheets/  (+ backend/ frontend/ databases/
+    devops/ aiml/ career/ as those levels land)
 ```
 
 ## Deploy to Vercel

@@ -1,0 +1,286 @@
+---
+title: "Control Flow"
+summary: "if/else decisions, for and while loops, and the logic operators that combine them — the patterns behind every program ever written."
+order: 3
+difficulty: "Level 1"
+tags: ["programming", "conditionals", "loops", "logic"]
+---
+
+## Programs are not read top-to-bottom
+
+By default, a program runs line 1, line 2, line 3… **Control flow** is the
+set of tools that breaks this: *skip* lines (decisions), *repeat* lines
+(loops), *jump elsewhere* (functions — next page). Every feature of every app
+reduces to these moves. A thermostat is one `if`. A spam filter is an `if`
+with a fancy condition. A feed is a loop over posts.
+
+## Decisions: if / else if / else
+
+```python
+# Python
+temperature = 31
+if temperature > 35:
+    print("Heat warning")
+elif temperature > 25:
+    print("Warm day")        # ← this runs (31 > 25)
+else:
+    print("Pleasant")
+```
+
+```java
+// Java
+int temperature = 31;
+if (temperature > 35) {
+    System.out.println("Heat warning");
+} else if (temperature > 25) {
+    System.out.println("Warm day");
+} else {
+    System.out.println("Pleasant");
+}
+```
+
+```cpp
+// C++
+int temperature = 31;
+if (temperature > 35) {
+    std::cout << "Heat warning\n";
+} else if (temperature > 25) {
+    std::cout << "Warm day\n";
+} else {
+    std::cout << "Pleasant\n";
+}
+```
+
+Rules that apply in all three:
+
+- Conditions are checked **top to bottom**; the **first** true branch runs,
+  the rest are skipped. (Order matters: test `> 35` before `> 25`, or the
+  heat warning becomes unreachable.)
+- `else` is the catch-all; it's optional.
+- Python marks the body by **indentation**; Java/C++ use `{ }` braces (and
+  indent anyway, for humans).
+
+### Conditions and logic operators
+
+A condition is anything that evaluates to true/false — built from
+**comparisons** (`==`, `!=`, `<`, `<=`, `>`, `>=`) and combined with
+**logical operators**:
+
+| Meaning | Python | Java / C++ | True when |
+| --- | --- | --- | --- |
+| both | `and` | `&&` | both sides true |
+| either | `or` | `\|\|` | at least one true |
+| flip | `not` | `!` | the operand is false |
+
+```python
+age = 20
+has_id = True
+if age >= 18 and has_id:
+    print("Entry allowed")
+```
+
+One subtlety worth knowing on day one: evaluation **short-circuits**. In
+`a and b`, if `a` is false, `b` is never evaluated. This isn't trivia — it's
+how real code guards against crashes:
+
+```python
+if user is not None and user.is_admin:   # safe: second check skipped if no user
+```
+
+## Loops: doing things many times
+
+### `for` — when you know what you're iterating over
+
+```python
+# Python — over a range of numbers...
+for i in range(1, 6):        # 1, 2, 3, 4, 5 (end is exclusive)
+    print(i)
+
+# ...or directly over a collection (the more common case)
+for item in ["bread", "milk", "eggs"]:
+    print(item)
+```
+
+```java
+// Java
+for (int i = 1; i <= 5; i++) {          // init; keep-going condition; step
+    System.out.println(i);
+}
+for (String item : new String[]{"bread", "milk", "eggs"}) {
+    System.out.println(item);           // "for-each" form
+}
+```
+
+```cpp
+// C++
+for (int i = 1; i <= 5; i++) {
+    std::cout << i << "\n";
+}
+for (const std::string& item : {"bread", "milk", "eggs"}) {
+    std::cout << item << "\n";          // range-based for
+}
+```
+
+### `while` — when you only know the stopping condition
+
+```python
+# Python — keep asking until the answer is valid
+answer = ""
+while answer not in ("yes", "no"):
+    answer = input("Continue? (yes/no): ")
+```
+
+`for` = "do this N times / for each thing"; `while` = "keep going until
+something changes." Any `for` can be rewritten as a `while`, but using the
+one that matches your intent makes code readable.
+
+### `break` and `continue`
+
+```python
+for item in inventory:
+    if item.damaged:
+        continue            # skip this item, go to the next
+    if item.id == target:
+        print("found!")
+        break               # stop the whole loop
+```
+
+### The accumulator pattern
+
+Half of all beginner programs are this shape — start with an empty result,
+fold each item in:
+
+```python
+total = 0
+for price in [250, 120, 180]:
+    total += price          # total is the "accumulator"
+print(total)                # 550
+```
+
+Counting, summing, finding-the-max, building a list — all the same pattern.
+Recognize it now; in Level 3 it grows up to become dynamic programming.
+
+<Mermaid chart={`flowchart TD
+  S[start: total = 0] --> C{items left?}
+  C -- yes --> A[total += next price] --> C
+  C -- no --> P[print total]`} />
+
+## Nesting, and your first taste of complexity
+
+Control flow composes: loops inside loops, ifs inside loops.
+
+```python
+# Every pair of students in a class (the "all pairs" shape)
+for i in range(len(students)):
+    for j in range(i + 1, len(students)):
+        print(students[i], "vs", students[j])
+```
+
+With 30 students that inner line runs 435 times; with 1,000 students,
+~500,000 times. **A loop inside a loop multiplies work** — for n items,
+roughly n × n = n² steps. This idea has a name, **time complexity**
+(written O(n²) — see the [complexity cheat sheet](/cheatsheets/complexity)),
+and it's the central obsession of Levels 2–4: most of DSA is the art of
+replacing an n² loop-in-loop with something smarter.
+
+## Common beginner mistakes
+
+- **The infinite loop** — a `while` whose condition never becomes false
+  (classically: forgetting the `i += 1`). Your program hangs; Ctrl-C kills
+  it. Everyone writes one this week.
+- **Off-by-one errors** — looping one time too many or too few. Know your
+  ends: Python's `range(1, 6)` *excludes* 6; Java's `i <= 5` vs `i < 5` are
+  different loops. The most common bug family in all of programming.
+- **`=` vs `==` in conditions** — assignment vs comparison
+  ([last page](/programming/variables-and-data-types)); C++ compiles the
+  wrong one silently.
+- **Modifying a list while looping over it** — items get skipped as the list
+  shifts under you. Loop over a copy, or build a new list.
+- **Arrow code** — five levels of nested ifs. Prefer **guard clauses**:
+  handle the bad cases with an early `return`/`continue`, keep the happy
+  path flat. (This is also a code-review comment you'll receive in your
+  first job.)
+
+## Interview perspective
+
+<QA q="FizzBuzz: print 1–100, but 'Fizz' for multiples of 3, 'Buzz' for 5, 'FizzBuzz' for both. Why is the order of checks the famous trap?">
+
+```python
+for i in range(1, 101):
+    if i % 15 == 0:   print("FizzBuzz")
+    elif i % 3 == 0:  print("Fizz")
+    elif i % 5 == 0:  print("Buzz")
+    else:             print(i)
+```
+
+The trap: testing `% 3` before `% 15`. Since if/elif takes the *first* true
+branch, 15 would match `% 3` and print "Fizz" — "FizzBuzz" becomes
+unreachable. The general lesson interviewers want: in an if/elif chain, the
+**most specific condition goes first**. (`i % 15` works because divisible by
+both 3 and 5 ⇔ divisible by 15.)
+
+</QA>
+
+<QA q="What is short-circuit evaluation and why is it more than a performance trick?">
+
+In `a && b`, if `a` is false the result is already known, so `b` is never
+evaluated (symmetrically for `a || b` when `a` is true). Beyond saving work,
+it's a *correctness* tool: `user != null && user.isAdmin()` relies on
+short-circuiting to avoid a null-pointer crash — the dangerous call is
+guarded by the check before it. Reversing the order is a real bug. It also
+means side effects in the second operand may never happen, a subtle gotcha.
+
+</QA>
+
+<QA q="When do you use a while loop instead of a for loop? Give real examples.">
+
+Use `for` when the iteration space is known upfront — each item in a list, a
+fixed count. Use `while` when you're waiting on a condition you can't
+enumerate: read user input until it's valid, retry a network call until it
+succeeds (with a max-attempts guard!), game loop until quit, binary search
+until the range is empty. Rule of thumb: `for` iterates over *things*,
+`while` iterates over *a condition*.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Print the multiplication table of 7, formatted `7 x 3 = 21`.
+2. Loop through `[12, -4, 9, -1, 0, 7]` and count negatives, then also track
+   the largest value. (Two accumulators, one loop.)
+3. Classic: print this with nested loops:
+   ```
+   *
+   **
+   ***
+   ****
+   ```
+
+**Intermediate**
+
+4. FizzBuzz from memory, in two languages, without looking up.
+5. Guess-the-number: pick a random 1–100, loop reading guesses, print
+   higher/lower, count attempts. (Touches while, if/elif, break.)
+6. Take a paragraph string and count how many words have more than 5 letters.
+
+**Advanced**
+
+7. Without running it, determine exactly how many times `print` executes; then
+   verify:
+   ```python
+   for i in range(1, 11):
+       for j in range(i, 11):
+           print(i, j)
+   ```
+8. Refactor this into guard clauses so it nests at most one level:
+   ```python
+   if user:
+       if user.active:
+           if user.balance > 0:
+               process(user)
+   ```
+
+Next: [Functions](/programming/functions) — naming your control flow and
+reusing it.

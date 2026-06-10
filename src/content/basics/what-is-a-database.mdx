@@ -1,0 +1,207 @@
+---
+title: "What is a Database?"
+summary: "Why apps don't keep data in files — tables, queries, SQL vs NoSQL, and the promises a database makes, from zero."
+order: 6
+difficulty: "Level 0"
+tags: ["basics", "database", "sql", "nosql"]
+---
+
+## The one-sentence version
+
+A **database** is a program whose entire job is to store data and answer
+questions about it — quickly, correctly, and without losing anything, even
+with thousands of users reading and writing at once.
+
+Every account you've ever created, every order, message, like and balance is
+a row in someone's database.
+
+## Why not just use files?
+
+A fair beginner question: programs can save files — why isn't Instagram just a
+giant `users.txt`? Imagine running a bank from a notebook:
+
+- **Finding things** — to find one customer among 10 million, you'd read the
+  whole notebook. Databases keep data organized (and **indexed** — below) so
+  lookups take milliseconds.
+- **Two clerks, one page** — if two transfers update the same account at the
+  same moment, one overwrites the other and money vanishes. Databases
+  coordinate **concurrent access** safely.
+- **Torn pages** — if the power dies mid-transfer (money left one account,
+  hasn't reached the other), a file keeps the corruption. Databases guarantee
+  all-or-nothing updates (**transactions**).
+- **Rules** — nothing stops a clerk writing "banana" in the balance column.
+  Databases enforce structure and constraints.
+
+A database is what you get when you take "saving data" seriously as its own
+engineering problem.
+
+## Tables: how relational databases organize data
+
+The most common kind — the **relational database** — stores data in
+**tables**, like rigorous spreadsheets. A bakery's database:
+
+**customers**
+
+| id | name | city |
+| --- | --- | --- |
+| 1 | Asha | Mumbai |
+| 2 | Rahul | Delhi |
+
+**orders**
+
+| id | customer_id | item | price |
+| --- | --- | --- | --- |
+| 101 | 1 | Sourdough | 250 |
+| 102 | 1 | Croissant | 120 |
+| 103 | 2 | Baguette | 180 |
+
+Each row is one record; each column one attribute. The magic is the
+**relationship**: `orders.customer_id` points at `customers.id`, so "Asha's
+orders" is a question the database can answer by *joining* the tables. Data is
+stored once, never copy-pasted — update Asha's city in one place and every
+view of it is correct.
+
+## SQL: asking questions
+
+**SQL (Structured Query Language)** is the standard language for talking to
+relational databases. It reads almost like English:
+
+```sql
+-- All orders by customers in Mumbai, most expensive first
+SELECT customers.name, orders.item, orders.price
+FROM orders
+JOIN customers ON orders.customer_id = customers.id
+WHERE customers.city = 'Mumbai'
+ORDER BY orders.price DESC;
+```
+
+```sql
+INSERT INTO orders (customer_id, item, price) VALUES (2, 'Focaccia', 200);
+UPDATE customers SET city = 'Pune' WHERE id = 1;
+DELETE FROM orders WHERE id = 103;
+```
+
+Those four verbs — `SELECT`, `INSERT`, `UPDATE`, `DELETE` — are the
+**CRUD** operations (Create, Read, Update, Delete) that power essentially
+every app. When you open Instagram: `SELECT` posts. When you comment:
+`INSERT` a row.
+
+Popular relational databases: **PostgreSQL** and **MySQL** (free,
+open-source, run most of the internet), **SQLite** (a tiny one inside your
+phone's apps).
+
+## Where the database sits
+
+<Mermaid chart={`flowchart LR
+  F[Frontend<br/>phone/browser] -->|API request| B[Backend<br/>server program]
+  B -->|SQL query| D[(Database)]
+  D -->|rows| B
+  B -->|JSON response| F`} />
+
+Note the order: **the frontend never talks to the database directly.** The
+backend ([two pages ago](/basics/frontend-and-backend)) sits in between,
+checking permissions and translating API requests into queries. A database
+reachable straight from the internet is one of the classic security disasters.
+
+## Two promises that make databases special
+
+Two terms you'll meet constantly, here in beginner form:
+
+- **Transactions** — a group of changes that happen *all together or not at
+  all*. Transferring ₹500: subtract from A **and** add to B. If the server
+  crashes between the two, the database undoes the first — no half-transfers,
+  ever. (The full version of this promise is called **ACID** — Level 9.)
+- **Indexes** — a sorted lookup structure, like a book's index, that the
+  database maintains so it can find "user with email x" without scanning all
+  10 million rows. Indexes are *the* answer to most "why is this query slow?"
+  problems, and a guaranteed interview topic (Level 9).
+
+## SQL vs NoSQL (a first look)
+
+Not all databases are tables. **NoSQL** is the umbrella term for the others,
+each shaped for a particular job:
+
+| Type | Stores | Example | Shines at |
+| --- | --- | --- | --- |
+| Relational (SQL) | Tables with relationships | PostgreSQL, MySQL | Structured data, strict correctness — orders, payments, users |
+| Document | JSON-like documents | MongoDB | Flexible/varied shapes — product catalogs, user profiles |
+| Key-value | `key → value` pairs | Redis | Blazing-fast lookups — caches, sessions |
+| Graph | Nodes & connections | Neo4j | Relationship-heavy questions — "friends of friends" |
+
+The honest beginner summary: **start with PostgreSQL**; reach for NoSQL when
+you have a specific reason. The trade-offs (and the interview battles about
+them) live in Level 9 and [Databases at scale](/hld/databases-at-scale).
+
+## Industry perspective
+
+- Databases are routinely **the bottleneck** of real systems. Adding servers
+  is easy; one consistent source of truth is hard to scale — Level 6's
+  replication and sharding exist for exactly this.
+- Companies run their most critical data on relational databases: banks,
+  airlines, Amazon's orders. "Boring" PostgreSQL at the core, specialized
+  stores around it, is the dominant real-world architecture.
+- **Data engineer**, **DBA** (database administrator), and **backend
+  engineer** are all careers that live close to the database.
+
+## Common beginner mistakes
+
+- **"The database is the backend."** The backend is a program that *uses* the
+  database. Separate machines, usually.
+- **"NoSQL is the modern replacement for SQL."** No — different tools for
+  different shapes of data. SQL skills are among the most durable in the
+  industry (50 years old and still required everywhere).
+- **Storing duplicates instead of relationships.** Writing the customer's
+  name into every order means updating it in a thousand places later. Store
+  the `customer_id`, join when needed. (Formally: **normalization** — Level 9.)
+- **Trusting the app to "probably not crash" mid-update.** It will. That's
+  what transactions are for.
+
+## Interview perspective
+
+<QA q="Why do applications use databases instead of writing to files?">
+
+Databases solve four problems files don't: **fast retrieval** at scale via
+organized storage and indexes (find one row in millions in milliseconds);
+**safe concurrency** so simultaneous users don't corrupt each other's writes;
+**transactions** so multi-step changes are all-or-nothing even through
+crashes; and **enforced structure** (types, constraints, relationships) so
+invalid data is rejected at the door. Files are fine for one program writing
+occasionally; databases are for shared, critical, queried data.
+
+</QA>
+
+<QA q="What is a transaction, and why is it essential for something like a money transfer?">
+
+A transaction groups multiple operations into a single all-or-nothing unit. A
+transfer is two writes — debit account A, credit account B. Without a
+transaction, a crash between them either destroys or invents money. Inside a
+transaction, the database guarantees both writes happen or neither does
+(rolling back on failure), and that other users never observe the in-between
+state. This atomicity is the A in ACID.
+
+</QA>
+
+<QA q="When would you choose a relational (SQL) database vs a NoSQL store?">
+
+Default to relational when data is structured and correctness matters —
+users, orders, payments — because you get schemas, joins, constraints and
+transactions. Consider NoSQL for specific shapes: document stores for
+flexible, nested, schema-varying data; key-value stores like Redis for
+microsecond cache/session lookups; graph databases for deep relationship
+queries. In practice, real systems combine them: PostgreSQL as the source of
+truth, Redis in front as a cache. Picking NoSQL "because it scales" without a
+concrete reason is a classic interview red flag.
+
+</QA>
+
+## Check yourself
+
+1. Design tables for a library: books, members, loans. Which columns connect
+   them, and why store the member's name only once?
+2. Two people buy the last concert ticket at the same instant. What must the
+   database prevent, and which promise does the work?
+3. Instagram needs to fetch your profile in 50 ms and also store billions of
+   varied posts. Which database types might serve each need?
+
+Next: [What is the cloud?](/basics/what-is-the-cloud) — where all these
+servers and databases physically live.

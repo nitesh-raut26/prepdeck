@@ -1,0 +1,280 @@
+---
+title: "Functions"
+summary: "Parameters, return values, scope, and pass-by-value vs pass-by-reference — how code gets named, reused and reasoned about."
+order: 4
+difficulty: "Level 1"
+tags: ["programming", "functions", "scope", "abstraction"]
+---
+
+## What a function is
+
+A **function** is a named, reusable block of code: values go in
+(**parameters**), work happens, a value comes out (**return value**).
+
+```python
+# Python
+def area_of_circle(radius):
+    return 3.14159 * radius * radius
+
+print(area_of_circle(2))      # 12.56636
+print(area_of_circle(10))     # 314.159
+```
+
+```java
+// Java
+static double areaOfCircle(double radius) {
+    return 3.14159 * radius * radius;
+}
+```
+
+```cpp
+// C++
+double areaOfCircle(double radius) {
+    return 3.14159 * radius * radius;
+}
+```
+
+Vocabulary, precisely:
+
+- **Define** a function: write its name, parameters and body. Nothing runs yet.
+- **Call** (invoke) it: `area_of_circle(2)` — *now* the body runs, with
+  `radius = 2`.
+- **Parameter** — the variable in the definition (`radius`).
+  **Argument** — the actual value passed in the call (`2`).
+- **Return value** — what the call turns into. `print(area_of_circle(2))`
+  first becomes `print(12.56636)`.
+
+A function call is a *jump*: execution leaps into the body, runs it, and
+comes back carrying the return value.
+
+## Why functions exist (it's not just "avoid repetition")
+
+The shallow reason: write the circle formula once, use it everywhere; fix a
+bug once, it's fixed everywhere (**DRY** — Don't Repeat Yourself).
+
+The deep reason: **functions let you stop thinking.** Once
+`area_of_circle` works, you never again think about π — you think "area,"
+one level higher. This is **abstraction**, the same move as Level 0's
+[APIs](/basics/what-is-an-api): a name in front of hidden machinery. Software
+is towers of functions calling functions; your entire growth as an engineer
+is learning to build good towers.
+
+The kitchen analogy: a function is a recipe card. "Make the sauce (see card
+12)" — the main recipe stays readable because details live elsewhere.
+
+```python
+# This reads like a sentence — each call hides honest work
+def process_order(order):
+    validate(order)
+    charge(order.customer, total_price(order))
+    schedule_delivery(order)
+    send_receipt(order)
+```
+
+## Return early, return often
+
+A function ends the moment it hits `return`. Use that for **guard clauses**
+(met in [Control Flow](/programming/control-flow)):
+
+```python
+def withdraw(account, amount):
+    if amount <= 0:
+        return "Invalid amount"          # bail out early
+    if amount > account.balance:
+        return "Insufficient funds"      # and again
+    account.balance -= amount            # happy path, un-nested
+    return "Success"
+```
+
+A function with no explicit `return` hands back "nothing" (`None` in Python,
+`void` functions in Java/C++) — fine for functions called for their *effects*
+(printing, saving) rather than their *answer*.
+
+## Scope: where a name exists
+
+**Scope** is the region of code where a variable is visible. Variables
+created inside a function are **local** — born when the call starts, gone
+when it returns:
+
+```python
+def calculate():
+    result = 42        # local to calculate()
+    return result
+
+calculate()
+print(result)          # ❌ NameError — 'result' doesn't exist out here
+```
+
+Each *call* gets fresh locals: two simultaneous calls to the same function
+don't see each other's variables. That isolation is precisely why functions
+are safe to reuse.
+
+Variables defined outside all functions are **global** — visible everywhere.
+Convenient, dangerous:
+
+<Callout type="warn" title="Why engineers avoid global variables">
+A global can be modified by *any* function, so to debug it you must suspect
+*every* function. Ten functions sharing globals aren't ten independent tools —
+they're one tangled machine. Pass data in as parameters and out as return
+values; keep the plumbing visible. (Code review will enforce this; so do
+interviewers in Level 5 design rounds.)
+</Callout>
+
+## Pass-by-value vs pass-by-reference
+
+The payoff of the references idea from
+[Variables & Data Types](/programming/variables-and-data-types): **what does
+a function receive — the thing, or a way to reach the thing?**
+
+```python
+def add_bonus(score):          # numbers: reassignment is invisible outside
+    score = score + 10
+
+def add_item(cart):            # lists: MUTATION is visible outside
+    cart.append("gift")
+
+my_score = 50
+add_bonus(my_score)
+print(my_score)                # 50 — unchanged
+
+my_cart = ["bread"]
+add_item(my_cart)
+print(my_cart)                 # ['bread', 'gift'] — changed!
+```
+
+The model that explains both: arguments are **copies of what's in the box**.
+For `my_score`, the box holds the value `50` → the function gets a copy of
+50; reassigning its copy touches nothing outside. For `my_cart`, the box
+holds a *reference* (an address) → the function gets a copy of the address —
+**pointing at the same list**. Reassigning `cart` inside would be invisible;
+*mutating through it* (`append`) changes the one shared list.
+
+- **Python and Java both work exactly this way** (copies of
+  references for objects).
+- **C++** is the language of explicit choice: `f(int x)` copies the value,
+  `f(int& x)` passes a true reference (even reassignment shows outside),
+  `f(const std::string& x)` passes a reference but forbids changes — the
+  efficient read-only default you'll see everywhere in C++ code.
+
+<QA q="A function modified the list I passed in, but couldn't modify the number I passed in. Explain precisely why." id="pass-by-what">
+
+Arguments are passed as copies of the variable's contents. A number variable
+contains the value itself, so the function gets an independent copy —
+reassigning it changes only the copy. A list variable contains a *reference*
+(the address of the list), so the function's copy points to the **same
+list** — mutations through it (`append`, index assignment) are visible to the
+caller. But *reassigning* the parameter to a new list would only repoint the
+copy, invisible outside. Summary: "pass-by-value, where the value may be a
+reference" — true of Python and Java; C++ lets you choose explicitly with `&`.
+
+</QA>
+
+## Writing functions people thank you for
+
+Four rules, learnable now, judged in every interview and code review forever:
+
+1. **One job.** "Calculate the total" — yes. "Calculate the total and email
+   the user and update the log" — three functions wearing a trenchcoat.
+   (Formally the *Single Responsibility Principle* — Level 5.)
+2. **Name = verb phrase that tells the truth.** `send_receipt`,
+   `is_valid_email` (booleans read as questions). If an honest name needs
+   "and" in it, see rule 1.
+3. **Few parameters.** More than three is a smell — bundle related ones into
+   an object (`Order`), or your calls become `f(true, false, 7, null, true)`.
+4. **Prefer returning over mutating.** `clean(text) → new_text` is easier to
+   reason about than silently editing shared data — see the QA above for why.
+
+## Common beginner mistakes
+
+- **Defining but never calling** — then wondering why nothing printed. A
+  definition is a recipe card; you still have to cook.
+- **Confusing `print` with `return`.** `print` shows a value to a *human*;
+  `return` hands it to *code*. A function that prints its answer instead of
+  returning it can't be composed: `total(prices) + tax` breaks.
+- **Capturing nothing:** calling `s.upper()` in Python and ignoring that it
+  *returns* the new string (strings are immutable — it can't edit in place):
+  `name = name.upper()`.
+- **One mega-function.** A 300-line `main()` works until it doesn't. If you
+  can't summarize a function in one sentence, split it.
+- **Same name, different things** — shadowing a global or built-in
+  (`list = [1,2]` in Python kills the `list()` built-in for the rest of the
+  program).
+
+## Interview perspective
+
+<QA q="What is the call stack, and what happens when function A calls function B?">
+
+The **call stack** is where the runtime tracks active function calls. Each
+call pushes a **frame** holding that call's local variables and the return
+address (where to resume). When A calls B: A's frame pauses, B's frame is
+pushed, B runs; on `return`, B's frame is popped and A resumes exactly where
+it left off, receiving B's value. The stack is why locals are isolated per
+call, why infinite recursion crashes with a *stack overflow* (frames pile up
+past the limit), and how a debugger's stack trace knows the chain of calls
+that led to a crash. It becomes load-bearing knowledge for recursion (Level 3).
+
+</QA>
+
+<QA q="What makes a function 'pure', and why do engineers and interviewers care?">
+
+A pure function (1) returns a value determined *only* by its arguments — no
+reading globals, clocks, or databases — and (2) has no side effects: it
+mutates nothing outside itself. `area_of_circle(r)` is pure;
+`send_email(user)` is not. Pure functions are trivially testable (same in →
+same out), safe to cache, safe to run in parallel, and composable. Real
+programs need impure edges (I/O is the point of software), so good design
+concentrates effects at the boundary and keeps the core logic pure — a theme
+that returns in Level 7 backends and functional-style React in Level 8.
+
+</QA>
+
+<QA q="Parameter vs argument; define both in one sentence each.">
+
+A **parameter** is the named variable in a function's definition
+(`def greet(name)` — `name` is a parameter). An **argument** is the concrete
+value supplied at call time (`greet("Asha")` — `"Asha"` is the argument),
+which gets bound to the parameter for that call.
+
+</QA>
+
+## Practice
+
+**Beginner**
+
+1. Write `celsius_to_fahrenheit(c)` (formula: `c × 9/5 + 32`), then use it in
+   a loop printing a conversion table for 0–40°C in steps of 5.
+2. Write `is_even(n)` returning a boolean — then rewrite FizzBuzz from the
+   [previous page](/programming/control-flow) using helper functions
+   `is_multiple_of(n, k)`.
+
+**Intermediate**
+
+3. Write `largest(numbers)` *without* using built-in `max` — accumulator
+   pattern inside a function. Then write `second_largest(numbers)`; the edge
+   cases (duplicates, short lists) are the actual exercise.
+4. Predict the output, then run:
+   ```python
+   def mystery(items):
+       items.append(99)
+       items = [0]
+       items.append(1)
+       return items
+
+   data = [1, 2]
+   result = mystery(data)
+   print(data, result)
+   ```
+   Explain every printed value using the box-and-reference model.
+
+**Advanced**
+
+5. Write `apply_twice(f, x)` that returns `f(f(x))`, and use it with a
+   `double(n)` function. Congratulations — functions are values too
+   (**higher-order functions**), the gateway to callbacks (Level 8) and
+   functional programming.
+6. Refactor: take your guess-the-number game from the previous page and split
+   it into `read_guess()`, `give_hint(guess, secret)` and `play()`. Notice
+   how testable each piece became.
+
+Next: [OOP Basics](/programming/oop-basics) — bundling data and functions
+into objects.
