@@ -1,0 +1,240 @@
+---
+title: "Observability"
+summary: "Logs, metrics and traces as one discipline: correlation ids, RED dashboards, SLOs and error budgets, and alerts that page on user pain."
+order: 6
+difficulty: "Core"
+tags: ["devops", "observability", "monitoring", "slo", "sre"]
+---
+
+## What observability actually means
+
+**Monitoring** asks predefined questions: "is CPU above 80%?"
+**Observability** is the stronger property: can you answer questions
+you *didn't* predict — "why are checkouts from Android in Mumbai slow
+since the 2pm deploy?" — from the system's outputs alone, without
+shipping new code to find out?
+
+The distinction matters because [distributed
+systems](/backend/microservices) fail in combinations nobody
+pre-imagines. You can't dashboard your way to every answer; you can
+instrument your way to *answerable*.
+
+```
+Analogy: monitoring is the warning lights on a car's dashboard —
+predefined, binary, useful. Observability is being able to plug in
+a diagnostic reader and interrogate anything the engine ever did.
+```
+
+## The three pillars (and what each is *for*)
+
+### Logs — what happened, in detail
+
+Discrete events with context. The non-negotiable upgrade from
+`print` ([Level 1's debugging](/programming/exceptions)) is
+**structured logging** — machine-parseable fields, not prose:
+
+```json
+{"ts": "2026-06-11T14:02:11Z", "level": "error", "service": "payments",
+ "trace_id": "a8f3...", "user_id": 4471, "order_id": 88123,
+ "msg": "charge declined", "provider": "stripe", "decline_code": "insufficient_funds"}
+```
+
+Prose logs are grep-able; structured logs are *queryable* ("all
+declines by provider, last hour, grouped by code"). Rules that pay
+rent: log once per event at the right layer
+([throw low, catch high, log once](/programming/exceptions)); always
+carry the **correlation/trace id** (below); never log secrets or
+[PII](/fundamentals/security) (tokens, passwords, card numbers —
+log redaction is a compliance control, not a style choice). Logs are
+expensive at volume — sample the routine, keep every error.
+
+### Metrics — how much, how fast, numerically
+
+Pre-aggregated numbers over time: cheap to store, fast to query,
+ideal for dashboards and alerts. The two acronyms that organize
+everything:
+
+- **RED** (per **service**): **R**ate (requests/sec), **E**rrors
+  (failure %), **D**uration (latency — as **percentiles**, never
+  averages: p50 is the typical user, **p99 is your unlucky-1% user**
+  ([the Node doc's metric](/backend/nodejs)), and averages hide
+  exactly the pain you're looking for).
+- **USE** (per **resource**): **U**tilization, **S**aturation
+  (queue depth — [queue depth is destiny](/hld/messaging-and-queues)),
+  **E**rrors — for hosts, DBs, pools, brokers.
+
+A RED dashboard per service + USE per shared resource answers "is it
+broken and where" in one glance; that's the bar.
+
+### Traces — where the time went, across services
+
+One request, [six services](/backend/microservices): a **distributed
+trace** stitches its whole journey into a waterfall of **spans**
+(operation, service, start, duration, parent):
+
+```
+trace a8f3:  gateway ──────────────────────────── 1,240ms
+              └─ orders ────────────────────────  1,180ms
+                  ├─ inventory ──                    95ms
+                  ├─ payments ───────────────────  1,020ms   ← there it is
+                  │    └─ stripe API ───────────     980ms
+                  └─ notifications (async)            12ms
+```
+
+The mechanism is humble: the gateway mints a **trace id**, and every
+hop *propagates it* (HTTP headers, [queue message
+headers](/backend/kafka)) while reporting its spans — the standard is
+**OpenTelemetry**, the propagation rule is "every client and handler
+forwards the context," and the discipline must be universal: one
+service that drops the header cuts every trace that crosses it. The
+trace id doubles as the **correlation id** that turns six services'
+logs into one story ([the microservices doc's
+lifeline](/backend/microservices)).
+
+How the pillars compose in a real incident: **alert fires on a metric
+→ trace shows which hop → logs of that hop show why.** Three tools,
+one workflow — build all three or the workflow has a hole.
+
+## SLOs and error budgets (the management layer)
+
+Observability data becomes *decisions* through three letters:
+
+- **SLI** — a measured indicator of user-visible health: "% of
+  checkout requests under 500 ms, successful."
+- **SLO** — the target you commit to: "99.9% over 30 days." Chosen
+  deliberately — every extra nine multiplies cost
+  ([the availability math](/backend/microservices)) and 100% is a
+  lie; pick the number where users stop noticing.
+- **Error budget** — the allowed failure: 99.9% = ~43 minutes of
+  badness per month. **The budget is spendable**: plenty left →
+  ship fast, take risks; budget burned → feature work pauses for
+  reliability work. This single mechanism converts the eternal
+  speed-vs-stability argument into arithmetic — it's SRE's
+  ([Google's Site Reliability Engineering practice](/career/engineering-ladder))
+  most exportable idea, and naming it well in interviews signals
+  operational maturity.
+
+## Alerting philosophy (the part everyone gets wrong)
+
+- **Page on symptoms, not causes:** page when *users hurt* (SLO burn
+  rate, error spike, p99 through the ceiling) — not when CPU is high.
+  High CPU with healthy latency is Tuesday; paging on it trains
+  humans to ignore pages (**alert fatigue** — the failure mode that
+  eventually swallows a real incident).
+- **Every page must be actionable and urgent.** Not urgent → a
+  ticket. Not actionable → a dashboard. The 2 AM test: would you
+  *act* on this, right now? No → it doesn't page.
+- **Alert on absence too** — "no orders processed in 10 minutes" beats
+  every threshold; silence is the failure your error-rate alert
+  can't see (the queue consumer that hung without erroring —
+  [lag is the metric](/backend/kafka)).
+- Burn-rate alerting is the modern default: page when the error
+  budget is being consumed too fast (fast burn = page now; slow
+  burn = ticket) — it self-calibrates to the SLO instead of needing
+  per-metric thresholds.
+
+## Common mistakes
+
+- **Averages on dashboards** — the mean of 99 fast and 1 ten-second
+  request looks fine; the percentile screams. p50/p95/p99 or it
+  didn't happen.
+- **Logging without correlation ids** — six services, six private
+  diaries, no story. [This question has no answer
+  without it](/backend/microservices).
+- **Instrumenting after the incident** — observability is built in
+  fair weather; mid-outage is too late
+  ([the modular-monolith rule](/backend/ddd): infrastructure you'll
+  need is cheapest before you need it).
+- **Cardinality explosions** — a metric labeled by user_id creates
+  millions of time series and a dead metrics bill; high-cardinality
+  questions belong to logs/traces, not metrics labels.
+- **Dashboards as wallpaper** — 40 charts nobody reads; one RED
+  per service, one USE per resource, one SLO page. Curate or drown.
+- **No runbooks** — every alert links to "what to check, what to do";
+  a page without a runbook is a riddle at 2 AM.
+
+## Interview perspective
+
+<QA q="Logs vs metrics vs traces — when does each pillar answer the question, and how do they hand off in an incident?">
+
+Metrics: cheap pre-aggregated numbers — detect and quantify ("error
+rate 4%, p99 2s, started 14:02") and trigger alerts; they can't tell
+you *which request* or *why*. Traces: per-request waterfalls across
+services — localize ("the time is in payments' call to Stripe");
+they can't aggregate trends and are usually sampled. Logs: full-
+context event detail — diagnose ("decline_code:
+insufficient_funds, retries exhausted"); too expensive to scan as a
+detector. The incident workflow chains them: a metric-based SLO
+alert fires → pull traces for the affected route and window, find
+the slow/failing span → jump to that service's logs filtered by
+trace id for the root cause. The design requirement that makes the
+chain work is shared identifiers — the trace id propagated through
+every hop and stamped on every log line; break propagation anywhere
+and the handoff dies there.
+
+</QA>
+
+<QA q="Define SLI, SLO and error budget, and explain how the budget changes engineering behavior.">
+
+An SLI is a measured user-centric indicator (fraction of requests
+fast-and-successful); an SLO is the explicit target for it (99.9%
+monthly); the error budget is the complement — the 0.1% (~43
+min/month) of allowed failure. The budget reframes reliability from
+a virtue into a resource: while budget remains, teams ship
+aggressively — deploys, migrations, experiments are *funded* by it;
+when burn rate spikes or the budget exhausts, a pre-agreed policy
+kicks in — freezes on risky launches, priority to reliability fixes
+— no meeting required, because the trade-off was negotiated when the
+SLO was set. It also disciplines the target itself: each extra nine
+roughly 10×es the cost ([multi-region, consensus, redundancy](/hld/scaling-journey)),
+so "how reliable?" becomes a product decision with a price tag
+rather than an engineering aspiration. The interview tell: candidates
+who've lived this mention burn-rate alerts and the freeze policy;
+candidates who've read about it stop at the definitions.
+
+</QA>
+
+<QA q="Design the observability for BookMyShow's booking flow, concretely.">
+
+Instrument the user journey, not just the servers. Metrics: RED per
+service (gateway, search, booking, payments,
+[notifications](/lld/notification-system)) with p95/p99, plus
+domain SLIs — seat-lock success rate, lock-to-payment conversion,
+payment-confirm latency; USE for the shared hot spots: the per-show
+lock store, [queue depths](/backend/kafka), DB connection pools.
+Traces: trace id minted at the gateway, propagated through every
+service *and into queue messages*, so an async confirmation email
+still joins its booking's story; span the external payment call
+separately — it's the latency you don't control. Logs: structured,
+with trace_id, show_id and booking_id on every line; full detail on
+every failed lock and payment decline, sampled success logs. SLOs:
+"99.9% of seat-lock requests under 300 ms, successful" and "99.95%
+of paid bookings confirmed within 10 s" — with burn-rate paging and
+an absence alert ("zero completed bookings in 5 min during open
+hours" — the one that catches the silent hang). Runbook links on
+every page. The structure to show off: instrument the *invariants
+and funnels the business cares about*, then the resources they ride
+on.
+
+</QA>
+
+## Practice
+
+1. **Structure your logs:** take any practice API from
+   [Level 7](/backend/nodejs) and convert prints to structured JSON
+   logs with a request-scoped trace id middleware; verify one
+   request's story is one `grep`.
+2. **RED in 30 minutes:** add Prometheus counters/histograms
+   (requests, errors, duration) and a three-panel dashboard. Break
+   the service; watch the panels tell you before the user does.
+3. **Trace a chain:** two services calling each other with
+   OpenTelemetry auto-instrumentation + Jaeger; find a deliberately
+   slow downstream in the waterfall.
+4. **Write one SLO:** for your project, define one SLI, pick a
+   defensible target, compute the monthly budget in minutes, and
+   write the two alerts (fast burn, slow burn) with their runbook
+   stubs.
+
+**Level 10 is complete.** Observability is the lens for everything
+else you've built — next on the [roadmap](/roadmap): the remaining
+database internals and AI foundations.

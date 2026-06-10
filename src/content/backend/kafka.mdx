@@ -1,0 +1,225 @@
+---
+title: "Kafka & RabbitMQ"
+summary: "The log vs the queue: partitions, consumer groups, offsets and replay — versus exchanges, acks and routing — and how to pick between them."
+order: 8
+difficulty: "Level 7"
+tags: ["backend", "kafka", "rabbitmq", "messaging", "event-streaming"]
+---
+
+## Two tools, one word, different ideas
+
+[Queues in general](/hld/messaging-and-queues) decouple producers from
+consumers. This page goes inside the two systems you'll actually be
+asked about — and the first thing to understand is that despite both
+being called "message brokers," they embody **different data
+structures**:
+
+- **RabbitMQ is a queue**: messages go in, a consumer takes one out,
+  acknowledges it, *and it's gone*. The broker tracks every message's
+  fate.
+- **Kafka is a log**: an append-only file
+  ([the file-handling instinct](/programming/file-handling),
+  industrialized). Messages are *never removed by consumption* —
+  consumers just remember **how far they've read**. The same data can
+  be read by ten consumers, or re-read from the beginning tomorrow.
+
+That single difference — *broker tracks messages* vs *consumers track
+positions* — explains every practical divergence below.
+
+## Kafka: the distributed log
+
+```
+topic "orders" (a category of events)
+├── partition 0:  [e1][e4][e7][e10] ──→ appended, never modified
+├── partition 1:  [e2][e5][e8] ...
+└── partition 2:  [e3][e6][e9] ...
+                       ↑
+              consumer group "billing": partition 1, offset 2
+              consumer group "analytics": partition 1, offset 0   ← same data!
+```
+
+The four concepts that *are* Kafka:
+
+- **Topic** — a named stream of events (`orders`, `tweets`,
+  [the event log in the Twitter design](/hld/design-twitter)).
+- **Partition** — a topic is split into N independent append-only
+  logs. Partitions are the **unit of parallelism and of ordering**:
+  order is guaranteed *within* a partition only. The producer picks
+  the partition by key — `hash(user_id) % N` — so all of one user's
+  events stay ordered ([the hash-table trick](/dsa/hash-tables) used
+  for routing).
+- **Offset** — a consumer's bookmark per partition: "I've processed
+  through entry 4711." Stored compactly, *by the consumer group*.
+  Crash and resume = continue from your committed offset. Want to
+  reprocess last week? **Rewind the offset** — replay is a built-in
+  superpower, not a recovery hack.
+- **Consumer group** — a team of consumer instances sharing a
+  group id; Kafka assigns each partition to exactly one member, so
+  the group processes the topic in parallel without overlap. Two
+  *different* groups (billing, analytics) each get the *whole*
+  stream — pub/sub and work-queue semantics from one mechanism.
+
+Retention is time/size-based ("keep 7 days"), not consumption-based —
+which is why Kafka doubles as the **source-of-truth event log** in
+[event-driven architectures](/backend/microservices) and feeds
+[N independent views](/hld/design-twitter): fan-out workers, search
+indexers and trend pipelines all reading the same topic at their own
+pace, none aware of the others.
+
+Throughput notes that explain its dominance: sequential appends +
+batching + zero-copy reads make a modest cluster do millions of
+messages/sec; consumers poll in batches; everything is replicated per
+partition (leader/follower —
+[the replication story](/hld/databases-at-scale) again).
+
+## RabbitMQ: the smart broker
+
+RabbitMQ implements classic messaging (AMQP): producers publish to an
+**exchange**, which routes copies into **queues** by binding rules,
+and consumers receive pushed messages, **ack** each one, and the
+broker deletes it:
+
+```
+producer → [exchange: "notifications"]
+              ├─ binding: type=email   → [queue: email-q]  → consumers
+              ├─ binding: type=sms     → [queue: sms-q]    → consumers
+              └─ binding: type=#       → [queue: audit-q]  (gets everything)
+```
+
+What its per-message intelligence buys:
+
+- **Routing logic in the broker** — topic/direct/fanout exchanges,
+  header matching; the [notification system's](/lld/notification-system)
+  per-channel and per-priority queues are two binding declarations.
+- **Per-message acks, redelivery and dead-lettering** — a consumer
+  that crashes mid-message triggers redelivery; a message that fails
+  N times routes automatically to a **dead-letter queue**
+  ([the DLQ pattern](/lld/notification-system), natively).
+- **Priorities, per-message TTLs, delayed delivery** — work-queue
+  niceties Kafka doesn't natively do (a delayed retry in Kafka means
+  extra topics and discipline).
+- **Backpressure that pushes back** — prefetch limits and queue
+  bounds; the broker actively manages slow consumers rather than
+  letting them lag silently.
+
+The cost: tracking every message's lifecycle is *work* — RabbitMQ
+tops out orders of magnitude below Kafka's throughput, and history
+beyond consumption is simply gone (no replay).
+
+## Choosing (the interview table)
+
+| Question | Kafka | RabbitMQ |
+| --- | --- | --- |
+| "What happened?" — events as facts, multiple readers, replay | ✅ its purpose | ✗ consumed = gone |
+| "Do this work" — task distribution, routing, retries, priorities | works, with ceremony | ✅ its purpose |
+| Throughput / firehose ([view beacons](/hld/design-youtube), clickstreams) | millions/sec | tens of thousands/sec |
+| Strict per-entity ordering | per partition key — by design | per single queue only |
+| Operational weight | cluster + (historically) ZooKeeper; heavier | one node to start; lighter |
+
+The one-sentence versions: **Kafka when the message is a fact others
+may also care about, now or later; RabbitMQ when the message is a job
+for exactly one worker.** Plenty of systems run both — orders as
+Kafka events, image-resize jobs in RabbitMQ — and saying that out
+loud beats picking a winner.
+
+## Common mistakes
+
+- **Kafka as a job queue** — per-message acks, delays and priorities
+  fight the log model; you'll rebuild RabbitMQ badly on top of it.
+- **Ignoring partition keys** — random keys destroy per-user ordering;
+  one celebrity key creates a **hot partition** that caps the whole
+  topic's throughput ([salt it](/hld/design-twitter)).
+- **Assuming exactly-once** — both deliver **at-least-once** by
+  default; consumers must be [idempotent](/backend/rest-and-graphql),
+  full stop. (Kafka's transactional "exactly-once" applies within
+  Kafka-to-Kafka pipelines, not to your database side effects —
+  the [outbox pattern](/backend/microservices) handles that boundary.)
+- **Unbounded consumer lag with no alarm** — Kafka happily retains
+  while your consumer falls a day behind; **lag is the metric**
+  ([observability](/devops/observability)).
+- **Rebalancing surprises** — adding/removing group members pauses
+  partitions mid-flight; design consumers to checkpoint and resume
+  gracefully.
+
+## Interview perspective
+
+<QA q="Explain Kafka's consumer groups and offsets — and why this design scales where per-message tracking doesn't.">
+
+A consumer group is a named set of consumer instances over a topic;
+Kafka assigns each partition to exactly one instance in the group, so
+parallelism scales to the partition count with no double-processing
+inside the group, while separate groups independently read the entire
+stream — work-sharing and pub/sub from one primitive. Progress is one
+integer per (group, partition): the committed offset. That's the
+scaling insight: the broker stores essentially nothing per message —
+no delivery states, no per-consumer copies — just appends to a log
+and a handful of bookmarks, which is why sequential disk I/O and
+batching can run millions of messages/sec. Crash recovery is "resume
+from last committed offset" (hence at-least-once and the idempotency
+requirement), and replay/backfill is just moving a bookmark backward
+— capabilities that fall out of the data structure rather than being
+features bolted on.
+
+</QA>
+
+<QA q="Your team wants 'exactly-once processing' from the message bus. Set them straight.">
+
+Delivery between systems is at-least-once or at-most-once; pick which
+failure you prefer — duplicates or loss — and for anything that
+matters you pick duplicates, then neutralize them. The robust recipe:
+producers write atomically via the
+[outbox pattern](/backend/microservices) (event committed with the
+business transaction, relayed to the bus — no dual-write gap);
+consumers process idempotently — dedup on a stable event id, or make
+the operation naturally idempotent (set state, not increment), or use
+conditional writes keyed by the id
+([the same toolkit everywhere](/backend/rest-and-graphql)). Kafka's
+transactions give genuine effectively-once *within* Kafka-to-Kafka
+stream processing, but the moment a side effect leaves Kafka (your
+DB, an email), it's your idempotency doing the work. The phrase to
+deploy: **exactly-once is an end-to-end property you build, not a
+broker checkbox you enable** — interviewers use this question to
+separate vocabulary from understanding.
+
+</QA>
+
+<QA q="One user's events must be processed in order, but the topic has 32 partitions and 32 consumers. How does ordering survive — and what's the celebrity failure mode?">
+
+Key the messages by user id: the producer hashes the key to pick the
+partition, so all of one user's events land in the same partition,
+which is a strictly ordered log consumed by exactly one group member
+— per-user ordering survives full parallelism, the same
+locality-by-hashing idea as [sharding](/hld/databases-at-scale).
+Global ordering across users doesn't survive, and you almost never
+need it. The failure mode: a celebrity key ([always the
+celebrity](/hld/design-instagram)) concentrates massive volume on one
+partition — its consumer lags while 31 idle. Mitigations: salt the
+hot key across sub-partitions and re-merge downstream where order
+matters less; or split the hot entity's processing into an
+order-insensitive pipeline. And the operational answer: monitor
+per-partition lag, not just topic lag, or the hot partition hides in
+the average ([observability](/devops/observability) again).
+
+</QA>
+
+## Practice
+
+1. **Feel the difference:** run both locally (Docker). Kafka: one
+   topic, two consumer *groups* — watch both receive everything; kill
+   a consumer mid-batch and watch redelivery from the offset.
+   RabbitMQ: one exchange, two bound queues with different routing
+   keys; watch routing and acks.
+2. **Replay:** produce 1,000 events, consume them, then reset the
+   group's offset to zero and reprocess — the operation that makes
+   Kafka Kafka.
+3. **Break ordering:** produce a user's events with random keys vs
+   keyed by user id; consume with 4 instances and log the order. See
+   it, never forget it.
+4. **Design rep:** for the [notification system](/lld/notification-system),
+   decide Kafka or RabbitMQ for (a) the incoming event firehose from
+   product teams, (b) the per-channel send queues with retries and
+   priorities. (It's both — argue why.)
+
+Next: [API Gateway & Service Discovery](/backend/api-gateway) — how
+requests find their way into and around the microservices you've
+split.

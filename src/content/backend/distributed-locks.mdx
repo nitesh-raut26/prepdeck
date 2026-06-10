@@ -1,0 +1,228 @@
+---
+title: "Distributed Locks"
+summary: "Mutual exclusion across machines: Redis locks with TTLs, why fencing tokens exist, and the senior move — designing so you don't need the lock at all."
+order: 10
+difficulty: "Level 7"
+tags: ["backend", "distributed-locks", "concurrency", "redis"]
+---
+
+## The problem crosses machines
+
+You've met mutual exclusion in-process: a mutex around the
+[parking spot](/lld/parking-lot), a lock per
+[elevator dispatch](/lld/elevator). But your service now runs as
+[N identical instances](/hld/scalability) — and some work must happen
+**exactly once across the fleet**:
+
+- The nightly settlement job — 12 instances each running the same
+  cron means 12 settlements.
+- "Refresh this cache entry on expiry" — without coordination, a
+  popular key expiring triggers a **stampede**: 200 instances
+  recompute the same value ([cache stampede](/hld/caching)).
+- "Process this user's import" — two workers grabbing the same job.
+
+A process-local mutex protects one process's threads. None of these
+problems live in one process. Enter the **distributed lock**: a lease
+on a name, stored somewhere all instances can see.
+
+## The Redis lock (the workhorse)
+
+One atomic command does it:
+
+```
+SET lock:settlement-2026-06-11 <my-unique-token> NX PX 30000
+```
+
+- `NX` — set **only if not exists**: the atomic
+  [check-and-set](/lld/bookmyshow) that makes it a lock; exactly one
+  caller wins.
+- `PX 30000` — a 30-second **TTL**: if the holder crashes, the lock
+  self-releases. Locks without TTLs are outages waiting for a holder
+  to die ([the seat-lock lesson](/lld/bookmyshow), verbatim).
+- `<my-unique-token>` — a random value identifying *this* holder, so
+  release can be safe:
+
+```lua
+-- release: delete ONLY if it's still mine (atomic via Lua script)
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+end
+```
+
+Why the token check matters: if your work overran the TTL, the lock
+expired and *someone else acquired it* — a bare `DEL` would release
+**their** lock. This trio — NX, TTL, owner-checked release — is the
+minimum competent answer.
+
+## The uncomfortable truth: TTL locks can't be perfect
+
+Here is the failure every senior interviewer eventually asks about:
+
+```
+t=0    instance A acquires lock (TTL 30s), starts work
+t=5    A hits a 40-second GC pause / network hang   ← it doesn't KNOW it's paused
+t=30   TTL expires; lock self-releases
+t=31   instance B acquires the lock, starts the same work
+t=45   A wakes up, BELIEVES it still holds the lock, finishes its write
+       → two writers. The lock "worked" and you still lost.
+```
+
+A paused process cannot know it's been paused
+([GC pauses are real](/programming/memory-management)). TTL too
+short → spurious takeovers; too long → slow failure recovery. The fix
+is **fencing tokens**: the lock service hands out a monotonically
+increasing number with each grant (A gets 33, B gets 34), and the
+*protected resource* — the database, the storage layer — **rejects
+writes carrying a stale token**:
+
+```sql
+UPDATE jobs SET result = :r, fence = 34
+WHERE id = :id AND fence < 34;     -- A's late write with fence 33: 0 rows. Blocked.
+```
+
+Note what just happened: correctness moved from the lock to a
+**conditional write at the resource** — which quietly reveals the
+deepest truth on this page: *if the resource can check a condition,
+the resource was the real serialization point all along.*
+
+For locks that must be highly available themselves, the
+coordination-service tier exists — **ZooKeeper/etcd** hold locks as
+ephemeral entries under [consensus](/hld/cap-consistency), with
+session-based liveness instead of bare TTLs (and Kubernetes' leader
+election rides on exactly this). Redlock — Redis's multi-node lock
+algorithm — is worth naming alongside the famous
+Kleppmann critique: without fencing, *no* lock survives the pause
+problem; with fencing, single-instance Redis is usually enough.
+
+## The senior move: not needing the lock
+
+The strongest answer to "how would you lock this?" is often "I
+wouldn't." The alternatives, in the order to reach for them:
+
+1. **Idempotency** — if running twice is harmless, duplicates need no
+   prevention. The settlement job writes results keyed by date
+   (`INSERT ... ON CONFLICT DO NOTHING`); twelve starts, one effect
+   ([the universal toolkit](/backend/rest-and-graphql)).
+2. **Unique constraints / conditional writes** — let the database's
+   atomicity be the arbiter: whoever inserts the
+   `(job_id)` row first owns the job
+   ([the BookMyShow backstop](/lld/bookmyshow)). This *is* a lock —
+   one the database enforces perfectly, pauses and all.
+3. **Single-consumer queues** — partition work through a
+   [queue](/backend/kafka); a Kafka partition has exactly one
+   consumer per group *by construction*. Ownership without locks.
+4. **Leader election** — for "exactly one instance runs the
+   schedulers," elect one leader (etcd/Kubernetes lease) instead of
+   locking per task.
+
+The honest hierarchy: locks for **efficiency** (avoiding duplicate
+expensive work — a stampede guard where a rare duplicate is just
+wasted CPU) need only the simple Redis pattern; locks for
+**correctness** (two writers corrupt data) need fencing at the
+resource — at which point consider whether the conditional write
+alone suffices. Classifying the need before choosing the mechanism
+*is* the interview.
+
+## Common mistakes
+
+- **No TTL** — holder dies, system deadlocks until a human notices.
+- **Unchecked release** — deleting a lock you no longer hold,
+  cascading the overlap you tried to prevent.
+- **TTL shorter than the work** — guaranteed double-execution under
+  load, discovered in production. Estimate work time honestly; renew
+  ("heartbeat") long tasks — and know renewal doesn't fix the pause
+  problem either.
+- **Locking for correctness without fencing** — the t=45 scenario
+  above ships to prod in most codebases that "use Redis locks."
+- **One global lock for throughput-critical work** — you've built a
+  [Stage-1 bottleneck](/hld/scaling-journey) on purpose; lock at the
+  finest natural granularity (per user, per job), like
+  [per-show seat locks](/lld/bookmyshow).
+- **Reaching for ZooKeeper for a cache stampede** — efficiency locks
+  don't deserve consensus-grade machinery; match the tool to the
+  stakes.
+
+## Interview perspective
+
+<QA q="Implement a correct Redis lock — and name what it still can't guarantee.">
+
+Acquire with one atomic command: `SET key token NX PX ttl` — NX makes
+acquisition exclusive, the TTL makes the lock self-releasing on
+holder death, and the token (random per acquisition) identifies
+ownership. Release via a Lua script that deletes only if the stored
+token matches yours — atomically, so you never free a successor's
+lock after your TTL lapsed. Renew long-running work with heartbeats
+that extend the TTL, again token-checked. What it cannot guarantee:
+mutual exclusion under process pauses — a holder frozen past its TTL
+(GC, VM migration, network partition) resumes believing it holds a
+lock that has moved on, and writes anyway. No TTL tuning fixes this;
+the cure is fencing tokens — monotonic grant numbers checked by the
+resource itself, rejecting stale writers. So the complete answer:
+NX + TTL + owner-checked release for the lock, fencing at the
+resource when correctness is at stake — and the judgment sentence:
+for efficiency-only locks (stampede prevention), the simple version
+is fine because a rare duplicate merely wastes CPU.
+
+</QA>
+
+<QA q="Twelve instances all run the same nightly cron. Design 'exactly one runs it' — three ways, with trade-offs.">
+
+(1) Idempotency instead of exclusion: let all twelve attempt; the job
+writes results conditionally (`INSERT ... ON CONFLICT DO NOTHING`
+keyed by job-date, or a claimed_at conditional update) so one
+attempt's effects land and eleven no-op. Simplest, pause-proof —
+because the database's atomic conditional *is* the arbiter — but all
+twelve may burn the compute if the claim isn't checked before the
+expensive part. (2) A claim row up front: each instance tries the
+atomic claim first and only the winner proceeds — the conditional
+write promoted to an explicit lightweight lock, with the DB's
+guarantees; add a fence/claim-id to make late writers rejectable.
+(3) Leader election (etcd/K8s lease): one standing leader runs all
+scheduled work; clean at fleet scale with many crons, but you've
+adopted a coordination dependency and a failover story. The senior
+ordering: prefer (1)/(2) — they piggyback on infrastructure you
+already trust — and reach for (3) when scheduled work is plural and
+constant. Bonus point: whatever wins must still be idempotent,
+because retries exist ([always](/backend/kafka)).
+
+</QA>
+
+<QA q="What is a fencing token, and why does it fix what TTLs can't?">
+
+A fencing token is a strictly increasing number issued with each lock
+grant — holder #33, then #34. The resource being protected stores the
+highest token it has accepted and rejects any write bearing a smaller
+one. It fixes the unfixable TTL problem: a holder paused past expiry
+*cannot know* it lost the lock (its next instruction simply resumes),
+so no amount of holder-side care helps — but its writes now carry
+token 33 against a resource that has seen 34, and they bounce. The
+deep shift: mutual exclusion stops being a property the lock service
+promises and becomes a property the *resource enforces* — turning
+"at most one believes it holds the lock" (unachievable under pauses)
+into "at most one's writes are accepted" (a simple conditional).
+Requirements: the lock service must issue monotonic tokens
+(ZooKeeper's zxid, etcd revisions; Redis needs an explicit counter),
+and the resource must support conditional writes — and if it does,
+note the punchline: the conditional write alone, keyed on something
+meaningful, is often the whole solution with no lock service at all.
+
+</QA>
+
+## Practice
+
+1. **Build the lock:** Redis locally — implement acquire (NX+PX),
+   owner-checked release (Lua), and a heartbeat renewer. Two terminal
+   processes contending; kill the holder and watch TTL recovery.
+2. **Reproduce the pause bug:** TTL 2 s, work = `sleep(4)`, two
+   processes — watch both "complete" the same job. Then add a fence
+   column with a conditional UPDATE and watch the stale writer get 0
+   rows. (The most instructive 30 lines in distributed systems.)
+3. **Delete the lock:** redesign the cron problem with
+   `ON CONFLICT DO NOTHING` only. Measure what the lock was actually
+   buying you.
+4. **Classify:** for each — cache stampede guard, seat checkout,
+   nightly billing, "one scheduler per cluster" — efficiency or
+   correctness? Which mechanism from this page, and why?
+
+Next: [DDD & Modular Monoliths](/backend/ddd) — drawing the boundaries
+that all this infrastructure serves.

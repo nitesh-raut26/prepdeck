@@ -1,0 +1,261 @@
+---
+title: "DDD & Modular Monoliths"
+summary: "Domain-Driven Design as the boundary-drawing discipline: bounded contexts, aggregates, domain events — and the modular monolith that makes microservices optional."
+order: 11
+difficulty: "Level 7"
+tags: ["backend", "ddd", "architecture", "modular-monolith"]
+---
+
+## What DDD actually is
+
+Strip the consultancy fog and **Domain-Driven Design** is one claim:
+*the structure of your software should mirror the structure of the
+business problem* — and a toolkit for finding that structure. It
+matters here, at the end of Level 7, because every hard question
+you've met — [where do services split?](/backend/microservices),
+[what does the gateway route to?](/backend/api-gateway), [which
+entity owns the invariant?](/lld/bookmyshow) — is secretly the same
+question: **where are the boundaries?** DDD is the discipline for
+answering it on purpose instead of by accident.
+
+## Ubiquitous language (the cheap superpower)
+
+Within a team and its code, **one vocabulary, shared with the
+business, used literally in class names**. If the operations team
+says "a *booking* expires," the code has `Booking.expire()` — not
+`ReservationRecordManager.updateStatus(7)`. Every translation layer
+between business-speak and code-speak is a place bugs breed ("wait,
+is a 'reservation' the same as a 'hold'?").
+
+The catch that motivates everything else: **words legitimately mean
+different things in different places.** "Customer" to billing is a
+payment method and a tax id; to support, a ticket history; to
+shipping, addresses. Forcing one `Customer` class to serve all three
+gives you the [god object](/lld/oop-and-solid) — fields for everyone,
+meaning for no one.
+
+## Bounded contexts (the headline idea)
+
+A **bounded context** is the boundary within which one model and one
+language hold. Billing's `Customer` and shipping's `Customer` are
+*different classes in different contexts*, related only by a shared
+id and explicit translation at the border:
+
+<Mermaid chart={`flowchart LR
+  subgraph Ordering [Ordering context]
+    O1[Order]
+    O2[Customer = buying identity]
+  end
+  subgraph Billing [Billing context]
+    B1[Invoice]
+    B2[Customer = payer + tax id]
+  end
+  subgraph Shipping [Shipping context]
+    S1[Shipment]
+    S2[Customer = addresses]
+  end
+  Ordering -- OrderPlaced event --> Billing
+  Ordering -- OrderPlaced event --> Shipping`} />
+
+Contexts map to business capabilities — which is exactly the
+[service-boundary rule](/backend/microservices) you already learned,
+now with its origin story: **microservice boundaries are bounded
+contexts**, discovered through the language ("when these two
+departments say the same word and mean different things, there's a
+border between them"). Borders talk via published contracts —
+[APIs](/backend/rest-and-graphql) and [events](/backend/kafka) — and
+each side translates at its edge (an **anti-corruption layer** when
+the other side's model is messy: [an Adapter](/lld/patterns-in-depth)
+defending your model's purity).
+
+## Aggregates (DDD's gift to your LLD)
+
+Inside a context, the **aggregate** answers "which objects must
+change *together*?" An aggregate is a cluster of entities with one
+**root** that is the only entry point, and one rule: **the aggregate
+is the transaction boundary** — invariants inside it are enforced
+atomically; anything across aggregates is eventual.
+
+You've already built these without the name:
+
+- [`Trip`](/lld/uber) — the root; state transitions, fare facts and
+  assignment all flow through it. *"Trip + driver flip atomically"*
+  was an aggregate-boundary decision.
+- [`Order` + its `Splits`](/lld/splitwise) — splits never modified
+  except through the expense; conservation enforced at the root.
+- [`Show` + its seat states](/lld/bookmyshow) — the per-show lock *is*
+  the aggregate boundary made concrete.
+
+Two design rules fall out, both interview-grade: **keep aggregates
+small** (the whole aggregate loads and locks together — an aggregate
+of "User and all their orders" serializes everything a user does);
+and **reference other aggregates by id, never by object** (a Trip
+holds `riderId`, not a Rider — crossing the boundary means a lookup,
+which keeps boundaries honest). Entities vs **value objects** rounds
+out the toolkit: an entity has identity over time (Trip #881); a
+value object is its attributes only (`Money(342, INR)`,
+`Location(lat, lng)`) — immutable, freely copied,
+[the tuple instinct](/programming/collections) formalized.
+
+## Domain events (how contexts talk)
+
+When an aggregate commits a meaningful change, it publishes a fact in
+the business's language: `OrderPlaced`, `TripCompleted`,
+`PaymentFailed`. Other contexts subscribe and react in their own
+models — [the event-driven architecture](/backend/microservices)
+you've seen, with DDD supplying *what the events are and who owns
+them*: events are named by the **producing** context's language, are
+**facts** (past tense, immutable), and carry ids + minimal data, not
+whole object graphs. Reliability is [the outbox
+pattern](/backend/kafka); recursion into
+[event sourcing](/databases/event-sourcing-cqrs) — storing the events
+*as* the state — is Level 9's chapter.
+
+## The modular monolith (the architecture this enables)
+
+Here's the payoff. [Microservices' costs](/backend/microservices) are
+network-shaped; DDD's boundaries are *model*-shaped. You can have the
+boundaries without the network: **one deployable, with bounded
+contexts as strictly separated modules**:
+
+```
+src/
+  ordering/        ← bounded context = module
+    api/           ← the ONLY things other modules may import
+    internal/      ← domain model; imports of this are BUILD ERRORS
+  billing/
+    api/
+    internal/
+  shipping/
+    ...
+shared-kernel/     ← tiny: Money, ids. Guard it jealously.
+```
+
+The discipline that makes it real (and not just folders): module
+boundaries **enforced by tooling** — build-system visibility rules,
+import linters, per-module test suites; each module owns its tables
+(no cross-module joins — queries cross via the module's API); modules
+communicate through interfaces or an in-process event bus with the
+same contracts they'd use over a network. What you get: monolith
+operations (one deploy, real transactions where a context needs
+them, refactoring across the codebase) with microservice *structure*
+— and because the seams are real, **extracting a module to a service
+later is mechanical**: its API becomes [REST/gRPC](/backend/api-gateway),
+its events move to [Kafka](/backend/kafka), its tables move out.
+This is the concrete meaning of
+["monolith-first"](/backend/microservices) — not "no structure," but
+*structure without distribution*. Shopify and Stack Overflow run
+famously on exactly this.
+
+## Common mistakes
+
+- **DDD as folder cosplay** — `domain/`, `repository/`, `service/`
+  directories with an anemic model underneath (entities as bare
+  getters/setters, all logic in "service" classes — the
+  [encapsulation failure](/lld/oop-and-solid) with extra ceremony).
+  DDD's tell is behavior living *on* the model: `order.cancel()`,
+  not `OrderService.setStatus(order, CANCELLED)`.
+- **One Customer to rule them all** — the shared-everything model
+  that bounded contexts exist to kill.
+- **Giant aggregates** — "load the user and their 4,000 orders to add
+  one" — throughput death by transaction boundary.
+- **Module boundaries on the honor system** — without import
+  enforcement, the modular monolith decays into a tangled one in
+  about six sprints.
+- **Shared kernel creep** — the "shared" module accreting business
+  logic until every context depends on everything: the distributed
+  monolith's stay-at-home sibling.
+- **Applying full DDD to a CRUD app** — a settings page doesn't need
+  aggregates; DDD earns its keep where the *domain logic* is the
+  complexity ([the pattern-fever rule](/lld/patterns-in-depth),
+  architecture edition).
+
+## Interview perspective
+
+<QA q="What is a bounded context, and how does it answer 'how big should a microservice be?'">
+
+A bounded context is the boundary within which one domain model and
+one vocabulary apply consistently — billing's Customer (payer, tax
+id) and shipping's Customer (addresses) are different models that
+would corrupt each other if merged, so they live in different
+contexts integrating through explicit contracts. It answers the
+sizing question by replacing it: services aren't sized by lines of
+code or team count but by *model coherence* — one bounded context =
+one service (or one module) is the defensible default, because
+within the context everything genuinely changes together, and across
+contexts you were going to need translation anyway. Splitting *finer*
+than a context creates chatty services sharing a model over the
+network (the [distributed monolith](/backend/microservices));
+merging contexts creates the god-model. The practical detection
+method is linguistic: follow the words — where the same term changes
+meaning between departments, there's your border.
+
+</QA>
+
+<QA q="What is an aggregate, and how does choosing its boundary decide your locking and consistency story?">
+
+An aggregate is a cluster of objects treated as one consistency unit,
+with a root entity as sole entry point — all changes go through the
+root, which enforces the invariants, and the aggregate is exactly
+what one transaction loads and commits. That makes boundary choice
+*the* concurrency decision: invariants inside the boundary are
+guaranteed atomically (BookMyShow's "no two holds on one seat per
+show" works because Show-with-seat-states is one aggregate — the
+per-show lock follows); rules across aggregates are eventual, by
+saga/events (Trip and Driver are separate aggregates, so assignment
+needed [the reservation dance](/lld/uber)). Too big an aggregate
+serializes unrelated work (User-with-all-orders blocks every
+concurrent order); too small leaves real invariants unprotected
+(seat states as independent aggregates = double-booking). The design
+loop: list invariants → the strongest ones draw the smallest
+boundaries that contain them → everything else crosses by id +
+events. Said in one line: **aggregates are where you decide which
+consistency you'll pay for.**
+
+</QA>
+
+<QA q="Make the case for a modular monolith over microservices for a 15-engineer startup — and name the discipline that keeps it honest plus the trigger to split.">
+
+Fifteen engineers don't have the coordination problem microservices
+solve, but they'd inherit all the costs: per-service deploys and
+on-call, network partial failure, sagas instead of transactions,
+[tracing infrastructure](/devops/observability) before product-market
+fit. A modular monolith gives the durable benefit — bounded contexts
+as enforced modules with explicit APIs, owned tables, event-based
+internal communication — at in-process prices: one deploy, real
+ACID where a context needs it, function-call latency. The discipline
+that keeps it honest: boundary enforcement in tooling (import rules
+that fail the build, per-module CI, no cross-module joins), because
+unenforced modularity decays in months. The split trigger is
+organizational and measured, not aspirational: when independent
+*deploy cadence* per team becomes the bottleneck (release trains
+blocking each other), or one module's scaling/runtime needs genuinely
+diverge — then extraction is mechanical precisely because the seams
+were kept real: module API → service API, in-process events →
+[Kafka](/backend/kafka), tables already owned. The closing line:
+microservices should be an *extraction*, never a *rewrite* — and the
+modular monolith is what makes that true.
+
+</QA>
+
+## Practice
+
+1. **Language audit:** for a project you know
+   ([StockVision](/projects/stockvision) works), list five nouns the
+   "business" uses; check whether the code uses the same words. Every
+   mismatch is a small bug factory — rename one.
+2. **Context-map BookMyShow:** draw its bounded contexts (catalog,
+   booking, payments, notifications), mark which "movie"/"booking"
+   means what where, and label each border API-or-event.
+3. **Aggregate drill:** for [Splitwise](/lld/splitwise), decide:
+   is a Group one aggregate, or is each Expense its own? List the
+   invariants each choice protects and breaks — then defend one in
+   three sentences.
+4. **Enforce a boundary:** in any codebase, split two modules and add
+   an import-linter rule (e.g. `import-linter` for Python,
+   ArchUnit for Java) that fails the build on a cross-internal
+   import. Watch it catch you within the week.
+
+**Level 7 is complete.** The backend arc now runs from
+[the event loop](/backend/nodejs) to architecture — next stop on the
+[roadmap](/roadmap): the levels above.

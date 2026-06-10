@@ -1,0 +1,206 @@
+---
+title: "API Gateway & Service Discovery"
+summary: "The front door and the phone book of microservices: edge concerns in one place, how services find each other, and where the mesh fits."
+order: 9
+difficulty: "Level 7"
+tags: ["backend", "api-gateway", "service-discovery", "microservices"]
+---
+
+## Two problems you created by splitting
+
+The moment a [monolith becomes services](/backend/microservices), two
+navigation problems appear that the monolith never had:
+
+1. **Outside → in:** clients can't be expected to know that orders
+   live at one address, payments at another, each with its own auth
+   quirks. Who is the front door? → the **API gateway**.
+2. **Inside → inside:** the order service must call the payment
+   service — but instances autoscale, die, and move
+   ([the cloud's nature](/basics/what-is-the-cloud)); IP addresses
+   are weather, not geography. How do callers find callees? →
+   **service discovery**.
+
+## The API gateway: one front door
+
+A gateway is a reverse proxy with opinions — the single entry point
+where **edge concerns** live exactly once instead of in every
+service:
+
+<Mermaid chart={`flowchart LR
+  C[Clients] -->|HTTPS| GW[API Gateway]
+  GW -->|/orders/*| O[Order svc]
+  GW -->|/payments/*| P[Payment svc]
+  GW -->|/search/*| S[Search svc]
+  GW --- AUTHZ[auth · rate limits · TLS
+  routing · transforms · logging]`} />
+
+What it does, and why *there*:
+
+- **Routing** — path/host-based dispatch to services; clients see one
+  API ([the contract](/backend/rest-and-graphql)), the topology
+  behind it can refactor freely. Versioning and canary routing
+  ("send 5% of traffic to v2") live here too.
+- **Authentication at the edge** — verify the
+  [JWT/session](/backend/auth) once; pass a trusted identity header
+  inward. Services still authorize (*what* may this user do — that's
+  domain logic), but they stop re-implementing *who is this*.
+- **Rate limiting & quotas** — [the algorithms](/hld/rate-limiting)
+  enforced before traffic touches anything expensive.
+- **TLS termination, request logging, body limits, CORS** — the
+  unglamorous edge checklist, centralized.
+- **Aggregation/BFF** — optionally, compose "the mobile home screen"
+  from three service calls so the phone makes one
+  ([the BFF pattern](/backend/rest-and-graphql), often GraphQL-shaped).
+
+Real ones you'll name: NGINX/Kong/Envoy, cloud-native (AWS API
+Gateway), or Spring Cloud Gateway. The danger to name in the same
+breath: the gateway sits on **every** request — keep it thin
+(*translate and route, never business logic*), horizontally scaled,
+and treat its config as code, or it becomes a single point of failure
+*and* a single point of politics ([ESB scars](/backend/microservices),
+historically).
+
+## Service discovery: the phone book
+
+Hardcoding `payment-svc:8080` works until the third deploy. Discovery
+has three moving parts: a **registry** (live address book), a
+**registration** flow, and a **lookup** flow:
+
+- **Registration:** instances announce themselves on boot
+  ("payments @ 10.0.3.7:8080") and are *removed when unhealthy* — via
+  TTL'd heartbeats ([the session-registry trick](/hld/design-whatsapp))
+  or active [health checks](/hld/scalability). The removal half is
+  the entire point: a registry of dead instances is worse than none.
+- **Client-side discovery:** the caller queries the registry and
+  load-balances itself (Netflix's Eureka+Ribbon lineage). Fewer hops,
+  smarter per-client choices — but discovery logic in every codebase.
+- **Server-side discovery:** the caller hits a stable virtual name; a
+  load balancer/proxy resolves it. Callers stay dumb — the dominant
+  pattern today because platforms provide it: **in Kubernetes,
+  `http://payments` just works** — DNS + a virtual IP route to live
+  pods, registration and health-eviction handled by the platform
+  ([Level 10](/devops/kubernetes) makes discovery ambient).
+
+Registries you'll name: Consul, etcd, ZooKeeper
+([the same coordination stores](/backend/distributed-locks) — not a
+coincidence: discovery *is* small-but-critical shared state), or the
+platform's built-in.
+
+## The service mesh (one honest paragraph)
+
+Once every service also wants retries, timeouts, mutual TLS, circuit
+breaking and per-call metrics ([the resilience
+kit](/backend/microservices)), you can either build them into every
+codebase (×N languages) or push them into a **sidecar proxy** next to
+each instance — and the fleet of sidecars plus their control plane is
+a **service mesh** (Istio/Linkerd, built on Envoy). Mesh = the
+gateway's concerns, applied to *east-west* (service-to-service)
+traffic, uniformly and outside application code. The cost is real
+operational complexity — the honest take: meshes earn their keep at
+many-teams/many-services scale, and below that, library-based
+resilience (or just the platform's basics) is the right call.
+
+## Common mistakes
+
+- **Business logic in the gateway** — discounts computed at the edge:
+  now there are two backends, one in YAML and nobody's tests.
+- **Clients bypassing the gateway** ("just this once") — every edge
+  control now has a hole; network policy should make bypass
+  impossible, not impolite.
+- **Treating the registry as optional hygiene** — stale entries mean
+  traffic to dead instances; health-eviction is the feature, not the
+  add-on.
+- **Gateway as singleton** — the front door needs the same horizontal
+  scaling and health checks as everything behind it.
+- **Auth only at the edge** — edge authN is necessary, not
+  sufficient; services must still authorize per request
+  (zero-trust instinct: [never trust the
+  caller](/basics/frontend-and-backend), even the internal one).
+- **Adopting a mesh because the talk was good** — two teams and six
+  services don't need Istio; they need timeouts in a library.
+
+## Interview perspective
+
+<QA q="What belongs in an API gateway, what absolutely doesn't, and why?">
+
+Belongs: cross-cutting *edge* concerns identical for every request —
+TLS termination, authentication (verify the token once, forward
+trusted identity), rate limiting and quotas, routing/versioning/canary
+splits, request logging and size limits, and optionally
+client-shaped aggregation (BFF). These are infrastructure policies:
+they change rarely, apply uniformly, and centralizing them removes N
+duplicated implementations. Doesn't belong: anything requiring domain
+knowledge — pricing rules, permission decisions beyond identity,
+data transformation tied to business meaning, orchestration with
+business consequences. Two reasons: the gateway is on the hot path of
+*every* request, so logic there is a global latency and risk
+multiplier; and logic in gateway config escapes the owning team's
+tests, reviews and deploy pipeline — it becomes an unversioned second
+backend. The crisp rule to say: **the gateway may know who you are
+and where requests go; it may never know what things mean.**
+
+</QA>
+
+<QA q="Compare client-side and server-side service discovery, and explain what Kubernetes actually gives you.">
+
+Client-side: services query the registry directly and pick an
+instance themselves (Eureka-style) — one less network hop and room
+for smart per-client balancing (locality, latency-aware), at the
+price of discovery+LB logic embedded in every service and language.
+Server-side: callers use a stable name; an intermediary (LB, proxy,
+DNS) resolves to a live instance — callers stay trivial, the
+platform owns the hard part, one more hop. Kubernetes bakes in
+server-side discovery: a Service object gets a stable DNS name and
+virtual IP; the platform tracks pod health via probes and updates
+endpoints, so `http://payments` always routes to live pods — apps
+need zero discovery code. What it *doesn't* give you by default:
+sophisticated traffic policy (retries, circuit breaking, mTLS,
+weighted canaries) — that's the gap meshes or libraries fill. The
+takeaway line: discovery has been absorbed into platforms; the
+interview answer is knowing *what layer* provides it in your stack.
+
+</QA>
+
+<QA q="A request through the gateway intermittently takes 3s instead of 80ms. Walk your diagnosis through gateway, discovery and services.">
+
+First scope it with the gateway's own telemetry — it logs per-route
+upstream latency: is the slowness concentrated on one route (that
+service's problem), all routes (gateway or shared infra), or
+scattered (suspect discovery/instances)? One route → follow the
+[trace](/devops/observability) into that service ([the microservices
+playbook](/backend/microservices)). All routes → check the gateway
+fleet itself: CPU/TLS handshake saturation, connection-pool
+exhaustion, an unindexed auth lookup it makes per request. Scattered
+→ classic discovery staleness: traffic occasionally routed to a
+dying/overloaded instance — check registry health-eviction lag,
+readiness-probe correctness (an instance passing probes while
+drowning), and connection reuse to recycled IPs. Also name the quiet
+killer: retries configured at *both* gateway and client multiplying
+load during a partial outage — intermittent 3s spikes are often
+retry storms breathing. The structure of the answer — partition the
+search space by what the gateway can already tell you — matters more
+than guessing the culprit.
+
+</QA>
+
+## Practice
+
+1. **Build a toy gateway:** an [Express](/backend/nodejs) proxy
+   routing `/orders/*` and `/payments/*` to two local services; add
+   JWT verification and a per-IP token bucket at the edge; confirm
+   the services receive a trusted identity header.
+2. **Feel discovery:** run two instances of one service; first
+   hardcode the port (kill it; watch failure), then route through a
+   registry file your gateway re-reads — your own crude
+   registration/eviction loop.
+3. **In Kubernetes** (or minikube): two Deployments + Services; curl
+   one from the other by DNS name; scale and kill pods and watch
+   traffic stay routed — discovery as ambient platform.
+4. **Design rep:** sketch the gateway config for
+   [BookMyShow](/lld/bookmyshow): routes, where the
+   [idempotency-key check](/backend/rest-and-graphql) lives, what
+   rate limits protect seat-locking, and which one endpoint you'd
+   canary first.
+
+Next: [Distributed Locks](/backend/distributed-locks) — when "only one
+of us should do this" crosses machine boundaries.
