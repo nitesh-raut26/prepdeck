@@ -2,23 +2,98 @@
 
 import { useLang, type Lang } from "@/components/language-provider";
 
-const LANGS: { id: Lang; label: string; icon: string }[] = [
-  { id: "python", label: "Python", icon: "🐍" },
-  { id: "java",   label: "Java",   icon: "☕" },
-  { id: "cpp",    label: "C++",    icon: "⚡" },
+/* ── Custom SVG Icons (no emoji) ─────────────────────────── */
+
+function PythonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {/* Python logo — two interlocked snake bodies */}
+      <path
+        d="M11.914 0C5.82 0 6.2 2.656 6.2 2.656L6.208 5.4h5.814V6.2H3.9S0 5.774 0 11.932c0 6.157 3.405 5.938 3.405 5.938h2.033V15.03s-.11-3.404 3.354-3.404h5.766s3.248.052 3.248-3.138V3.103S18.36 0 11.914 0zm-3.21 1.796a1.047 1.047 0 1 1 0 2.094 1.047 1.047 0 0 1 0-2.094z"
+        fill="#3776ab"
+      />
+      <path
+        d="M12.086 24c6.096 0 5.716-2.656 5.716-2.656L17.794 18.6H11.98V17.8h8.12s3.9.426 3.9-5.732c0-6.157-3.405-5.938-3.405-5.938H18.56v2.84s.11 3.404-3.354 3.404H9.44s-3.248-.052-3.248 3.138v5.285S5.64 24 12.086 24zm3.21-1.796a1.047 1.047 0 1 1 0-2.094 1.047 1.047 0 0 1 0 2.094z"
+        fill="#ffd43b"
+      />
+    </svg>
+  );
+}
+
+function JavaIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {/* Java — simplified coffee cup / flame logo */}
+      <path
+        d="M8.851 18.56s-.917.534.653.714c1.902.218 2.874.187 4.969-.211 0 0 .552.346 1.321.646-4.699 2.013-10.633-.118-6.943-1.149zm-.548-2.627s-1.028.761.542.924c2.032.209 3.636.227 6.413-.308 0 0 .384.389.987.602-5.679 1.661-12.007.13-7.942-1.218z"
+        fill="#e76f00"
+      />
+      <path
+        d="M13.116 11.475c1.158 1.333-.304 2.533-.304 2.533s2.939-1.518 1.589-3.418c-1.261-1.772-2.228-2.652 3.007-5.688 0-.001-8.216 2.051-4.292 6.573z"
+        fill="#e76f00"
+      />
+      <path
+        d="M19.33 20.504s.679.559-.747.991c-2.712.822-11.288 1.069-13.669.033-.856-.373.75-.89 1.254-.998.527-.114.828-.093.828-.093-.953-.671-6.156 1.317-2.643 1.887 9.58 1.553 17.462-.7 14.977-1.82zm-10.038-6.294s-4.362 1.036-1.544 1.412c1.189.159 3.561.123 5.77-.062 1.806-.152 3.618-.477 3.618-.477s-.637.272-1.098.587c-4.429 1.165-12.986.623-10.522-.568 2.082-1.006 3.776-.892 3.776-.892z"
+        fill="#e76f00"
+      />
+      <path
+        d="M17.116 17.584c4.503-2.34 2.421-4.589.968-4.285-.355.074-.515.138-.515.138s.132-.207.385-.297c2.875-1.011 5.086 2.981-.928 4.562 0-.001.07-.062.09-.118zM14.401.002s2.494 2.494-2.365 6.33c-3.896 3.077-.888 4.832-.001 6.836-2.274-2.053-3.943-3.858-2.824-5.539 1.644-2.469 6.197-3.665 5.19-7.627zM9.734 23.924c4.322.277 10.959-.153 11.116-2.198 0 0-.302.775-3.572 1.391-3.688.694-8.239.613-10.937.168 0-.001.553.457 3.393.639z"
+        fill="#e76f00"
+      />
+    </svg>
+  );
+}
+
+function CppIcon() {
+  return (
+    <svg width="16" height="14" viewBox="0 0 306 342" fill="none" aria-hidden="true">
+      {/* C++ shield logo */}
+      <path
+        d="M302.107 258.262c2.401-4.159 3.893-8.845 3.893-13.053V96.783c0-4.208-1.49-8.893-3.893-13.053L166 172z"
+        fill="#00599c"
+      />
+      <path
+        d="M166 172L3.893 83.73C1.49 87.89 0 92.575 0 96.783v148.426c0 4.208 1.49 8.894 3.893 13.053z"
+        fill="#004482"
+      />
+      <path
+        d="M166 172l136.107 86.262c-2.405 4.167-5.875 7.543-9.709 9.822L162 334.717c-7.671 4.431-17.329 4.431-25 0L26.602 268.084c-3.834-2.279-7.304-5.655-9.709-9.822z"
+        fill="#659ad2"
+      />
+      <path
+        d="M166 172L29.893 85.738c2.405-4.167 5.875-7.543 9.709-9.822L163 9.283c7.671-4.431 17.329-4.431 25 0l125.398 66.633c3.834 2.279 7.304 5.655 9.709 9.822z"
+        fill="#00599c"
+      />
+      <path
+        d="M134 222c-27.614 0-50-22.386-50-50s22.386-50 50-50c21.239 0 39.533 13.245 47.239 32H230c-8.328-45.393-48.225-80-88-80-55.228 0-100 44.772-100 100s44.772 100 100 100c39.775 0 79.672-34.607 88-80h-48.761C173.533 208.755 155.239 222 134 222z"
+        fill="#fff"
+      />
+      <path d="M218 154v12h-12v12h12v12h12v-12h12v-12h-12v-12z" fill="#fff" />
+      <path d="M254 154v12h-12v12h12v12h12v-12h12v-12h-12v-12z" fill="#fff" />
+    </svg>
+  );
+}
+
+/* ── Language config ─────────────────────────────────────── */
+
+const LANGS: { id: Lang; label: string; Icon: () => React.ReactElement }[] = [
+  { id: "python", label: "Python", Icon: PythonIcon },
+  { id: "java",   label: "Java",   Icon: JavaIcon   },
+  { id: "cpp",    label: "C++",    Icon: CppIcon     },
 ];
+
+/* ── Switcher UI ─────────────────────────────────────────── */
 
 export function LanguageSwitcher() {
   const { lang, setLang, mounted } = useLang();
 
   if (!mounted) {
-    // Avoid hydration mismatch — render a stable placeholder
-    return <div className="lang-switcher-skeleton" />;
+    return <div className="lang-switcher-skeleton" aria-hidden="true" />;
   }
 
   return (
     <div className="lang-switcher" role="group" aria-label="Code language preference">
-      {LANGS.map(({ id, label, icon }) => (
+      {LANGS.map(({ id, label, Icon }) => (
         <button
           key={id}
           type="button"
@@ -27,7 +102,9 @@ export function LanguageSwitcher() {
           title={`Show ${label} code`}
           className={`lang-btn ${lang === id ? "lang-btn-active" : ""} lang-btn-${id}`}
         >
-          <span className="lang-icon" aria-hidden="true">{icon}</span>
+          <span className="lang-icon" aria-hidden="true">
+            <Icon />
+          </span>
           <span className="lang-label">{label}</span>
         </button>
       ))}

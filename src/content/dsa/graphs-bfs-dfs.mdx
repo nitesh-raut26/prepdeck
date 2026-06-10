@@ -8,175 +8,131 @@ tags: ["graphs", "BFS", "DFS", "Dijkstra", "topological-sort", "MST", "SCC", "sh
 
 ## What even is a graph?
 
-A **graph** is a set of **nodes** (also called vertices, V) connected by **edges** (E). That's it. But this
-deceptively simple definition captures almost every relationship that matters in computing:
-
-- **Social networks** — users are nodes, friendships are edges
-- **Maps / GPS** — cities are nodes, roads with distances are edges
-- **The internet** — servers are nodes, cables/links are edges
-- **Dependencies** — packages are nodes, "A requires B" is a directed edge
-- **Scheduling** — tasks are nodes, "do A before B" is an ordering edge
-- **Compilers** — variables are nodes, "A is used by B" is a data-flow edge
-
-If you understand graphs deeply, you understand a huge slice of the real world. This page goes from zero to every
-algorithm you'll ever need — in interviews, in production, and in competitive programming.
+A **graph** is a set of **nodes** (vertices, V) connected by **edges** (E). This simple idea
+captures almost every relationship that matters in computing: social networks, maps, dependency
+graphs, the internet, compilers, and scheduling systems.
 
 ---
 
 ## Part 1 — Fundamentals & Representation
 
-### Vocabulary (say these correctly in interviews)
+### Vocabulary
 
 | Term | Meaning |
 |---|---|
-| **Vertex / Node** | A point in the graph (often labeled 0…n-1) |
-| **Edge** | A connection between two vertices |
-| **Directed (digraph)** | Edges have direction: A→B ≠ B→A |
-| **Undirected** | Edges go both ways: A-B means A↔B |
+| **Directed / Undirected** | Edges have direction (A→B) or go both ways (A↔B) |
 | **Weighted** | Each edge has a cost/distance |
-| **Unweighted** | All edges are equal (or weight = 1) |
 | **Degree** | Number of edges touching a node |
-| **In-degree / Out-degree** | For directed: edges coming in / going out |
 | **Path** | A sequence of nodes connected by edges |
 | **Cycle** | A path that starts and ends at the same node |
 | **DAG** | Directed Acyclic Graph — directed, no cycles |
-| **Connected** | Every node is reachable from every other (undirected) |
-| **Strongly Connected** | Every node reachable from every other in a *directed* graph |
-| **Component** | A maximal connected subgraph |
-| **Sparse** | Few edges: E ≈ V |
-| **Dense** | Many edges: E ≈ V² |
+| **Connected** | Every node reachable from every other (undirected) |
 | **Tree** | Connected, undirected, no cycles — exactly V-1 edges |
-| **Forest** | Collection of trees (no cycles, possibly disconnected) |
 
-### Three ways to represent a graph
-
-**1. Adjacency List** (default — use this 95% of the time)
+### Adjacency list (your default — O(V+E) space)
 
 ```python
-# n nodes labeled 0..n-1
 from collections import defaultdict
 
+# Unweighted undirected
 adj = defaultdict(list)
-# For undirected: add both directions
-adj[0].append(1)
-adj[1].append(0)
-adj[1].append(2)
-adj[2].append(1)
+adj[0].append(1); adj[1].append(0)
+adj[1].append(2); adj[2].append(1)
 
-# For weighted graphs: store (neighbor, weight)
+# Weighted: store (neighbor, weight)
 adj[0].append((1, 5))   # edge 0→1 with weight 5
-```
 
-```java
-// Java
-List<List<Integer>> adj = new ArrayList<>();
-for (int i = 0; i < n; i++) adj.add(new ArrayList<>());
-adj.get(0).add(1);
-adj.get(1).add(0);  // undirected
-
-// Weighted
-List<List<int[]>> wAdj = new ArrayList<>();
-wAdj.get(0).add(new int[]{1, 5}); // neighbor=1, weight=5
-```
-
-**Space:** O(V + E) — stores only actual edges. **Traversal:** O(V + E).
-
-**2. Adjacency Matrix**
-
-```python
-# n × n grid; matrix[i][j] = weight of edge i→j (0 or ∞ if no edge)
-n = 5
-matrix = [[0] * n for _ in range(n)]
-matrix[0][1] = 1  # edge 0→1
-matrix[1][0] = 1  # undirected: also add reverse
-```
-
-**Space:** O(V²) — 1000 nodes = 1 million cells. **Edge lookup:** O(1). Use only for dense graphs or when
-you need instant edge-weight lookup (Floyd-Warshall).
-
-**3. Edge List**
-
-```python
-edges = [(0, 1, 5), (1, 2, 3), (2, 3, 7)]  # (u, v, weight)
-```
-
-Useful for sorting edges by weight (Kruskal's MST). O(E) space.
-
-### Building a graph from input
-
-```python
-# Standard competitive programming input: n nodes, m edges
+# Build from input
 n, m = map(int, input().split())
 adj = [[] for _ in range(n)]
 for _ in range(m):
     u, v = map(int, input().split())
     adj[u].append(v)
-    adj[v].append(u)  # remove if directed
-
-# Weighted
-adj = [[] for _ in range(n)]
-for _ in range(m):
-    u, v, w = map(int, input().split())
-    adj[u].append((v, w))
-    adj[v].append((u, w))  # remove if directed
+    adj[v].append(u)   # remove for directed
 ```
 
-<Callout type="tip" title="When to use which representation">
-- **Adjacency list**: sparse graphs, most interview problems, BFS/DFS — your default.
-- **Adjacency matrix**: dense graphs, Floyd-Warshall, when you need O(1) edge existence checks.
-- **Edge list**: Kruskal's MST (need to sort edges), input parsing convenience.
-</Callout>
+```java
+// Java adjacency list
+import java.util.*;
+
+List<List<Integer>> adj = new ArrayList<>();
+for (int i = 0; i < n; i++) adj.add(new ArrayList<>());
+adj.get(0).add(1); adj.get(1).add(0);   // undirected
+
+// Weighted: List<List<int[]>> where int[] = {neighbor, weight}
+List<List<int[]>> wAdj = new ArrayList<>();
+for (int i = 0; i < n; i++) wAdj.add(new ArrayList<>());
+wAdj.get(0).add(new int[]{1, 5});   // edge 0→1, weight 5
+
+// Build from Scanner input
+Scanner sc = new Scanner(System.in);
+int n = sc.nextInt(), m = sc.nextInt();
+List<List<Integer>> graph = new ArrayList<>();
+for (int i = 0; i < n; i++) graph.add(new ArrayList<>());
+for (int i = 0; i < m; i++) {
+    int u = sc.nextInt(), v = sc.nextInt();
+    graph.get(u).add(v);
+    graph.get(v).add(u);   // remove for directed
+}
+```
+
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+// Unweighted undirected
+vector<vector<int>> adj(n);
+adj[0].push_back(1); adj[1].push_back(0);
+
+// Weighted: vector<vector<pair<int,int>>>
+vector<vector<pair<int,int>>> wadj(n);
+wadj[0].push_back({1, 5});   // edge 0→1, weight 5
+
+// Build from input
+int n, m;
+cin >> n >> m;
+vector<vector<int>> adj(n);
+for (int i = 0; i < m; i++) {
+    int u, v; cin >> u >> v;
+    adj[u].push_back(v);
+    adj[v].push_back(u);   // remove for directed
+}
+```
 
 ---
 
 ## Part 2 — BFS (Breadth-First Search)
 
-### The core idea
+BFS explores nodes **level by level** using a queue. The first time you reach a node = **shortest path** (fewest edges).
 
-BFS explores nodes **level by level** — first all nodes at distance 1, then all at distance 2, etc. It uses a
-**queue** (FIFO). This level-by-level property is the key: the first time you reach a node in BFS, you've
-found the **shortest path** (fewest edges) to it.
+<Callout type="warn" title="The #1 BFS Bug — Mark visited on ENQUEUE, not dequeue">
+Always mark a node visited when you add it to the queue. If you mark on dequeue, the same node enters the queue multiple times — wrong distances and potential infinite loops.
+</Callout>
 
-```
-Graph:  0 - 1 - 3
-        |   |
-        2 - 4
-
-BFS from 0: visit 0, then {1,2}, then {3,4}
-Distances: 0→0=0, 0→1=1, 0→2=1, 0→3=2, 0→4=2
-```
-
-### Complete BFS implementation
+### Complete BFS — distance from source
 
 ```python
 from collections import deque
 
 def bfs(adj, start, n):
-    """
-    BFS traversal — returns distance from start to every node.
-    -1 means unreachable (disconnected graph).
-    """
     dist = [-1] * n
     dist[start] = 0
     q = deque([start])
-
     while q:
         node = q.popleft()
-        for neighbor in adj[node]:
-            if dist[neighbor] == -1:        # not visited
-                dist[neighbor] = dist[node] + 1
-                q.append(neighbor)          # ✅ mark visited ON ENQUEUE
-
+        for nb in adj[node]:
+            if dist[nb] == -1:
+                dist[nb] = dist[node] + 1
+                q.append(nb)        # ✅ mark visited ON ENQUEUE
     return dist
 ```
 
 ```java
-// Java BFS
 int[] bfs(List<List<Integer>> adj, int start, int n) {
     int[] dist = new int[n];
     Arrays.fill(dist, -1);
     dist[start] = 0;
-    Queue<Integer> q = new LinkedList<>();
+    Queue<Integer> q = new ArrayDeque<>();
     q.offer(start);
     while (!q.isEmpty()) {
         int node = q.poll();
@@ -191,60 +147,110 @@ int[] bfs(List<List<Integer>> adj, int start, int n) {
 }
 ```
 
-<Callout type="warn" title="The #1 BFS Bug — Mark on Enqueue, NOT Dequeue">
-Always mark a node as visited **when you add it to the queue**, not when you remove it. If you mark on
-dequeue, the same node gets added to the queue multiple times before it's processed — causing wrong distances
-and potentially infinite loops. This single bug fails more BFS solutions than any other mistake.
-</Callout>
+```cpp
+vector<int> bfs(vector<vector<int>>& adj, int start, int n) {
+    vector<int> dist(n, -1);
+    dist[start] = 0;
+    queue<int> q;
+    q.push(start);
+    while (!q.empty()) {
+        int node = q.front(); q.pop();
+        for (int nb : adj[node]) {
+            if (dist[nb] == -1) {
+                dist[nb] = dist[node] + 1;
+                q.push(nb);
+            }
+        }
+    }
+    return dist;
+}
+```
 
-### BFS to find the actual path (not just distance)
+### BFS with path reconstruction
 
 ```python
 def bfs_path(adj, start, end, n):
-    """Returns the shortest path from start to end, or [] if unreachable."""
     prev = [-1] * n
     visited = [False] * n
     visited[start] = True
     q = deque([start])
-
     while q:
         node = q.popleft()
-        if node == end:
-            break
+        if node == end: break
         for nb in adj[node]:
             if not visited[nb]:
                 visited[nb] = True
-                prev[nb] = node     # remember how we got here
+                prev[nb] = node
                 q.append(nb)
-
-    # Reconstruct path by walking backwards
-    if not visited[end]:
-        return []   # unreachable
-    path = []
-    cur = end
+    if not visited[end]: return []
+    path, cur = [], end
     while cur != -1:
-        path.append(cur)
-        cur = prev[cur]
-    return path[::-1]   # reverse to get start→end
+        path.append(cur); cur = prev[cur]
+    return path[::-1]
+```
+
+```java
+List<Integer> bfsPath(List<List<Integer>> adj, int start, int end, int n) {
+    int[] prev = new int[n];
+    Arrays.fill(prev, -1);
+    boolean[] visited = new boolean[n];
+    visited[start] = true;
+    Queue<Integer> q = new ArrayDeque<>();
+    q.offer(start);
+    while (!q.isEmpty()) {
+        int node = q.poll();
+        if (node == end) break;
+        for (int nb : adj.get(node)) {
+            if (!visited[nb]) {
+                visited[nb] = true;
+                prev[nb] = node;
+                q.offer(nb);
+            }
+        }
+    }
+    if (!visited[end]) return new ArrayList<>();
+    List<Integer> path = new ArrayList<>();
+    for (int cur = end; cur != -1; cur = prev[cur]) path.add(cur);
+    Collections.reverse(path);
+    return path;
+}
+```
+
+```cpp
+vector<int> bfsPath(vector<vector<int>>& adj, int start, int end, int n) {
+    vector<int> prev(n, -1);
+    vector<bool> visited(n, false);
+    visited[start] = true;
+    queue<int> q; q.push(start);
+    while (!q.empty()) {
+        int node = q.front(); q.pop();
+        if (node == end) break;
+        for (int nb : adj[node]) {
+            if (!visited[nb]) {
+                visited[nb] = true;
+                prev[nb] = node;
+                q.push(nb);
+            }
+        }
+    }
+    if (!visited[end]) return {};
+    vector<int> path;
+    for (int cur = end; cur != -1; cur = prev[cur]) path.push_back(cur);
+    reverse(path.begin(), path.end());
+    return path;
+}
 ```
 
 ### Multi-source BFS
 
-When you need distances from **multiple starting points simultaneously** (e.g., "distance from nearest
-warehouse," "nearest exit in a maze"), initialize the queue with all sources at distance 0:
+When distances from **multiple** starting points simultaneously (nearest warehouse, nearest exit):
 
 ```python
 def multi_source_bfs(adj, sources, n):
-    """
-    BFS from multiple sources simultaneously.
-    Example: 01 Matrix — distance from each cell to nearest 0.
-    """
     dist = [-1] * n
     q = deque()
     for s in sources:
-        dist[s] = 0
-        q.append(s)
-
+        dist[s] = 0; q.append(s)
     while q:
         node = q.popleft()
         for nb in adj[node]:
@@ -254,128 +260,212 @@ def multi_source_bfs(adj, sources, n):
     return dist
 ```
 
-### Level-by-level BFS
+```java
+int[] multiSourceBFS(List<List<Integer>> adj, List<Integer> sources, int n) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, -1);
+    Queue<Integer> q = new ArrayDeque<>();
+    for (int s : sources) { dist[s] = 0; q.offer(s); }
+    while (!q.isEmpty()) {
+        int node = q.poll();
+        for (int nb : adj.get(node)) {
+            if (dist[nb] == -1) { dist[nb] = dist[node] + 1; q.offer(nb); }
+        }
+    }
+    return dist;
+}
+```
 
-When you need to process nodes level by level (e.g., "minimum steps", "binary tree level order"):
-
-```python
-def bfs_levels(adj, start):
-    """Returns list of levels: levels[0] = [start], levels[1] = [all at dist 1], ..."""
-    visited = {start}
-    q = deque([start])
-    levels = []
-
-    while q:
-        level = []
-        for _ in range(len(q)):     # process exactly this level's nodes
-            node = q.popleft()
-            level.append(node)
-            for nb in adj[node]:
-                if nb not in visited:
-                    visited.add(nb)
-                    q.append(nb)
-        levels.append(level)
-    return levels
+```cpp
+vector<int> multiSourceBFS(vector<vector<int>>& adj, vector<int>& sources, int n) {
+    vector<int> dist(n, -1);
+    queue<int> q;
+    for (int s : sources) { dist[s] = 0; q.push(s); }
+    while (!q.empty()) {
+        int node = q.front(); q.pop();
+        for (int nb : adj[node]) {
+            if (dist[nb] == -1) { dist[nb] = dist[node] + 1; q.push(nb); }
+        }
+    }
+    return dist;
+}
 ```
 
 ### BFS on a 2D grid
 
-Grid problems are just graphs where nodes are cells and edges connect adjacent cells:
-
 ```python
 def bfs_grid(grid, start_r, start_c):
-    """BFS on a 2D grid. Returns distance from start to every reachable cell."""
     rows, cols = len(grid), len(grid[0])
-    dist = [[-1] * cols for _ in range(rows)]
+    dist = [[-1]*cols for _ in range(rows)]
     dist[start_r][start_c] = 0
     q = deque([(start_r, start_c)])
-    directions = [(0,1),(0,-1),(1,0),(-1,0)]  # right, left, down, up
-
+    dirs = [(0,1),(0,-1),(1,0),(-1,0)]
     while q:
         r, c = q.popleft()
-        for dr, dc in directions:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < rows and 0 <= nc < cols and dist[nr][nc] == -1 and grid[nr][nc] != '#':
+        for dr, dc in dirs:
+            nr, nc = r+dr, c+dc
+            if 0<=nr<rows and 0<=nc<cols and dist[nr][nc]==-1 and grid[nr][nc]!='#':
                 dist[nr][nc] = dist[r][c] + 1
                 q.append((nr, nc))
     return dist
+```
+
+```java
+int[][] bfsGrid(char[][] grid, int sr, int sc) {
+    int rows = grid.length, cols = grid[0].length;
+    int[][] dist = new int[rows][cols];
+    for (int[] row : dist) Arrays.fill(row, -1);
+    dist[sr][sc] = 0;
+    Queue<int[]> q = new ArrayDeque<>();
+    q.offer(new int[]{sr, sc});
+    int[][] dirs = {{0,1},{0,-1},{1,0},{-1,0}};
+    while (!q.isEmpty()) {
+        int[] cur = q.poll();
+        int r = cur[0], c = cur[1];
+        for (int[] d : dirs) {
+            int nr = r+d[0], nc = c+d[1];
+            if (nr>=0 && nr<rows && nc>=0 && nc<cols && dist[nr][nc]==-1 && grid[nr][nc]!='#') {
+                dist[nr][nc] = dist[r][c] + 1;
+                q.offer(new int[]{nr, nc});
+            }
+        }
+    }
+    return dist;
+}
+```
+
+```cpp
+vector<vector<int>> bfsGrid(vector<vector<char>>& grid, int sr, int sc) {
+    int rows = grid.size(), cols = grid[0].size();
+    vector<vector<int>> dist(rows, vector<int>(cols, -1));
+    dist[sr][sc] = 0;
+    queue<pair<int,int>> q; q.push({sr, sc});
+    int dirs[][2] = {{0,1},{0,-1},{1,0},{-1,0}};
+    while (!q.empty()) {
+        auto [r, c] = q.front(); q.pop();
+        for (auto& d : dirs) {
+            int nr = r+d[0], nc = c+d[1];
+            if (nr>=0 && nr<rows && nc>=0 && nc<cols && dist[nr][nc]==-1 && grid[nr][nc]!='#') {
+                dist[nr][nc] = dist[r][c] + 1;
+                q.push({nr, nc});
+            }
+        }
+    }
+    return dist;
+}
 ```
 
 ---
 
 ## Part 3 — DFS (Depth-First Search)
 
-### The core idea
+DFS dives as deep as possible before backtracking. Natural fit for: connectivity, all paths, cycle detection, topological order, SCCs, bridges.
 
-DFS dives as deep as possible along one path before backtracking. It naturally uses the **call stack**
-(recursive) or an explicit **stack**. DFS is the tool for: connectivity, all paths, cycle detection,
-topological order, strongly connected components, bridges, and articulation points.
-
-### Recursive DFS (clean and standard)
+### DFS recursive
 
 ```python
 def dfs(adj, node, visited):
-    """Visit all nodes reachable from `node`."""
     visited[node] = True
     for nb in adj[node]:
         if not visited[nb]:
             dfs(adj, nb, visited)
 
-# Count connected components
 def count_components(adj, n):
     visited = [False] * n
-    components = 0
+    count = 0
     for i in range(n):
         if not visited[i]:
             dfs(adj, i, visited)
-            components += 1
-    return components
+            count += 1
+    return count
 ```
 
-### Iterative DFS (when recursion limit is a concern)
+```java
+void dfs(List<List<Integer>> adj, int node, boolean[] visited) {
+    visited[node] = true;
+    for (int nb : adj.get(node))
+        if (!visited[nb]) dfs(adj, nb, visited);
+}
+
+int countComponents(List<List<Integer>> adj, int n) {
+    boolean[] visited = new boolean[n];
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        if (!visited[i]) { dfs(adj, i, visited); count++; }
+    }
+    return count;
+}
+```
+
+```cpp
+void dfs(vector<vector<int>>& adj, int node, vector<bool>& visited) {
+    visited[node] = true;
+    for (int nb : adj[node])
+        if (!visited[nb]) dfs(adj, nb, visited);
+}
+
+int countComponents(vector<vector<int>>& adj, int n) {
+    vector<bool> visited(n, false);
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        if (!visited[i]) { dfs(adj, i, visited); count++; }
+    }
+    return count;
+}
+```
+
+### DFS iterative (for large graphs, avoids recursion limit)
 
 ```python
 def dfs_iterative(adj, start, n):
     visited = [False] * n
     stack = [start]
     order = []
-
     while stack:
         node = stack.pop()
-        if visited[node]:
-            continue
+        if visited[node]: continue
         visited[node] = True
         order.append(node)
-        for nb in adj[node]:      # note: reversed order vs recursive DFS
-            if not visited[nb]:
-                stack.append(nb)
+        for nb in adj[node]:
+            if not visited[nb]: stack.append(nb)
     return order
 ```
 
-<Callout type="tip" title="Recursive vs Iterative DFS">
-Recursive DFS is cleaner and is the standard in interviews. Use iterative DFS only when the graph could be
-very deep (n ≈ 10⁵) to avoid Python's recursion limit (sys.setrecursionlimit or iterative). In Java/C++,
-the default stack is much deeper, so recursion is almost always fine.
-</Callout>
-
-### DFS with entry/exit timestamps (crucial for advanced algorithms)
-
-```python
-timer = [0]
-entry = [0] * n   # when we first visit node
-exit_  = [0] * n  # when we finish processing node and backtrack
-
-def dfs_time(adj, node, visited):
-    visited[node] = True
-    entry[node] = timer[0]; timer[0] += 1
-    for nb in adj[node]:
-        if not visited[nb]:
-            dfs_time(adj, nb, visited)
-    exit_[node] = timer[0]; timer[0] += 1
+```java
+List<Integer> dfsIterative(List<List<Integer>> adj, int start, int n) {
+    boolean[] visited = new boolean[n];
+    Deque<Integer> stack = new ArrayDeque<>();
+    stack.push(start);
+    List<Integer> order = new ArrayList<>();
+    while (!stack.isEmpty()) {
+        int node = stack.pop();
+        if (visited[node]) continue;
+        visited[node] = true;
+        order.add(node);
+        for (int nb : adj.get(node))
+            if (!visited[nb]) stack.push(nb);
+    }
+    return order;
+}
 ```
 
-Why does this matter? Entry/exit times let you check **subtree relationships** in O(1):
-- `u` is an ancestor of `v` iff `entry[u] < entry[v]` and `exit[v] < exit[u]`
+```cpp
+vector<int> dfsIterative(vector<vector<int>>& adj, int start, int n) {
+    vector<bool> visited(n, false);
+    stack<int> st;
+    st.push(start);
+    vector<int> order;
+    while (!st.empty()) {
+        int node = st.top(); st.pop();
+        if (visited[node]) continue;
+        visited[node] = true;
+        order.push_back(node);
+        for (int nb : adj[node])
+            if (!visited[nb]) st.push(nb);
+    }
+    return order;
+}
+```
 
 ---
 
@@ -383,227 +473,271 @@ Why does this matter? Entry/exit times let you check **subtree relationships** i
 
 ### Cycle in an undirected graph
 
-Use DFS. An undirected graph has a cycle if you reach an already-visited node that **isn't** your direct parent:
-
 ```python
 def has_cycle_undirected(adj, n):
     visited = [False] * n
-
     def dfs(node, parent):
         visited[node] = True
         for nb in adj[node]:
             if not visited[nb]:
-                if dfs(nb, node):
-                    return True
-            elif nb != parent:          # visited AND not parent = cycle!
+                if dfs(nb, node): return True
+            elif nb != parent:   # visited AND not parent = cycle!
                 return True
         return False
-
     for i in range(n):
         if not visited[i]:
-            if dfs(i, -1):
-                return True
+            if dfs(i, -1): return True
     return False
 ```
 
-<Callout type="warn" title="The Parent Check Trap">
-For undirected graphs: when you see a visited neighbor, check if it's the parent. If yes, it's just the
-edge you came from — not a cycle. If no, you've found a cycle. This check is easy to forget.
+```java
+boolean hasCycleUndirected(List<List<Integer>> adj, int n) {
+    boolean[] visited = new boolean[n];
+    for (int i = 0; i < n; i++)
+        if (!visited[i] && dfsCycle(adj, i, -1, visited)) return true;
+    return false;
+}
 
-**Edge case:** if there are multiple edges between the same two nodes (multigraph), pass parent *edge id*
-instead of parent *node* to avoid false negatives.
-</Callout>
+boolean dfsCycle(List<List<Integer>> adj, int node, int parent, boolean[] visited) {
+    visited[node] = true;
+    for (int nb : adj.get(node)) {
+        if (!visited[nb]) { if (dfsCycle(adj, nb, node, visited)) return true; }
+        else if (nb != parent) return true;
+    }
+    return false;
+}
+```
 
-### Cycle in a directed graph
+```cpp
+bool dfsCycleU(vector<vector<int>>& adj, int node, int parent, vector<bool>& visited) {
+    visited[node] = true;
+    for (int nb : adj[node]) {
+        if (!visited[nb]) { if (dfsCycleU(adj, nb, node, visited)) return true; }
+        else if (nb != parent) return true;
+    }
+    return false;
+}
 
-For directed graphs, track nodes currently on the **recursion stack** (gray nodes). An edge to a gray node
-is a back edge = cycle:
+bool hasCycleUndirected(vector<vector<int>>& adj, int n) {
+    vector<bool> visited(n, false);
+    for (int i = 0; i < n; i++)
+        if (!visited[i] && dfsCycleU(adj, i, -1, visited)) return true;
+    return false;
+}
+```
+
+### Cycle in a directed graph (3-colour DFS)
 
 ```python
 def has_cycle_directed(adj, n):
-    # 0 = unvisited, 1 = in current path (gray), 2 = fully processed (black)
+    # 0=unvisited, 1=in-progress (gray), 2=done (black)
     color = [0] * n
-
     def dfs(node):
-        color[node] = 1      # mark as "in progress"
+        color[node] = 1
         for nb in adj[node]:
-            if color[nb] == 1:   # back edge to an in-progress node = cycle
-                return True
-            if color[nb] == 0:   # unvisited
-                if dfs(nb):
-                    return True
-        color[node] = 2      # fully processed — no cycle from here
+            if color[nb] == 1: return True   # back edge = cycle
+            if color[nb] == 0 and dfs(nb): return True
+        color[node] = 2
         return False
-
     for i in range(n):
-        if color[i] == 0:
-            if dfs(i):
-                return True
+        if color[i] == 0 and dfs(i): return True
     return False
 ```
 
-| Scenario | Method |
-|---|---|
-| Undirected cycle | DFS + parent check |
-| Directed cycle | DFS + 3-color (white/gray/black) |
-| Either (static graph) | Union-Find (for undirected; see [Union-Find](/dsa/union-find)) |
-| DAG verification | Topological sort — if order has fewer than V nodes, cycle exists |
+```java
+boolean hasCycleDirected(List<List<Integer>> adj, int n) {
+    int[] color = new int[n];  // 0=white, 1=gray, 2=black
+    for (int i = 0; i < n; i++)
+        if (color[i] == 0 && dfsCycleD(adj, i, color)) return true;
+    return false;
+}
+
+boolean dfsCycleD(List<List<Integer>> adj, int node, int[] color) {
+    color[node] = 1;
+    for (int nb : adj.get(node)) {
+        if (color[nb] == 1) return true;
+        if (color[nb] == 0 && dfsCycleD(adj, nb, color)) return true;
+    }
+    color[node] = 2;
+    return false;
+}
+```
+
+```cpp
+bool dfsCycleD(vector<vector<int>>& adj, int node, vector<int>& color) {
+    color[node] = 1;
+    for (int nb : adj[node]) {
+        if (color[nb] == 1) return true;
+        if (color[nb] == 0 && dfsCycleD(adj, nb, color)) return true;
+    }
+    color[node] = 2;
+    return false;
+}
+
+bool hasCycleDirected(vector<vector<int>>& adj, int n) {
+    vector<int> color(n, 0);
+    for (int i = 0; i < n; i++)
+        if (color[i] == 0 && dfsCycleD(adj, i, color)) return true;
+    return false;
+}
+```
 
 ---
 
 ## Part 5 — Topological Sort (DAGs)
 
-A **topological order** is a linear ordering of nodes in a DAG such that for every directed edge u→v,
-u comes before v. Think: build order, task scheduling, course prerequisites.
+Linear ordering where every edge u→v has u before v. Only exists if graph is a DAG.
 
-### Method 1: Kahn's Algorithm (BFS-based)
-
-Repeatedly remove nodes with in-degree 0 (no prerequisites). If you can't remove all nodes, a cycle exists.
+### Kahn's Algorithm (BFS-based — preferred)
 
 ```python
 from collections import deque
 
 def topological_sort_kahn(adj, n):
-    """
-    Returns topological order of nodes, or [] if a cycle exists.
-    adj: adjacency list (directed edges)
-    """
     indegree = [0] * n
     for u in range(n):
-        for v in adj[u]:
-            indegree[v] += 1
-
-    # Start with all nodes that have no prerequisites
+        for v in adj[u]: indegree[v] += 1
     q = deque([i for i in range(n) if indegree[i] == 0])
     order = []
-
     while q:
         node = q.popleft()
         order.append(node)
         for nb in adj[node]:
             indegree[nb] -= 1
-            if indegree[nb] == 0:
-                q.append(nb)
-
-    return order if len(order) == n else []   # [] means cycle detected
+            if indegree[nb] == 0: q.append(nb)
+    return order if len(order) == n else []   # [] → cycle exists
 ```
 
-### Method 2: DFS Post-order
-
-After fully processing a node (visiting all its descendants), add it to the front. The resulting list is
-topologically ordered:
-
-```python
-def topological_sort_dfs(adj, n):
-    visited = [False] * n
-    order = []
-
-    def dfs(node):
-        visited[node] = True
-        for nb in adj[node]:
-            if not visited[nb]:
-                dfs(nb)
-        order.append(node)      # add AFTER exploring all neighbors
-
-    for i in range(n):
-        if not visited[i]:
-            dfs(i)
-
-    return order[::-1]          # reverse: last-finished comes first
+```java
+List<Integer> topoKahn(List<List<Integer>> adj, int n) {
+    int[] indegree = new int[n];
+    for (int u = 0; u < n; u++) for (int v : adj.get(u)) indegree[v]++;
+    Queue<Integer> q = new ArrayDeque<>();
+    for (int i = 0; i < n; i++) if (indegree[i] == 0) q.offer(i);
+    List<Integer> order = new ArrayList<>();
+    while (!q.isEmpty()) {
+        int node = q.poll();
+        order.add(node);
+        for (int nb : adj.get(node))
+            if (--indegree[nb] == 0) q.offer(nb);
+    }
+    return order.size() == n ? order : new ArrayList<>();
+}
 ```
 
-### Classic topological sort problems
+```cpp
+vector<int> topoKahn(vector<vector<int>>& adj, int n) {
+    vector<int> indegree(n, 0);
+    for (int u = 0; u < n; u++) for (int v : adj[u]) indegree[v]++;
+    queue<int> q;
+    for (int i = 0; i < n; i++) if (indegree[i] == 0) q.push(i);
+    vector<int> order;
+    while (!q.empty()) {
+        int node = q.front(); q.pop();
+        order.push_back(node);
+        for (int nb : adj[node]) if (--indegree[nb] == 0) q.push(nb);
+    }
+    return (int)order.size() == n ? order : vector<int>{};
+}
+```
+
+### Course Schedule (LeetCode 207)
 
 ```python
-# Course Schedule (LeetCode 207): can you finish all courses?
-# = can you topologically sort the course dependency DAG?
 def can_finish(numCourses, prerequisites):
     adj = [[] for _ in range(numCourses)]
     indegree = [0] * numCourses
     for a, b in prerequisites:
-        adj[b].append(a)      # b must be taken before a
-        indegree[a] += 1
+        adj[b].append(a); indegree[a] += 1
     q = deque([i for i in range(numCourses) if indegree[i] == 0])
     taken = 0
     while q:
-        node = q.popleft()
-        taken += 1
+        node = q.popleft(); taken += 1
         for nb in adj[node]:
             indegree[nb] -= 1
-            if indegree[nb] == 0:
-                q.append(nb)
+            if indegree[nb] == 0: q.append(nb)
     return taken == numCourses
 ```
 
-<Callout type="tip" title="Kahn's vs DFS Topological Sort">
-Both are O(V+E). Use **Kahn's** when: you need cycle detection as a side effect, you want a "by-level"
-execution plan, or BFS feels more natural. Use **DFS post-order** when: you're already doing DFS for other
-reasons, or computing finishing times (needed for Kosaraju's SCC algorithm).
-</Callout>
+```java
+boolean canFinish(int numCourses, int[][] prerequisites) {
+    List<List<Integer>> adj = new ArrayList<>();
+    for (int i = 0; i < numCourses; i++) adj.add(new ArrayList<>());
+    int[] indegree = new int[numCourses];
+    for (int[] p : prerequisites) { adj.get(p[1]).add(p[0]); indegree[p[0]]++; }
+    Queue<Integer> q = new ArrayDeque<>();
+    for (int i = 0; i < numCourses; i++) if (indegree[i] == 0) q.offer(i);
+    int taken = 0;
+    while (!q.isEmpty()) {
+        int node = q.poll(); taken++;
+        for (int nb : adj.get(node)) if (--indegree[nb] == 0) q.offer(nb);
+    }
+    return taken == numCourses;
+}
+```
+
+```cpp
+bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
+    vector<vector<int>> adj(numCourses);
+    vector<int> indegree(numCourses, 0);
+    for (auto& p : prerequisites) { adj[p[1]].push_back(p[0]); indegree[p[0]]++; }
+    queue<int> q;
+    for (int i = 0; i < numCourses; i++) if (indegree[i] == 0) q.push(i);
+    int taken = 0;
+    while (!q.empty()) {
+        int node = q.front(); q.pop(); taken++;
+        for (int nb : adj[node]) if (--indegree[nb] == 0) q.push(nb);
+    }
+    return taken == numCourses;
+}
+```
 
 ---
 
 ## Part 6 — Shortest Paths
 
-### Overview: which algorithm to use?
-
 | Scenario | Algorithm | Complexity |
 |---|---|---|
-| Unweighted graph | BFS | O(V + E) |
-| Weighted, non-negative edges, single source | **Dijkstra** | O((V + E) log V) |
+| Unweighted | BFS | O(V+E) |
+| Weighted, non-negative, single source | **Dijkstra** | O((V+E) log V) |
 | Weighted, negative edges, single source | **Bellman-Ford** | O(VE) |
-| Negative cycle detection | Bellman-Ford | O(VE) |
-| All pairs shortest path | **Floyd-Warshall** | O(V³) |
-| All pairs, sparse graph | Dijkstra × V times | O(VE log V) |
-| DAG shortest path | Topological sort + relax | O(V + E) |
-| Unit weights with obstacles | BFS / 0-1 BFS | O(V + E) |
+| All pairs | **Floyd-Warshall** | O(V³) |
+| DAG (any weights) | Topo sort + relax | O(V+E) |
+| Weights 0 or 1 | 0-1 BFS (deque) | O(V+E) |
 
 ### Dijkstra's Algorithm
-
-The go-to for **weighted graphs with non-negative edge weights**. Uses a min-heap (priority queue).
-Works exactly like BFS but replaces the queue with a heap ordered by distance.
 
 ```python
 import heapq
 
 def dijkstra(adj, src, n):
-    """
-    Shortest distance from src to all nodes.
-    adj[u] = list of (neighbor, weight)
-    Returns dist array; -1 means unreachable.
-    """
+    """adj[u] = list of (neighbor, weight). Returns dist array."""
     dist = [float('inf')] * n
     dist[src] = 0
-    heap = [(0, src)]   # (distance, node)
-
+    heap = [(0, src)]
     while heap:
         d, node = heapq.heappop(heap)
-
-        if d > dist[node]:      # stale entry — skip
-            continue
-
+        if d > dist[node]: continue   # stale entry
         for nb, w in adj[node]:
-            new_dist = dist[node] + w
-            if new_dist < dist[nb]:
-                dist[nb] = new_dist
-                heapq.heappush(heap, (new_dist, nb))
-
+            nd = dist[node] + w
+            if nd < dist[nb]:
+                dist[nb] = nd
+                heapq.heappush(heap, (nd, nb))
     return [d if d != float('inf') else -1 for d in dist]
 ```
 
 ```java
-// Java Dijkstra
 int[] dijkstra(List<List<int[]>> adj, int src, int n) {
     int[] dist = new int[n];
     Arrays.fill(dist, Integer.MAX_VALUE);
     dist[src] = 0;
+    // PQ stores {distance, node}
     PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(a -> a[0]));
     pq.offer(new int[]{0, src});
-
     while (!pq.isEmpty()) {
-        int[] curr = pq.poll();
-        int d = curr[0], node = curr[1];
-        if (d > dist[node]) continue;  // stale
+        int[] cur = pq.poll();
+        int d = cur[0], node = cur[1];
+        if (d > dist[node]) continue;
         for (int[] edge : adj.get(node)) {
             int nb = edge[0], w = edge[1];
             if (dist[node] + w < dist[nb]) {
@@ -616,1079 +750,996 @@ int[] dijkstra(List<List<int[]>> adj, int src, int n) {
 }
 ```
 
-**Why it fails with negative edges:** Dijkstra assumes that once a node is popped from the heap (shortest
-distance known), it won't be updated again. Negative edges can create shorter paths after a node is "settled,"
-breaking this assumption.
-
-### Dijkstra with path reconstruction
-
-```python
-def dijkstra_path(adj, src, dst, n):
-    dist = [float('inf')] * n
-    prev = [-1] * n
-    dist[src] = 0
-    heap = [(0, src)]
-
-    while heap:
-        d, node = heapq.heappop(heap)
-        if d > dist[node]:
-            continue
-        if node == dst:
-            break
-        for nb, w in adj[node]:
-            if dist[node] + w < dist[nb]:
-                dist[nb] = dist[node] + w
-                prev[nb] = node
-                heapq.heappush(heap, (dist[nb], nb))
-
-    # Reconstruct path
-    if dist[dst] == float('inf'):
-        return [], -1
-    path, cur = [], dst
-    while cur != -1:
-        path.append(cur)
-        cur = prev[cur]
-    return path[::-1], dist[dst]
+```cpp
+vector<int> dijkstra(vector<vector<pair<int,int>>>& adj, int src, int n) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    // min-heap: {distance, node}
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<>> pq;
+    pq.push({0, src});
+    while (!pq.empty()) {
+        auto [d, node] = pq.top(); pq.pop();
+        if (d > dist[node]) continue;   // stale
+        for (auto [nb, w] : adj[node]) {
+            if (dist[node] + w < dist[nb]) {
+                dist[nb] = dist[node] + w;
+                pq.push({dist[nb], nb});
+            }
+        }
+    }
+    return dist;
+}
 ```
 
-### 0-1 BFS (when edges have weight 0 or 1 only)
-
-When edge weights are only 0 or 1, use a **deque** instead of a heap for O(V+E):
+### 0-1 BFS (weights are only 0 or 1)
 
 ```python
 from collections import deque
 
 def bfs_01(adj, src, n):
-    """
-    0-1 BFS: adj[u] = list of (neighbor, weight) where weight ∈ {0, 1}
-    Weight-0 edges go to the front of the deque (process first).
-    Weight-1 edges go to the back (process later, like BFS level).
-    """
     dist = [float('inf')] * n
     dist[src] = 0
     dq = deque([src])
-
     while dq:
         node = dq.popleft()
         for nb, w in adj[node]:
             if dist[node] + w < dist[nb]:
                 dist[nb] = dist[node] + w
-                if w == 0:
-                    dq.appendleft(nb)    # free edge — process next
-                else:
-                    dq.append(nb)        # cost edge — process later
+                if w == 0: dq.appendleft(nb)   # free: process ASAP
+                else: dq.append(nb)             # cost: process later
     return dist
 ```
 
-### Bellman-Ford Algorithm
+```java
+int[] bfs01(List<List<int[]>> adj, int src, int n) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[src] = 0;
+    Deque<Integer> dq = new ArrayDeque<>();
+    dq.addFirst(src);
+    while (!dq.isEmpty()) {
+        int node = dq.pollFirst();
+        for (int[] edge : adj.get(node)) {
+            int nb = edge[0], w = edge[1];
+            if (dist[node] + w < dist[nb]) {
+                dist[nb] = dist[node] + w;
+                if (w == 0) dq.addFirst(nb); else dq.addLast(nb);
+            }
+        }
+    }
+    return dist;
+}
+```
 
-Handles **negative edge weights** and detects **negative cycles**. Relax every edge V-1 times.
+```cpp
+vector<int> bfs01(vector<vector<pair<int,int>>>& adj, int src, int n) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    deque<int> dq; dq.push_back(src);
+    while (!dq.empty()) {
+        int node = dq.front(); dq.pop_front();
+        for (auto [nb, w] : adj[node]) {
+            if (dist[node] + w < dist[nb]) {
+                dist[nb] = dist[node] + w;
+                if (w == 0) dq.push_front(nb);
+                else dq.push_back(nb);
+            }
+        }
+    }
+    return dist;
+}
+```
+
+### Bellman-Ford (negative edges + cycle detection)
 
 ```python
 def bellman_ford(n, edges, src):
-    """
-    n: number of nodes (0..n-1)
-    edges: list of (u, v, weight)
-    Returns dist array; if negative cycle reachable from src, some dist = -inf.
-    """
+    """edges: list of (u, v, weight)"""
     dist = [float('inf')] * n
     dist[src] = 0
-
-    # Relax all edges V-1 times
     for _ in range(n - 1):
         updated = False
         for u, v, w in edges:
             if dist[u] != float('inf') and dist[u] + w < dist[v]:
-                dist[v] = dist[u] + w
-                updated = True
-        if not updated:
-            break   # early termination: converged
-
-    # Detect negative cycles: if we can still relax, there's a negative cycle
+                dist[v] = dist[u] + w; updated = True
+        if not updated: break
+    # Detect negative cycles
     for u, v, w in edges:
         if dist[u] != float('inf') and dist[u] + w < dist[v]:
-            dist[v] = float('-inf')    # mark as negative-cycle-affected
-
+            dist[v] = float('-inf')
     return dist
 ```
 
-**Why V-1 iterations?** A shortest path without a negative cycle visits at most V-1 edges (otherwise it
-would revisit a node, forming a cycle). Each iteration guarantees we've found optimal paths using at most
-`i` edges after the `i`-th iteration.
+```java
+int[] bellmanFord(int n, int[][] edges, int src) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[src] = 0;
+    for (int i = 0; i < n - 1; i++) {
+        boolean updated = false;
+        for (int[] e : edges) {
+            if (dist[e[0]] != Integer.MAX_VALUE && dist[e[0]] + e[2] < dist[e[1]]) {
+                dist[e[1]] = dist[e[0]] + e[2]; updated = true;
+            }
+        }
+        if (!updated) break;
+    }
+    for (int[] e : edges)
+        if (dist[e[0]] != Integer.MAX_VALUE && dist[e[0]] + e[2] < dist[e[1]])
+            dist[e[1]] = Integer.MIN_VALUE;
+    return dist;
+}
+```
+
+```cpp
+vector<int> bellmanFord(int n, vector<tuple<int,int,int>>& edges, int src) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    for (int i = 0; i < n - 1; i++) {
+        bool updated = false;
+        for (auto [u, v, w] : edges) {
+            if (dist[u] != INT_MAX && dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w; updated = true;
+            }
+        }
+        if (!updated) break;
+    }
+    for (auto [u, v, w] : edges)
+        if (dist[u] != INT_MAX && dist[u] + w < dist[v])
+            dist[v] = INT_MIN;
+    return dist;
+}
+```
 
 ### Floyd-Warshall (All-Pairs Shortest Path)
 
-Find shortest distances between **all pairs** of nodes. O(V³) time, O(V²) space.
-
 ```python
 def floyd_warshall(n, edges):
-    """
-    Returns dist[i][j] = shortest distance from i to j.
-    Use when: V ≤ ~500, need all-pairs distances, or need to handle negative edges.
-    """
     INF = float('inf')
-    dist = [[INF] * n for _ in range(n)]
-    for i in range(n):
-        dist[i][i] = 0   # distance to self = 0
+    dist = [[INF]*n for _ in range(n)]
+    for i in range(n): dist[i][i] = 0
     for u, v, w in edges:
         dist[u][v] = min(dist[u][v], w)
         dist[v][u] = min(dist[v][u], w)   # remove for directed
-
-    for k in range(n):          # intermediate node
-        for i in range(n):      # source
-            for j in range(n):  # destination
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
                 if dist[i][k] + dist[k][j] < dist[i][j]:
                     dist[i][j] = dist[i][k] + dist[k][j]
-
-    # Check negative cycles: if dist[i][i] < 0, i is on a negative cycle
-    for i in range(n):
-        if dist[i][i] < 0:
-            print(f"Negative cycle detected involving node {i}")
-
     return dist
 ```
 
-**The insight:** `dist[i][j]` after using intermediate nodes `{0..k}` = min(using k as intermediate,
-not using k). This recurrence lets you build up all-pairs distances bottom-up.
+```java
+int[][] floydWarshall(int n, int[][] edges) {
+    int INF = (int)1e9;
+    int[][] dist = new int[n][n];
+    for (int[] row : dist) Arrays.fill(row, INF);
+    for (int i = 0; i < n; i++) dist[i][i] = 0;
+    for (int[] e : edges) {
+        dist[e[0]][e[1]] = Math.min(dist[e[0]][e[1]], e[2]);
+        dist[e[1]][e[0]] = Math.min(dist[e[1]][e[0]], e[2]);
+    }
+    for (int k = 0; k < n; k++)
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (dist[i][k] != INF && dist[k][j] != INF)
+                    dist[i][j] = Math.min(dist[i][j], dist[i][k] + dist[k][j]);
+    return dist;
+}
+```
 
-### Shortest path in a DAG (faster than Dijkstra)
-
-If the graph is a DAG (no cycles), topological sort + one relaxation pass is O(V+E):
-
-```python
-def dag_shortest_path(adj, src, n):
-    """Shortest path in a DAG — works with negative edges too."""
-    order = topological_sort_kahn(adj, n)   # topological order
-    dist = [float('inf')] * n
-    dist[src] = 0
-
-    for node in order:
-        if dist[node] == float('inf'):
-            continue
-        for nb, w in adj[node]:
-            if dist[node] + w < dist[nb]:
-                dist[nb] = dist[node] + w
-    return dist
+```cpp
+vector<vector<int>> floydWarshall(int n, vector<tuple<int,int,int>>& edges) {
+    const int INF = 1e9;
+    vector<vector<int>> dist(n, vector<int>(n, INF));
+    for (int i = 0; i < n; i++) dist[i][i] = 0;
+    for (auto [u, v, w] : edges) {
+        dist[u][v] = min(dist[u][v], w);
+        dist[v][u] = min(dist[v][u], w);   // remove for directed
+    }
+    for (int k = 0; k < n; k++)
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (dist[i][k] != INF && dist[k][j] != INF)
+                    dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j]);
+    return dist;
+}
 ```
 
 ---
 
 ## Part 7 — Minimum Spanning Trees (MST)
 
-A **Minimum Spanning Tree** of a connected, weighted, undirected graph is a spanning tree (connects all V nodes
-with V-1 edges, no cycles) with the minimum total edge weight. Applications: cheapest network connecting all
-cities, laying cables, clustering.
-
-### Kruskal's Algorithm (Edge-based, uses Union-Find)
-
-Sort all edges by weight, greedily add each edge if it doesn't form a cycle:
+### Kruskal's Algorithm (sort edges, use Union-Find)
 
 ```python
 def kruskal(n, edges):
-    """
-    n: number of nodes (0..n-1)
-    edges: list of (weight, u, v)
-    Returns (MST weight, MST edges)
-    """
-    edges.sort()   # sort by weight ascending
-    parent = list(range(n))
-    rank = [0] * n
-
+    """edges: list of (weight, u, v). Returns (total_weight, mst_edges)."""
+    edges.sort()
+    parent = list(range(n)); rank = [0] * n
     def find(x):
-        if parent[x] != x:
-            parent[x] = find(parent[x])
+        if parent[x] != x: parent[x] = find(parent[x])
         return parent[x]
-
     def union(x, y):
         rx, ry = find(x), find(y)
-        if rx == ry:
-            return False
-        if rank[rx] < rank[ry]:
-            rx, ry = ry, rx
+        if rx == ry: return False
+        if rank[rx] < rank[ry]: rx, ry = ry, rx
         parent[ry] = rx
-        if rank[rx] == rank[ry]:
-            rank[rx] += 1
+        if rank[rx] == rank[ry]: rank[rx] += 1
         return True
-
-    mst_weight = 0
-    mst_edges = []
+    mst_w, mst_edges = 0, []
     for w, u, v in edges:
-        if union(u, v):          # doesn't form a cycle
-            mst_weight += w
-            mst_edges.append((u, v, w))
-            if len(mst_edges) == n - 1:   # MST is complete
-                break
-
-    return mst_weight, mst_edges
+        if union(u, v):
+            mst_w += w; mst_edges.append((u, v, w))
+            if len(mst_edges) == n - 1: break
+    return mst_w, mst_edges
 ```
 
-**Complexity:** O(E log E) for sorting + O(E α(V)) for Union-Find ≈ **O(E log E)**.
+```java
+int kruskal(int n, int[][] edges) {
+    Arrays.sort(edges, Comparator.comparingInt(e -> e[0]));
+    int[] parent = new int[n], rank = new int[n];
+    for (int i = 0; i < n; i++) parent[i] = i;
+    int mstWeight = 0, edgeCount = 0;
+    for (int[] e : edges) {
+        int pu = find(parent, e[1]), pv = find(parent, e[2]);
+        if (pu != pv) {
+            if (rank[pu] < rank[pv]) { int t = pu; pu = pv; pv = t; }
+            parent[pv] = pu;
+            if (rank[pu] == rank[pv]) rank[pu]++;
+            mstWeight += e[0];
+            if (++edgeCount == n - 1) break;
+        }
+    }
+    return mstWeight;
+}
+int find(int[] parent, int x) {
+    return parent[x] == x ? x : (parent[x] = find(parent, parent[x]));
+}
+```
 
-### Prim's Algorithm (Node-based, uses a heap)
+```cpp
+struct UnionFind {
+    vector<int> parent, rank;
+    UnionFind(int n) : parent(n), rank(n, 0) { iota(parent.begin(), parent.end(), 0); }
+    int find(int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+    bool unite(int x, int y) {
+        x = find(x); y = find(y);
+        if (x == y) return false;
+        if (rank[x] < rank[y]) swap(x, y);
+        parent[y] = x;
+        if (rank[x] == rank[y]) rank[x]++;
+        return true;
+    }
+};
 
-Grow the MST one node at a time. Start from any node, always add the cheapest edge connecting the current
-MST to a new node:
+int kruskal(int n, vector<tuple<int,int,int>> edges) {
+    sort(edges.begin(), edges.end());
+    UnionFind uf(n);
+    int mstWeight = 0;
+    for (auto [w, u, v] : edges) {
+        if (uf.unite(u, v)) {
+            mstWeight += w;
+            if (--n == 1) break;   // n-1 edges picked
+        }
+    }
+    return mstWeight;
+}
+```
+
+### Prim's Algorithm (grow MST node by node)
 
 ```python
-def prim(adj, n):
-    """
-    adj[u] = list of (neighbor, weight)
-    Returns MST total weight.
-    """
-    visited = [False] * n
-    heap = [(0, 0)]   # (cost to add this node to MST, node)
-    mst_weight = 0
+import heapq
 
+def prim(adj, n):
+    """adj[u] = list of (neighbor, weight)"""
+    visited = [False] * n
+    heap = [(0, 0)]   # (cost, node)
+    mst_weight = 0
     while heap:
         cost, node = heapq.heappop(heap)
-        if visited[node]:
-            continue
-        visited[node] = True
-        mst_weight += cost
-
+        if visited[node]: continue
+        visited[node] = True; mst_weight += cost
         for nb, w in adj[node]:
-            if not visited[nb]:
-                heapq.heappush(heap, (w, nb))
-
+            if not visited[nb]: heapq.heappush(heap, (w, nb))
     return mst_weight
 ```
 
-**Complexity:** O((V + E) log V) with a binary heap.
+```java
+int prim(List<List<int[]>> adj, int n) {
+    boolean[] visited = new boolean[n];
+    PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(a -> a[0]));
+    pq.offer(new int[]{0, 0});
+    int mstWeight = 0;
+    while (!pq.isEmpty()) {
+        int[] cur = pq.poll();
+        int cost = cur[0], node = cur[1];
+        if (visited[node]) continue;
+        visited[node] = true; mstWeight += cost;
+        for (int[] edge : adj.get(node))
+            if (!visited[edge[0]]) pq.offer(new int[]{edge[1], edge[0]});
+    }
+    return mstWeight;
+}
+```
 
-| | Kruskal | Prim |
-|---|---|---|
-| Better for | Sparse graphs (E ≈ V) | Dense graphs (E ≈ V²) |
-| Data structure | Union-Find + sorted edges | Min-heap |
-| Implementation | Slightly longer | Slightly shorter (Dijkstra-like) |
-| Key idea | Global edge sort | Local greedy expansion |
+```cpp
+int prim(vector<vector<pair<int,int>>>& adj, int n) {
+    vector<bool> visited(n, false);
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<>> pq;
+    pq.push({0, 0});
+    int mstWeight = 0;
+    while (!pq.empty()) {
+        auto [cost, node] = pq.top(); pq.pop();
+        if (visited[node]) continue;
+        visited[node] = true; mstWeight += cost;
+        for (auto [nb, w] : adj[node])
+            if (!visited[nb]) pq.push({w, nb});
+    }
+    return mstWeight;
+}
+```
 
 ---
 
 ## Part 8 — Strongly Connected Components (SCC)
 
-A **Strongly Connected Component** is a maximal set of nodes where every node is reachable from every
-other node (in a **directed** graph). Real uses: find "groups" in social networks, detect feedback loops
-in dependency graphs, condense a DAG.
-
-### Kosaraju's Algorithm (Two-pass DFS)
+### Kosaraju's Algorithm (2-pass DFS)
 
 ```python
 def kosaraju(adj, n):
-    """
-    Returns list of SCCs, each SCC is a list of nodes.
-    adj: adjacency list of directed graph
-    """
-    # Step 1: DFS on original graph, push nodes to stack in finish order
-    visited = [False] * n
-    stack = []
-
+    visited = [False] * n; stack = []
     def dfs1(node):
         visited[node] = True
         for nb in adj[node]:
-            if not visited[nb]:
-                dfs1(nb)
-        stack.append(node)      # push after fully exploring
-
+            if not visited[nb]: dfs1(nb)
+        stack.append(node)
     for i in range(n):
-        if not visited[i]:
-            dfs1(i)
-
-    # Step 2: Build reverse (transposed) graph
+        if not visited[i]: dfs1(i)
     radj = [[] for _ in range(n)]
     for u in range(n):
-        for v in adj[u]:
-            radj[v].append(u)
-
-    # Step 3: DFS on reversed graph in reverse finish order
-    visited = [False] * n
-    sccs = []
-
-    def dfs2(node, component):
-        visited[node] = True
-        component.append(node)
+        for v in adj[u]: radj[v].append(u)
+    visited = [False] * n; sccs = []
+    def dfs2(node, comp):
+        visited[node] = True; comp.append(node)
         for nb in radj[node]:
-            if not visited[nb]:
-                dfs2(nb, component)
-
+            if not visited[nb]: dfs2(nb, comp)
     while stack:
         node = stack.pop()
         if not visited[node]:
-            component = []
-            dfs2(node, component)
-            sccs.append(component)
-
+            comp = []; dfs2(node, comp); sccs.append(comp)
     return sccs
 ```
 
-**Why it works:** In the first pass, nodes finish in reverse topological order of SCCs. In the second pass
-(on reversed graph), starting from the last-finished node of the first pass, we can only reach nodes within
-the same SCC (because all cross-SCC edges in the original graph become cross-SCC edges in the opposite
-direction in the reversed graph).
+```java
+List<List<Integer>> kosaraju(List<List<Integer>> adj, int n) {
+    boolean[] visited = new boolean[n];
+    Deque<Integer> stack = new ArrayDeque<>();
+    for (int i = 0; i < n; i++) if (!visited[i]) dfs1(adj, i, visited, stack);
 
-### Tarjan's Algorithm (Single-pass SCC, more efficient)
+    List<List<Integer>> radj = new ArrayList<>();
+    for (int i = 0; i < n; i++) radj.add(new ArrayList<>());
+    for (int u = 0; u < n; u++) for (int v : adj.get(u)) radj.get(v).add(u);
 
-Tarjan's finds SCCs in a single DFS using a stack and discovery/low-link values:
+    Arrays.fill(visited, false);
+    List<List<Integer>> sccs = new ArrayList<>();
+    while (!stack.isEmpty()) {
+        int node = stack.pop();
+        if (!visited[node]) {
+            List<Integer> comp = new ArrayList<>();
+            dfs2(radj, node, visited, comp);
+            sccs.add(comp);
+        }
+    }
+    return sccs;
+}
+void dfs1(List<List<Integer>> adj, int u, boolean[] vis, Deque<Integer> stack) {
+    vis[u] = true;
+    for (int v : adj.get(u)) if (!vis[v]) dfs1(adj, v, vis, stack);
+    stack.push(u);
+}
+void dfs2(List<List<Integer>> radj, int u, boolean[] vis, List<Integer> comp) {
+    vis[u] = true; comp.add(u);
+    for (int v : radj.get(u)) if (!vis[v]) dfs2(radj, v, vis, comp);
+}
+```
+
+```cpp
+void dfs1(vector<vector<int>>& adj, int u, vector<bool>& visited, stack<int>& stk) {
+    visited[u] = true;
+    for (int v : adj[u]) if (!visited[v]) dfs1(adj, v, visited, stk);
+    stk.push(u);
+}
+void dfs2(vector<vector<int>>& radj, int u, vector<bool>& visited, vector<int>& comp) {
+    visited[u] = true; comp.push_back(u);
+    for (int v : radj[u]) if (!visited[v]) dfs2(radj, v, visited, comp);
+}
+vector<vector<int>> kosaraju(vector<vector<int>>& adj, int n) {
+    stack<int> stk; vector<bool> visited(n, false);
+    for (int i = 0; i < n; i++) if (!visited[i]) dfs1(adj, i, visited, stk);
+    vector<vector<int>> radj(n);
+    for (int u = 0; u < n; u++) for (int v : adj[u]) radj[v].push_back(u);
+    fill(visited.begin(), visited.end(), false);
+    vector<vector<int>> sccs;
+    while (!stk.empty()) {
+        int node = stk.top(); stk.pop();
+        if (!visited[node]) {
+            vector<int> comp; dfs2(radj, node, visited, comp); sccs.push_back(comp);
+        }
+    }
+    return sccs;
+}
+```
+
+### Tarjan's Algorithm (single-pass, low-link values)
 
 ```python
 def tarjan(adj, n):
-    """
-    Single-pass SCC using Tarjan's algorithm.
-    disc[u]: discovery time of u
-    low[u]: lowest discovery time reachable from u's subtree
-    """
-    disc = [-1] * n
-    low = [0] * n
-    on_stack = [False] * n
-    stack = []
-    timer = [0]
-    sccs = []
-
+    disc = [-1]*n; low = [0]*n; on_stack = [False]*n
+    stack = []; timer = [0]; sccs = []
     def dfs(u):
-        disc[u] = low[u] = timer[0]
-        timer[0] += 1
-        stack.append(u)
-        on_stack[u] = True
-
+        disc[u] = low[u] = timer[0]; timer[0] += 1
+        stack.append(u); on_stack[u] = True
         for v in adj[u]:
-            if disc[v] == -1:           # tree edge
-                dfs(v)
-                low[u] = min(low[u], low[v])
-            elif on_stack[v]:           # back edge to ancestor in current SCC
-                low[u] = min(low[u], disc[v])
-
-        # u is a root of an SCC if low[u] == disc[u]
+            if disc[v] == -1: dfs(v); low[u] = min(low[u], low[v])
+            elif on_stack[v]: low[u] = min(low[u], disc[v])
         if low[u] == disc[u]:
             scc = []
             while True:
-                w = stack.pop()
-                on_stack[w] = False
-                scc.append(w)
-                if w == u:
-                    break
+                w = stack.pop(); on_stack[w] = False; scc.append(w)
+                if w == u: break
             sccs.append(scc)
-
     for i in range(n):
-        if disc[i] == -1:
-            dfs(i)
-
+        if disc[i] == -1: dfs(i)
     return sccs
+```
+
+```java
+int timer = 0;
+int[] disc, low;
+boolean[] onStack;
+Deque<Integer> stack;
+List<List<Integer>> sccs;
+
+List<List<Integer>> tarjan(List<List<Integer>> adj, int n) {
+    disc = new int[n]; Arrays.fill(disc, -1);
+    low = new int[n]; onStack = new boolean[n];
+    stack = new ArrayDeque<>(); sccs = new ArrayList<>();
+    for (int i = 0; i < n; i++) if (disc[i] == -1) tarjanDFS(adj, i);
+    return sccs;
+}
+void tarjanDFS(List<List<Integer>> adj, int u) {
+    disc[u] = low[u] = timer++;
+    stack.push(u); onStack[u] = true;
+    for (int v : adj.get(u)) {
+        if (disc[v] == -1) { tarjanDFS(adj, v); low[u] = Math.min(low[u], low[v]); }
+        else if (onStack[v]) low[u] = Math.min(low[u], disc[v]);
+    }
+    if (low[u] == disc[u]) {
+        List<Integer> scc = new ArrayList<>();
+        while (true) {
+            int w = stack.pop(); onStack[w] = false; scc.add(w);
+            if (w == u) break;
+        }
+        sccs.add(scc);
+    }
+}
+```
+
+```cpp
+int timer_t;
+vector<int> disc_t, low_t;
+vector<bool> onStack;
+stack<int> stk_t;
+vector<vector<int>> sccs_t;
+
+void tarjanDFS(vector<vector<int>>& adj, int u) {
+    disc_t[u] = low_t[u] = timer_t++;
+    stk_t.push(u); onStack[u] = true;
+    for (int v : adj[u]) {
+        if (disc_t[v] == -1) { tarjanDFS(adj, v); low_t[u] = min(low_t[u], low_t[v]); }
+        else if (onStack[v]) low_t[u] = min(low_t[u], disc_t[v]);
+    }
+    if (low_t[u] == disc_t[u]) {
+        vector<int> scc;
+        while (true) {
+            int w = stk_t.top(); stk_t.pop(); onStack[w] = false; scc.push_back(w);
+            if (w == u) break;
+        }
+        sccs_t.push_back(scc);
+    }
+}
+vector<vector<int>> tarjan(vector<vector<int>>& adj, int n) {
+    disc_t.assign(n,-1); low_t.assign(n,0); onStack.assign(n,false);
+    timer_t = 0;
+    for (int i = 0; i < n; i++) if (disc_t[i] == -1) tarjanDFS(adj, i);
+    return sccs_t;
+}
 ```
 
 ---
 
 ## Part 9 — Bridges & Articulation Points
 
-These are critical in network reliability analysis: which edges/nodes, if removed, disconnect the graph?
-
-### Bridges (Critical Edges)
-
-A **bridge** is an edge whose removal disconnects the graph:
+### Find all bridges (critical edges)
 
 ```python
 def find_bridges(adj, n):
-    """
-    Returns list of bridge edges (u, v).
-    Uses DFS + low-link values.
-    """
-    disc = [-1] * n
-    low = [0] * n
-    timer = [0]
-    bridges = []
-
+    disc = [-1]*n; low = [0]*n; timer = [0]; bridges = []
     def dfs(u, parent):
-        disc[u] = low[u] = timer[0]
-        timer[0] += 1
-
+        disc[u] = low[u] = timer[0]; timer[0] += 1
         for v in adj[u]:
-            if disc[v] == -1:           # unvisited neighbor
-                dfs(v, u)
-                low[u] = min(low[u], low[v])
-                if low[v] > disc[u]:    # no back edge from v's subtree to u's ancestors
-                    bridges.append((u, v))
-            elif v != parent:           # back edge (not to parent)
+            if disc[v] == -1:
+                dfs(v, u); low[u] = min(low[u], low[v])
+                if low[v] > disc[u]: bridges.append((u, v))
+            elif v != parent:
                 low[u] = min(low[u], disc[v])
-
     for i in range(n):
-        if disc[i] == -1:
-            dfs(i, -1)
-
+        if disc[i] == -1: dfs(i, -1)
     return bridges
 ```
 
-### Articulation Points (Cut Vertices)
+```java
+int timerB; int[] discB, lowB; List<int[]> bridges;
+List<int[]> findBridges(List<List<Integer>> adj, int n) {
+    discB = new int[n]; Arrays.fill(discB, -1); lowB = new int[n]; bridges = new ArrayList<>();
+    for (int i = 0; i < n; i++) if (discB[i] == -1) bridgeDFS(adj, i, -1);
+    return bridges;
+}
+void bridgeDFS(List<List<Integer>> adj, int u, int parent) {
+    discB[u] = lowB[u] = timerB++;
+    for (int v : adj.get(u)) {
+        if (discB[v] == -1) {
+            bridgeDFS(adj, v, u); lowB[u] = Math.min(lowB[u], lowB[v]);
+            if (lowB[v] > discB[u]) bridges.add(new int[]{u, v});
+        } else if (v != parent) lowB[u] = Math.min(lowB[u], discB[v]);
+    }
+}
+```
 
-An **articulation point** is a node whose removal disconnects the graph:
+```cpp
+int timerB;
+vector<int> discB, lowB;
+vector<pair<int,int>> bridges;
+
+void bridgeDFS(vector<vector<int>>& adj, int u, int parent) {
+    discB[u] = lowB[u] = timerB++;
+    for (int v : adj[u]) {
+        if (discB[v] == -1) {
+            bridgeDFS(adj, v, u);
+            lowB[u] = min(lowB[u], lowB[v]);
+            if (lowB[v] > discB[u]) bridges.push_back({u, v});
+        } else if (v != parent) lowB[u] = min(lowB[u], discB[v]);
+    }
+}
+vector<pair<int,int>> findBridges(vector<vector<int>>& adj, int n) {
+    discB.assign(n,-1); lowB.assign(n,0); timerB = 0;
+    for (int i = 0; i < n; i++) if (discB[i] == -1) bridgeDFS(adj, i, -1);
+    return bridges;
+}
+```
+
+### Find all articulation points
 
 ```python
 def find_articulation_points(adj, n):
-    """
-    Returns set of articulation points.
-    """
-    disc = [-1] * n
-    low = [0] * n
-    parent = [-1] * n
-    timer = [0]
-    ap = set()
-
+    disc = [-1]*n; low = [0]*n; parent = [-1]*n; timer = [0]; ap = set()
     def dfs(u):
-        disc[u] = low[u] = timer[0]
-        timer[0] += 1
-        children = 0    # number of children in DFS tree
-
+        disc[u] = low[u] = timer[0]; timer[0] += 1; children = 0
         for v in adj[u]:
             if disc[v] == -1:
-                children += 1
-                parent[v] = u
-                dfs(v)
+                children += 1; parent[v] = u; dfs(v)
                 low[u] = min(low[u], low[v])
-
-                # u is AP if: root with 2+ children, OR non-root with no back edge from subtree
-                if parent[u] == -1 and children > 1:
-                    ap.add(u)
-                if parent[u] != -1 and low[v] >= disc[u]:
-                    ap.add(u)
+                if parent[u] == -1 and children > 1: ap.add(u)
+                if parent[u] != -1 and low[v] >= disc[u]: ap.add(u)
             elif v != parent[u]:
                 low[u] = min(low[u], disc[v])
-
     for i in range(n):
-        if disc[i] == -1:
-            dfs(i)
-
+        if disc[i] == -1: dfs(i)
     return ap
 ```
 
-<Callout type="tip" title="Low-Link Values — The Core Concept">
-`low[u]` = the minimum discovery time reachable from u's DFS subtree via **at most one** back edge.
-An edge u→v is a **bridge** if `low[v] > disc[u]` (v can't reach back to u or u's ancestors).
-A node u is an **articulation point** if any child v has `low[v] >= disc[u]` (no back edge "saves" the subtree).
-</Callout>
+```java
+int timerAP; int[] discAP, lowAP, parentAP; Set<Integer> ap;
+Set<Integer> findAP(List<List<Integer>> adj, int n) {
+    discAP = new int[n]; Arrays.fill(discAP,-1); lowAP = new int[n];
+    parentAP = new int[n]; Arrays.fill(parentAP,-1); ap = new HashSet<>();
+    for (int i = 0; i < n; i++) if (discAP[i] == -1) apDFS(adj, i);
+    return ap;
+}
+void apDFS(List<List<Integer>> adj, int u) {
+    discAP[u] = lowAP[u] = timerAP++; int children = 0;
+    for (int v : adj.get(u)) {
+        if (discAP[v] == -1) {
+            children++; parentAP[v] = u; apDFS(adj, v);
+            lowAP[u] = Math.min(lowAP[u], lowAP[v]);
+            if (parentAP[u] == -1 && children > 1) ap.add(u);
+            if (parentAP[u] != -1 && lowAP[v] >= discAP[u]) ap.add(u);
+        } else if (v != parentAP[u]) lowAP[u] = Math.min(lowAP[u], discAP[v]);
+    }
+}
+```
+
+```cpp
+int timerAP;
+vector<int> discAP, lowAP, parentAP;
+set<int> ap;
+
+void apDFS(vector<vector<int>>& adj, int u) {
+    discAP[u] = lowAP[u] = timerAP++; int children = 0;
+    for (int v : adj[u]) {
+        if (discAP[v] == -1) {
+            children++; parentAP[v] = u; apDFS(adj, v);
+            lowAP[u] = min(lowAP[u], lowAP[v]);
+            if (parentAP[u] == -1 && children > 1) ap.insert(u);
+            if (parentAP[u] != -1 && lowAP[v] >= discAP[u]) ap.insert(u);
+        } else if (v != parentAP[u]) lowAP[u] = min(lowAP[u], discAP[v]);
+    }
+}
+set<int> findAP(vector<vector<int>>& adj, int n) {
+    discAP.assign(n,-1); lowAP.assign(n,0); parentAP.assign(n,-1); timerAP = 0;
+    for (int i = 0; i < n; i++) if (discAP[i] == -1) apDFS(adj, i);
+    return ap;
+}
+```
 
 ---
 
-## Part 10 — Advanced Graph Patterns
+## Part 10 — Bipartite Check & Grid Problems
 
-### Bipartite Graph Check
-
-A graph is bipartite if its nodes can be 2-colored such that no two adjacent nodes share the same color.
-Equivalently: no odd-length cycles.
+### Bipartite check (BFS 2-coloring)
 
 ```python
 def is_bipartite(adj, n):
-    """
-    Returns (True, coloring) if bipartite, else (False, None).
-    Uses BFS 2-coloring.
-    """
     color = [-1] * n
-
     for start in range(n):
-        if color[start] != -1:
-            continue
+        if color[start] != -1: continue
         color[start] = 0
         q = deque([start])
         while q:
             node = q.popleft()
             for nb in adj[node]:
                 if color[nb] == -1:
-                    color[nb] = 1 - color[node]   # opposite color
-                    q.append(nb)
-                elif color[nb] == color[node]:    # same color = conflict
-                    return False, None
-    return True, color
+                    color[nb] = 1 - color[node]; q.append(nb)
+                elif color[nb] == color[node]:
+                    return False
+    return True
 ```
 
-### Graph Coloring (Greedy approach)
-
-```python
-def greedy_coloring(adj, n):
-    """
-    Assigns minimum colors such that no two adjacent nodes share a color.
-    Not optimal for all graphs but works well in practice.
-    """
-    color = [-1] * n
-    color[0] = 0
-
-    for u in range(1, n):
-        neighbor_colors = {color[v] for v in adj[u] if color[v] != -1}
-        c = 0
-        while c in neighbor_colors:
-            c += 1
-        color[u] = c
-
-    return color, max(color) + 1   # (coloring, number of colors used)
+```java
+boolean isBipartite(List<List<Integer>> adj, int n) {
+    int[] color = new int[n]; Arrays.fill(color, -1);
+    for (int start = 0; start < n; start++) {
+        if (color[start] != -1) continue;
+        color[start] = 0;
+        Queue<Integer> q = new ArrayDeque<>(); q.offer(start);
+        while (!q.isEmpty()) {
+            int node = q.poll();
+            for (int nb : adj.get(node)) {
+                if (color[nb] == -1) { color[nb] = 1 - color[node]; q.offer(nb); }
+                else if (color[nb] == color[node]) return false;
+            }
+        }
+    }
+    return true;
+}
 ```
 
-### Flood Fill (Connected Components in a Grid)
+```cpp
+bool isBipartite(vector<vector<int>>& adj, int n) {
+    vector<int> color(n, -1);
+    for (int start = 0; start < n; start++) {
+        if (color[start] != -1) continue;
+        color[start] = 0;
+        queue<int> q; q.push(start);
+        while (!q.empty()) {
+            int node = q.front(); q.pop();
+            for (int nb : adj[node]) {
+                if (color[nb] == -1) { color[nb] = 1 - color[node]; q.push(nb); }
+                else if (color[nb] == color[node]) return false;
+            }
+        }
+    }
+    return true;
+}
+```
+
+### Count Islands (LeetCode 200)
 
 ```python
-def flood_fill(grid, sr, sc, new_color):
-    """
-    Fills the connected region of the same color starting from (sr, sc).
-    Used in paint programs, island counting, etc.
-    """
-    rows, cols = len(grid), len(grid[0])
-    old_color = grid[sr][sc]
-    if old_color == new_color:
-        return grid
-
-    def dfs(r, c):
-        if r < 0 or r >= rows or c < 0 or c >= cols:
-            return
-        if grid[r][c] != old_color:
-            return
-        grid[r][c] = new_color
-        dfs(r+1, c); dfs(r-1, c)
-        dfs(r, c+1); dfs(r, c-1)
-
-    dfs(sr, sc)
-    return grid
-
 def count_islands(grid):
-    """Count number of connected land regions (classic LeetCode 200)."""
     rows, cols = len(grid), len(grid[0])
     count = 0
-
     def dfs(r, c):
-        if r < 0 or r >= rows or c < 0 or c >= cols or grid[r][c] != '1':
-            return
-        grid[r][c] = '0'   # mark visited by sinking the island
+        if r<0 or r>=rows or c<0 or c>=cols or grid[r][c]!='1': return
+        grid[r][c] = '0'   # sink visited land
         dfs(r+1,c); dfs(r-1,c); dfs(r,c+1); dfs(r,c-1)
-
     for r in range(rows):
         for c in range(cols):
             if grid[r][c] == '1':
-                dfs(r, c)
-                count += 1
+                dfs(r, c); count += 1
     return count
 ```
 
-### Eulerian Path & Circuit
-
-An **Eulerian Path** visits every **edge** exactly once. An **Eulerian Circuit** does the same and returns
-to the start.
-
-```
-Eulerian Circuit exists iff:
-  - Graph is connected (ignoring isolated nodes)
-  - Every node has even degree
-
-Eulerian Path (non-circuit) exists iff:
-  - Exactly 2 nodes have odd degree (start and end of path)
-```
-
-```python
-def find_euler_circuit(adj, n, m):
-    """
-    Hierholzer's algorithm: find Eulerian circuit.
-    Works when all nodes have even degree.
-    adj: adjacency list as {node: Counter of neighbors}
-    """
-    from collections import defaultdict
-    degree = [0] * n
-    for u in range(n):
-        for v in adj[u]:
-            degree[u] += 1
-
-    # Find start node (any node with edges)
-    start = next(i for i in range(n) if degree[i] > 0)
-    stack = [start]
-    circuit = []
-    edge_count = defaultdict(lambda: defaultdict(int))
-
-    # Build edge counts
-    for u in range(n):
-        for v in adj[u]:
-            edge_count[u][v] += 1
-
-    while stack:
-        v = stack[-1]
-        if any(edge_count[v][u] > 0 for u in edge_count[v]):
-            # Find unused edge
-            u = next(u for u in edge_count[v] if edge_count[v][u] > 0)
-            stack.append(u)
-            edge_count[v][u] -= 1
-            edge_count[u][v] -= 1   # remove for directed graphs
-        else:
-            circuit.append(stack.pop())
-    return circuit[::-1]
+```java
+int numIslands(char[][] grid) {
+    int rows = grid.length, cols = grid[0].length, count = 0;
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++)
+            if (grid[r][c] == '1') { sink(grid, r, c, rows, cols); count++; }
+    return count;
+}
+void sink(char[][] grid, int r, int c, int rows, int cols) {
+    if (r<0||r>=rows||c<0||c>=cols||grid[r][c]!='1') return;
+    grid[r][c]='0';
+    sink(grid,r+1,c,rows,cols); sink(grid,r-1,c,rows,cols);
+    sink(grid,r,c+1,rows,cols); sink(grid,r,c-1,rows,cols);
+}
 ```
 
-### Hamiltonian Path (Backtracking)
-
-A **Hamiltonian Path** visits every **node** exactly once. No polynomial algorithm known — use backtracking
-for small graphs (n ≤ ~20):
-
-```python
-def hamiltonian_path(adj, n):
-    """Find Hamiltonian path using backtracking. O(n!) worst case."""
-    visited = [False] * n
-    path = []
-
-    def backtrack(node):
-        path.append(node)
-        visited[node] = True
-        if len(path) == n:
-            return True
-        for nb in adj[node]:
-            if not visited[nb]:
-                if backtrack(nb):
-                    return True
-        path.pop()
-        visited[node] = False
-        return False
-
-    for start in range(n):
-        if backtrack(start):
-            return path
-    return []
-```
-
-### Bellman-Ford for Negative Cycle Detection (Trading / Arbitrage)
-
-```python
-def detect_arbitrage(currencies, rates):
-    """
-    Detect currency arbitrage (negative cycle in log-rate graph).
-    rates[i][j] = exchange rate from currency i to j.
-    Arbitrage exists if you can profit by trading A→B→C→A.
-    """
-    import math
-    n = len(currencies)
-    # Transform: maximize product → minimize sum of negated logs
-    dist = [float('inf')] * n
-    dist[0] = 0
-
-    # Build edge list with -log(rate) weights
-    edges = []
-    for i in range(n):
-        for j in range(n):
-            if i != j and rates[i][j] > 0:
-                edges.append((i, j, -math.log(rates[i][j])))
-
-    # Relax V-1 times
-    for _ in range(n - 1):
-        for u, v, w in edges:
-            if dist[u] + w < dist[v]:
-                dist[v] = dist[u] + w
-
-    # Check for negative cycle (arbitrage opportunity)
-    for u, v, w in edges:
-        if dist[u] + w < dist[v]:
-            return True   # arbitrage found!
-    return False
+```cpp
+void sink(vector<vector<char>>& grid, int r, int c, int rows, int cols) {
+    if (r<0||r>=rows||c<0||c>=cols||grid[r][c]!='1') return;
+    grid[r][c]='0';
+    sink(grid,r+1,c,rows,cols); sink(grid,r-1,c,rows,cols);
+    sink(grid,r,c+1,rows,cols); sink(grid,r,c-1,rows,cols);
+}
+int numIslands(vector<vector<char>>& grid) {
+    int rows=grid.size(), cols=grid[0].size(), count=0;
+    for (int r=0;r<rows;r++) for (int c=0;c<cols;c++)
+        if (grid[r][c]=='1') { sink(grid,r,c,rows,cols); count++; }
+    return count;
+}
 ```
 
 ---
 
-## Part 11 — Graph Problems by Pattern
+## Part 11 — Classic Problems
 
-### BFS Problems (shortest path / levels)
+### Rotting Oranges (Multi-source BFS)
 
 ```python
-# ─── Word Ladder ──────────────────────────────────────────────────────────────
-# Transform "hit" → "cog" changing one letter at a time, all intermediate words
-# must be in wordList. Find minimum number of transformations.
-
-def word_ladder(beginWord, endWord, wordList):
-    word_set = set(wordList)
-    if endWord not in word_set:
-        return 0
-
-    q = deque([(beginWord, 1)])
-    visited = {beginWord}
-
-    while q:
-        word, steps = q.popleft()
-        for i in range(len(word)):
-            for c in 'abcdefghijklmnopqrstuvwxyz':
-                next_word = word[:i] + c + word[i+1:]
-                if next_word == endWord:
-                    return steps + 1
-                if next_word in word_set and next_word not in visited:
-                    visited.add(next_word)
-                    q.append((next_word, steps + 1))
-    return 0
-
-# ─── Rotting Oranges ───────────────────────────────────────────────────────────
-# Multi-source BFS: rotten oranges spread to fresh neighbors each minute.
 def oranges_rotting(grid):
     rows, cols = len(grid), len(grid[0])
-    q = deque()
-    fresh = 0
-
+    q, fresh = deque(), 0
     for r in range(rows):
         for c in range(cols):
-            if grid[r][c] == 2:
-                q.append((r, c, 0))   # rotten: start source
-            elif grid[r][c] == 1:
-                fresh += 1
-
+            if grid[r][c] == 2: q.append((r,c,0))
+            elif grid[r][c] == 1: fresh += 1
     time = 0
+    for dr, dc in [(0,1),(0,-1),(1,0),(-1,0)]:
+        pass
     dirs = [(0,1),(0,-1),(1,0),(-1,0)]
     while q:
         r, c, t = q.popleft()
         for dr, dc in dirs:
             nr, nc = r+dr, c+dc
-            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 1:
-                grid[nr][nc] = 2
-                fresh -= 1
-                time = t + 1
-                q.append((nr, nc, t+1))
-
-    return time if fresh == 0 else -1
+            if 0<=nr<rows and 0<=nc<cols and grid[nr][nc]==1:
+                grid[nr][nc]=2; fresh-=1; time=t+1; q.append((nr,nc,t+1))
+    return time if fresh==0 else -1
 ```
 
-### DFS Problems (paths, components, backtracking)
-
-```python
-# ─── All Paths from Source to Target in a DAG ──────────────────────────────────
-def all_paths_source_target(graph):
-    """Find all paths from node 0 to node n-1 in a DAG."""
-    n = len(graph)
-    result = []
-
-    def dfs(node, path):
-        if node == n - 1:
-            result.append(list(path))
-            return
-        for nb in graph[node]:
-            path.append(nb)
-            dfs(nb, path)
-            path.pop()
-
-    dfs(0, [0])
-    return result
-
-# ─── Pacific Atlantic Water Flow ───────────────────────────────────────────────
-# Which cells can flow water to both oceans? Multi-source DFS from both borders.
-def pacific_atlantic(heights):
-    rows, cols = len(heights), len(heights[0])
-    pacific = set()    # cells reachable from pacific (top/left)
-    atlantic = set()   # cells reachable from atlantic (bottom/right)
-
-    def dfs(r, c, visited, prev_height):
-        if (r, c) in visited or r < 0 or r >= rows or c < 0 or c >= cols:
-            return
-        if heights[r][c] < prev_height:    # water can't flow uphill
-            return
-        visited.add((r, c))
-        for dr, dc in [(0,1),(0,-1),(1,0),(-1,0)]:
-            dfs(r+dr, c+dc, visited, heights[r][c])
-
-    for r in range(rows):
-        dfs(r, 0, pacific, heights[r][0])          # left edge → pacific
-        dfs(r, cols-1, atlantic, heights[r][cols-1])  # right edge → atlantic
-    for c in range(cols):
-        dfs(0, c, pacific, heights[0][c])          # top edge → pacific
-        dfs(rows-1, c, atlantic, heights[rows-1][c])  # bottom edge → atlantic
-
-    return [[r, c] for r in range(rows) for c in range(cols)
-            if (r, c) in pacific and (r, c) in atlantic]
+```java
+int orangesRotting(int[][] grid) {
+    int rows = grid.length, cols = grid[0].length;
+    Queue<int[]> q = new ArrayDeque<>();
+    int fresh = 0;
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] == 2) q.offer(new int[]{r, c, 0});
+            else if (grid[r][c] == 1) fresh++;
+        }
+    int time = 0;
+    int[][] dirs = {{0,1},{0,-1},{1,0},{-1,0}};
+    while (!q.isEmpty()) {
+        int[] cur = q.poll();
+        int r = cur[0], c = cur[1], t = cur[2];
+        for (int[] d : dirs) {
+            int nr = r+d[0], nc = c+d[1];
+            if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&grid[nr][nc]==1) {
+                grid[nr][nc]=2; fresh--; time=t+1; q.offer(new int[]{nr,nc,t+1});
+            }
+        }
+    }
+    return fresh == 0 ? time : -1;
+}
 ```
 
-### Advanced Dijkstra (State + Graph)
+```cpp
+int orangesRotting(vector<vector<int>>& grid) {
+    int rows=grid.size(), cols=grid[0].size(), fresh=0, time=0;
+    queue<tuple<int,int,int>> q;
+    for (int r=0;r<rows;r++) for (int c=0;c<cols;c++) {
+        if (grid[r][c]==2) q.push({r,c,0});
+        else if (grid[r][c]==1) fresh++;
+    }
+    int dirs[][2]={{0,1},{0,-1},{1,0},{-1,0}};
+    while (!q.empty()) {
+        auto [r,c,t]=q.front(); q.pop();
+        for (auto& d:dirs) {
+            int nr=r+d[0], nc=c+d[1];
+            if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&grid[nr][nc]==1) {
+                grid[nr][nc]=2; fresh--; time=t+1; q.push({nr,nc,t+1});
+            }
+        }
+    }
+    return fresh==0 ? time : -1;
+}
+```
 
-When the "shortest path" involves more state than just distance (e.g., "cheapest flight with at most k stops"):
+### Cheapest Flights Within K Stops (Bellman-Ford)
 
 ```python
-# ─── Cheapest Flights Within K Stops ─────────────────────────────────────────
-# Modified Dijkstra/Bellman-Ford: state includes number of stops used.
 def find_cheapest_price(n, flights, src, dst, k):
-    """k stops = k+1 edges maximum."""
-    # Use Bellman-Ford (relax exactly k+1 times)
     dist = [float('inf')] * n
     dist[src] = 0
-
     for _ in range(k + 1):
-        temp = dist[:]   # snapshot: can only use edges from PREVIOUS iteration
+        temp = dist[:]
         for u, v, price in flights:
             if dist[u] != float('inf') and dist[u] + price < temp[v]:
                 temp[v] = dist[u] + price
         dist = temp
-
     return dist[dst] if dist[dst] != float('inf') else -1
+```
 
-# ─── Network Delay Time (Dijkstra) ────────────────────────────────────────────
-def network_delay_time(times, n, k):
-    """Time for signal to reach all nodes from k."""
-    adj = defaultdict(list)
-    for u, v, w in times:
-        adj[u].append((v, w))
+```java
+int findCheapestPrice(int n, int[][] flights, int src, int dst, int k) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[src] = 0;
+    for (int i = 0; i <= k; i++) {
+        int[] temp = dist.clone();
+        for (int[] f : flights)
+            if (dist[f[0]] != Integer.MAX_VALUE && dist[f[0]] + f[2] < temp[f[1]])
+                temp[f[1]] = dist[f[0]] + f[2];
+        dist = temp;
+    }
+    return dist[dst] == Integer.MAX_VALUE ? -1 : dist[dst];
+}
+```
 
-    dist = {k: 0}
-    heap = [(0, k)]
-
-    while heap:
-        d, node = heapq.heappop(heap)
-        if d > dist.get(node, float('inf')):
-            continue
-        for nb, w in adj[node]:
-            new_d = d + w
-            if new_d < dist.get(nb, float('inf')):
-                dist[nb] = new_d
-                heapq.heappush(heap, (new_d, nb))
-
-    if len(dist) < n:
-        return -1
-    return max(dist.values())
+```cpp
+int findCheapestPrice(int n, vector<vector<int>>& flights, int src, int dst, int k) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    for (int i = 0; i <= k; i++) {
+        vector<int> temp = dist;
+        for (auto& f : flights)
+            if (dist[f[0]] != INT_MAX && dist[f[0]] + f[2] < temp[f[1]])
+                temp[f[1]] = dist[f[0]] + f[2];
+        dist = temp;
+    }
+    return dist[dst] == INT_MAX ? -1 : dist[dst];
+}
 ```
 
 ---
 
-## Part 12 — The BFS vs DFS Decision Table
+## Part 12 — Decision Table
 
-| Problem Type | Algorithm | Why |
+| Problem | Algorithm | Why |
 |---|---|---|
-| Shortest path, unweighted | **BFS** | Level-by-level = fewest edges |
-| Shortest path, weighted ≥ 0 | **Dijkstra** | BFS + priority queue |
+| Shortest path, unweighted | **BFS** | Level-by-level |
+| Shortest path, weighted ≥ 0 | **Dijkstra** | BFS + min-heap |
 | Shortest path, negative edges | **Bellman-Ford** | Handles negatives |
-| Shortest path, DAG | **Topo sort + relax** | O(V+E), even with negatives |
-| All-pairs shortest path | **Floyd-Warshall** | V³, any edge weights |
-| Connectivity, components | **DFS or BFS** | Same complexity |
-| Cycle detection, undirected | **DFS + parent** | Natural fit |
-| Cycle detection, directed | **DFS + colors** | Track recursion stack |
-| Topological order | **Kahn's BFS** or **DFS post** | Both O(V+E) |
-| Minimum spanning tree | **Kruskal** (sparse) / **Prim** (dense) | Greedy on edges/nodes |
-| Strongly connected components | **Kosaraju** or **Tarjan** | 2-pass or 1-pass DFS |
+| All-pairs shortest path | **Floyd-Warshall** | V³, any weights |
+| Topological order | **Kahn's BFS** | O(V+E), detects cycles |
+| Min spanning tree, sparse | **Kruskal** | Sort + Union-Find |
+| Min spanning tree, dense | **Prim** | Heap-based |
+| Strongly connected components | **Tarjan** | Single-pass |
 | Bridges / articulation points | **DFS + low-link** | Track back edges |
-| Bipartite check | **BFS 2-color** | Clean and iterative |
-| Connected components (incremental) | **Union-Find** | O(α(n)) per query |
+| Bipartite check | **BFS 2-color** | Clean + iterative |
+| Incremental connectivity | **Union-Find** | α(n) per op |
 
 ---
 
-## Part 13 — Common Mistakes & How to Avoid Them
+## Part 13 — Common Mistakes
 
-<Callout type="warn" title="Mistake 1: Marking visited on dequeue (BFS)">
-Always mark visited **when you enqueue**, not when you dequeue. Otherwise the same node enters the queue
-multiple times before being processed — ruining distance calculations and potentially causing TLE.
+<Callout type="warn" title="Mistake 1: Mark visited on dequeue (BFS)">
+Mark visited **when enqueuing**, not when dequeuing. Dequeue-marking lets the same node queue multiple times — corrupts distances.
 </Callout>
 
-<Callout type="warn" title="Mistake 2: Forgetting to handle disconnected graphs">
-Always loop over all nodes and start BFS/DFS from each unvisited one. Many graphs in interview problems
-are disconnected. Single-source traversal misses isolated components.
-
-```python
-# WRONG: only processes component containing node 0
-bfs(adj, 0, n)
-
-# CORRECT: handle all components
-for i in range(n):
-    if not visited[i]:
-        bfs(adj, i, n)
-```
+<Callout type="warn" title="Mistake 2: Forgetting disconnected graphs">
+Always loop all nodes and start BFS/DFS from each unvisited one. A single-source traversal misses disconnected components.
 </Callout>
 
 <Callout type="warn" title="Mistake 3: Dijkstra with negative edges">
-Dijkstra assumes once a node is settled (popped from heap with minimum distance), its distance is final.
-Negative edges can create a shorter path later — use Bellman-Ford instead.
+Dijkstra assumes once settled, a node's distance is final. Negative edges can create shorter paths later. Use Bellman-Ford instead.
 </Callout>
 
-<Callout type="warn" title="Mistake 4: Comparing visited nodes instead of roots in Union-Find">
-For cycle detection via Union-Find: always use `find(u) == find(v)`, not `parent[u] == parent[v]`.
-The parent pointer may point to a mid-tree node, not the root.
+<Callout type="warn" title="Mistake 4: Parent check in directed graphs">
+The `if nb != parent` check is for **undirected** graphs only. For directed, use 3-color (white/gray/black). Mixing them silently misses cycles.
 </Callout>
 
-<Callout type="warn" title="Mistake 5: Parent check in directed cycle detection">
-The parent check (`if nb != parent`) is only for **undirected** graphs. For directed graphs, use the
-3-color approach (white/gray/black). Applying parent check to directed graphs silently misses cycles.
-</Callout>
-
-<Callout type="warn" title="Mistake 6: Stale entries in Dijkstra's heap">
-When you push updated distances into the heap, old (larger distance, same node) entries remain. Always
-check `if d > dist[node]: continue` when popping — this skips stale entries efficiently.
+<Callout type="warn" title="Mistake 5: Stale Dijkstra heap entries">
+After pushing updated distances, old entries stay in the heap. Always check `if d > dist[node]: continue` (Python) or `if (d > dist[node]) continue;` when popping.
 </Callout>
 
 ---
 
-## Part 14 — Interview Perspective
+## Part 14 — Interview Q&A
 
 <QA q="BFS vs DFS — when does each win?">
 
-**BFS** is the tool when distance or levels matter: shortest path on unweighted graphs, minimum steps,
-"how many moves to reach X", anything where you need the closest version of something first. It's also
-cleaner for iterative implementation (no recursion limit risk). The queue's FIFO property is what gives
-you the "nearest-first" guarantee.
+**BFS** wins for shortest path and level-based problems. Its queue ensures you explore by distance — the first time you reach a node IS the shortest path on an unweighted graph. Use BFS for: shortest path, minimum steps, "closest X", word ladder, rotting oranges, multi-source distance.
 
-**DFS** wins when you need to explore the full depth of a path: detecting cycles, finding any path (not
-shortest), enumerating all paths, computing connected components, topological sort, finding SCCs, bridges,
-and articulation points. DFS naturally backtracks — the recursive call stack handles it. For graphs with
-10⁵ nodes in Python, convert to iterative DFS to avoid hitting the default recursion limit.
+**DFS** wins for deep exploration: cycle detection, all paths, connected components, topological sort, SCCs, bridges, articulation points. DFS naturally backtracks — the recursive call stack is your bookkeeper. For Python with graphs of 10⁵ nodes, convert to iterative DFS to avoid hitting the recursion limit (default 1000 frames).
 
-The "wrong choice" penalty: using DFS for shortest path silently gives wrong answers on non-tree graphs
-(it doesn't guarantee fewest edges). Using BFS for cycle detection works but is less elegant. For weighted
-shortest paths, neither plain BFS nor DFS work — upgrade to Dijkstra.
+The wrong-choice cost: using DFS for shortest path gives wrong answers on graphs with cycles (it finds *a* path, not *the shortest*). Using BFS for cycle detection works but is less elegant.
 
 </QA>
 
 <QA q="How do you detect a cycle, and how does directed vs undirected change the approach?">
 
-**Undirected graph:** DFS with parent tracking. When DFS from u reaches already-visited neighbor v, check
-if v is u's parent. If no (it's a different ancestor), you've found a cycle via a back edge. The parent
-check prevents the obvious false positive of u seeing the edge it just came from.
+**Undirected:** DFS + parent tracking. When you reach an already-visited neighbor, check if it's your direct parent. If not — it's a back edge from a different branch → cycle. The parent check prevents the false positive of seeing the edge you just came from.
 
-**Directed graph:** DFS with 3-color states — white (unvisited), gray (currently on the recursion stack),
-black (fully processed). If you reach a gray node, that's a back edge → cycle. If you reach black, it's
-a forward/cross edge → no cycle from here. The key difference from undirected: edges are one-way, so "v
-is visited" doesn't mean "v is an ancestor" — v could be in a completely different branch (cross edge).
+**Directed:** DFS + 3-color. White = unvisited, gray = currently on the recursion stack, black = fully processed. If you reach a gray node, you've found a back edge → cycle. Reaching black is a cross/forward edge → no cycle. The key difference: in directed graphs, "visited" ≠ "ancestor" — a visited node might be in a completely different branch.
 
-**Union-Find for undirected:** When adding an edge u-v, check if they're already connected. If yes,
-this edge closes a cycle. Best for "detect cycle as edges are added incrementally." Can't handle
-directed graphs (edges have no direction in standard DSU).
+**Union-Find** (undirected only): When adding edge u-v, if `find(u) == find(v)`, this edge closes a cycle. Best for incremental edge-building or Kruskal's.
 
-**Topological sort:** If Kahn's algorithm outputs fewer than V nodes (some never reached indegree 0),
-the remaining nodes form one or more cycles. This is a clean side-effect of Kahn's.
+**Topological sort:** Run Kahn's — if output has fewer than V nodes, the remainder form cycles.
 
 </QA>
 
-<QA q="Explain Dijkstra's algorithm and why it doesn't work with negative edges.">
+<QA q="Explain Dijkstra — why does it fail with negative edges?">
 
-Dijkstra is a greedy algorithm that maintains a min-heap of (distance, node) pairs. The invariant: when
-a node is popped from the heap with distance d, d is the shortest distance from the source. You then
-"relax" all edges from that node — if going through it gives a shorter path to a neighbor, update and
-push to heap.
+Dijkstra maintains a min-heap of (distance, node). The invariant: when a node is popped with distance d, d is the final shortest distance. You then relax all outgoing edges.
 
-It fails with negative edges because of the invariant: once a node is popped, we assume its distance is
-final and never update it again. But with a negative edge, a longer-seeming path through a later node
-could swing back via a negative edge and give a shorter overall path. Dijkstra never re-examines settled
-nodes, so it misses this.
+It fails with negative edges because of the "settled = final" assumption. With a negative edge, a longer-looking path through a later-settled node could swing back and be shorter than what we already recorded. Dijkstra never re-opens settled nodes, so it misses this.
 
-Fix: use Bellman-Ford — it relaxes all edges V-1 times, allowing the "negative shortcut" to propagate.
-Cost: O(VE) instead of Dijkstra's O((V+E) log V). In practice: if all weights are non-negative (maps,
-networks, positive costs), use Dijkstra. If any weight could be negative (profit/loss, discounts that
-reduce cost), use Bellman-Ford.
+Fix: Bellman-Ford — relax ALL edges V-1 times, allowing negative paths to propagate. Cost: O(VE) vs Dijkstra's O((V+E) log V). Rule: non-negative weights (maps, networks) → Dijkstra. Any negative weight possible (profit/loss, discounts) → Bellman-Ford.
 
 </QA>
 
-<QA q="When would you use Union-Find vs BFS/DFS for connectivity?">
+<QA q="What is Floyd-Warshall and when do you choose it over running Dijkstra V times?">
 
-**Use BFS/DFS when:** the graph is given all at once and you need to answer connectivity once (or a few
-times). One O(V+E) traversal labels all components. Also use when you need the actual path or more than
-just "are they connected?".
+Floyd-Warshall computes all-pairs shortest paths in O(V³) with O(V²) space using a simple 3-loop DP: `dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j])` for each intermediate node k.
 
-**Use Union-Find when:** edges arrive over time and you need to answer connectivity queries interspersed
-with edge additions ("is A connected to B?" after each "add edge C-D"). DSU maintains components
-incrementally at amortized O(α(n)) per operation — re-running BFS per query would cost O(V+E) each.
-Also the natural tool for Kruskal's MST.
+Choose Floyd-Warshall when: V ≤ ~500, you need all-pairs distances (not just from one source), the graph has negative edges (Dijkstra can't handle them), or you want dead-simple code (3 nested loops).
 
-**Union-Find limitation:** no deletions (can't remove edges), no path retrieval (only yes/no connectivity),
-only undirected (standard DSU doesn't track edge direction).
+Choose Dijkstra × V when: the graph is sparse (E ≪ V²), V is large (1000+), or edges are all non-negative. For a sparse graph, V × O((V+E) log V) beats O(V³) significantly.
 
-The interview tell: "edges arrive one by one" + "connectivity queries" = Union-Find. "Fixed graph,
-path needed" = BFS. "Fixed graph, full exploration" = DFS.
-
-</QA>
-
-<QA q="What is a topological sort and when does it apply?">
-
-A topological sort is a linear ordering of nodes in a **DAG** such that for every directed edge u→v, u
-appears before v. It only exists if the graph has no cycles (the "A" in DAG). If a cycle exists, there's
-no valid ordering — course A requires B requires A is unsatisfiable.
-
-Real-world applications: build systems (compile A before B), task scheduling (do A before B), package
-managers (install dependencies first), spreadsheet formula evaluation (compute dependency cells first),
-compiler analysis (evaluate expressions in dependency order).
-
-Two algorithms: Kahn's (BFS, repeatedly removes in-degree-0 nodes — clear cycle detection as a side
-effect) and DFS post-order (add each node to result after fully exploring its subtree, then reverse).
-Both O(V+E). Prefer Kahn's when you also need cycle detection or "by-level" processing order. Prefer DFS
-when you're already doing DFS (e.g., computing finish times for Kosaraju's SCC).
-
-Interview trap: topological sort questions often don't say "topological sort" — they say "course schedule",
-"build order", "alien dictionary". The tell is: directed relationships where ordering matters.
-
-</QA>
-
-<QA q="Design a system to find shortest routes between any two cities — which graph algorithm would you use?">
-
-This is Floyd-Warshall vs Dijkstra × V times vs Johnson's algorithm, depending on scale.
-
-**Small network (≤ 500 cities):** Floyd-Warshall. Precompute all-pairs in O(V³) — for 500 cities that's
-125 million operations, fast enough. O(V²) space to store all distances. Any subsequent query is O(1)
-lookup. Handles negative edges (if we're modeling things like toll credits).
-
-**Large sparse network (10,000+ cities, sparse connections like highways):** Run Dijkstra from each source
-— O(V × (V+E) log V). For a road network where E ≈ 6V (each city connects to ~6 roads), this is far
-cheaper than Floyd's V³. Cache frequently queried pairs.
-
-**With preprocessing time (GPS/maps):** Bidirectional Dijkstra (search simultaneously from source and
-destination, meet in the middle — dramatically faster in practice), A* with geographic heuristics (known
-lower bound = Euclidean distance), or Contraction Hierarchies (real-time GPS standard — preprocess once,
-queries in microseconds).
-
-**Production Google Maps answer:** A*, bidirectional, with contraction hierarchies for the static road
-network and Dijkstra layers for real-time traffic. The key insight: graph algorithms research didn't stop
-at Dijkstra.
+Negative cycles: Floyd-Warshall detects them via `dist[i][i] < 0` after the main loop. Dijkstra can't detect them at all.
 
 </QA>
 
 ---
 
-## Part 15 — Complexity Cheat Sheet
+## Practice Ladder
 
-| Algorithm | Time | Space | Notes |
-|---|---|---|---|
-| BFS | O(V + E) | O(V) | Shortest path on unweighted |
-| DFS | O(V + E) | O(V) | Stack depth = path length |
-| Dijkstra (binary heap) | O((V+E) log V) | O(V) | Non-negative weights |
-| Dijkstra (Fibonacci heap) | O(E + V log V) | O(V) | Theoretical; rarely implemented |
-| Bellman-Ford | O(VE) | O(V) | Handles negative edges |
-| Floyd-Warshall | O(V³) | O(V²) | All-pairs |
-| Topological Sort | O(V + E) | O(V) | DAG only |
-| Kruskal's MST | O(E log E) | O(V) | Sort edges + Union-Find |
-| Prim's MST | O((V+E) log V) | O(V) | With binary heap |
-| Kosaraju's SCC | O(V + E) | O(V) | Two-pass DFS |
-| Tarjan's SCC | O(V + E) | O(V) | Single-pass DFS |
-| Bridges / APs | O(V + E) | O(V) | DFS + low-link |
-| Bipartite check | O(V + E) | O(V) | BFS 2-coloring |
-| Hamiltonian Path | O(n!) / O(2ⁿ × n) | O(n) | NP-hard; bitmask DP for n≤20 |
-| Eulerian Circuit | O(V + E) | O(V) | Hierholzer's algorithm |
+### Level 1 — Foundations
+1. **Number of Islands** (LeetCode 200) — DFS/BFS on grid; do both
+2. **Flood Fill** (LeetCode 733) — DFS with color matching
+3. **Find the Town Judge** (LeetCode 997) — in-degree/out-degree
+4. **Clone Graph** (LeetCode 133) — BFS + hash map
 
----
+### Level 2 — Core Patterns
+5. **Course Schedule** (LeetCode 207) — topological sort / cycle detection
+6. **Course Schedule II** (LeetCode 210) — return the actual order
+7. **Rotting Oranges** (LeetCode 994) — multi-source BFS
+8. **01 Matrix** (LeetCode 542) — multi-source BFS from all zeros
+9. **Pacific Atlantic Water Flow** (LeetCode 417) — multi-source DFS from both coasts
 
-## Practice — Structured Progression
+### Level 3 — Weighted Graphs
+10. **Network Delay Time** (LeetCode 743) — classic Dijkstra
+11. **Path with Maximum Probability** (LeetCode 1514) — max-heap Dijkstra
+12. **Number of Connected Components** (LeetCode 323) — Union-Find
+13. **Graph Valid Tree** (LeetCode 261) — n-1 edges + no cycle
+14. **Word Ladder** (LeetCode 127) — BFS on implicit word graph
 
-### Level 1 (Noob) — Get the basics solid
+### Level 4 — Advanced
+15. **Cheapest Flights Within K Stops** (LeetCode 787) — Bellman-Ford with constraint
+16. **Critical Connections** (LeetCode 1192) — bridges with low-link
+17. **Reconstruct Itinerary** (LeetCode 332) — Eulerian path on directed graph
+18. **Swim in Rising Water** (LeetCode 778) — Dijkstra or binary search + BFS
+19. **Jump Game IV** (LeetCode 1345) — BFS with value-grouped positions
 
-1. **Implement BFS and DFS from scratch** on a simple 5-node graph. Verify you get the right traversal order.
-2. **Number of Islands** (LeetCode 200) — classic DFS/BFS on a grid. Do both BFS and DFS versions.
-3. **Flood Fill** (LeetCode 733) — DFS on a grid with color matching.
-4. **Find the Town Judge** (LeetCode 997) — in-degree/out-degree reasoning.
-5. **Find Center of Star Graph** (LeetCode 1791) — simple degree counting.
-
-### Level 2 (Beginner) — Core patterns
-
-6. **Clone Graph** (LeetCode 133) — BFS/DFS with a hash map for already-cloned nodes.
-7. **Course Schedule** (LeetCode 207) — topological sort / cycle detection in directed graph.
-8. **Course Schedule II** (LeetCode 210) — return the actual topological order.
-9. **Rotting Oranges** (LeetCode 994) — multi-source BFS.
-10. **01 Matrix** (LeetCode 542) — multi-source BFS from all 0s simultaneously.
-11. **Pacific Atlantic Water Flow** (LeetCode 417) — multi-source DFS from two coastlines.
-
-### Level 3 (Intermediate) — Weighted graphs & harder patterns
-
-12. **Network Delay Time** (LeetCode 743) — classic Dijkstra.
-13. **Path with Maximum Probability** (LeetCode 1514) — Dijkstra with max instead of min.
-14. **Number of Connected Components in an Undirected Graph** (LeetCode 323) — Union-Find or DFS.
-15. **Graph Valid Tree** (LeetCode 261) — Union-Find: n-1 edges + no cycle.
-16. **Word Ladder** (LeetCode 127) — BFS on implicit graph of word transformations.
-17. **Alien Dictionary** (LeetCode 269) — topological sort on character ordering.
-18. **Walls and Gates** (LeetCode 286) — multi-source BFS.
-
-### Level 4 (Advanced) — Hard problems
-
-19. **Cheapest Flights Within K Stops** (LeetCode 787) — Bellman-Ford with constraint.
-20. **Critical Connections in a Network** (LeetCode 1192) — bridges (Tarjan's low-link).
-21. **Reconstruct Itinerary** (LeetCode 332) — Eulerian path on a directed graph.
-22. **Bus Routes** (LeetCode 815) — BFS on a "super-graph" of routes.
-23. **Swim in Rising Water** (LeetCode 778) — binary search + BFS, or Dijkstra.
-24. **Jump Game IV** (LeetCode 1345) — BFS with jump groups (value → positions map).
-25. **Minimum Cost to Reach Destination in Time** (LeetCode 1928) — Dijkstra with time state.
-
-### Level 5 (Pro / Competitive) — Master level
-
-26. **Find Critical and Pseudo-Critical Edges in MST** (LeetCode 1489) — Kruskal + edge inclusion/exclusion.
-27. **Strongly Connected Components** — implement Kosaraju's and Tarjan's on your own.
-28. **Traveling Salesman** on n=15 — bitmask DP + graph.
-29. **Floyd-Warshall + transitive closure** — which nodes can reach which others?
-30. **Johnson's Algorithm** — all-pairs shortest path with negative edges (reweighting trick).
+### Level 5 — Master
+20. **Find Critical and Pseudo-Critical Edges** (LeetCode 1489) — Kruskal edge inclusion/exclusion
+21. Implement Kosaraju's + Tarjan's from memory
+22. Floyd-Warshall + transitive closure
+23. Bellman-Ford arbitrage detection on currency graphs
+24. A* search on a grid with heuristics
 
 Next: [Union-Find](/dsa/union-find) — the data structure for incremental connectivity, and the backbone of Kruskal's MST.

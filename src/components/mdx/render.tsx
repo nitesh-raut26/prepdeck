@@ -8,7 +8,7 @@ import { QA } from "./qa";
 import { Mermaid } from "./mermaid";
 import { Callout } from "./callout";
 import { Figure } from "./figure";
-import { CodeBlock } from "./code-block";
+import { CodeBlock, LanguageCoverageChecker } from "./code-block";
 
 const components = {
   QA,
@@ -43,6 +43,8 @@ export function Mdx({ source }: { source: string }) {
           },
         }}
       />
+      {/* Shows a notice when the selected language has no examples on this page */}
+      <LanguageCoverageChecker />
     </article>
   );
 }
