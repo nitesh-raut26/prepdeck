@@ -138,6 +138,51 @@ function toPlainText(mdx: string): string {
     .trim();
 }
 
+/* ── Flashcards (spaced repetition) ──────────────────────────────────── */
+
+export type Flashcard = {
+  /** Matches the id used by the <QA> component: explicit id, else the question. */
+  id: string;
+  q: string;
+  /** Inner MDX of the QA block, lightly cleaned for plain rendering. */
+  answer: string;
+  href: string;
+  docTitle: string;
+  section: SectionId;
+  sectionLabel: string;
+};
+
+// Attrs are matched as quoted name="value" pairs so questions containing
+// ">" don't terminate the tag early.
+const QA_RE = /<QA((?:\s+\w+="[^"]*")+)\s*>([\s\S]*?)<\/QA>/g;
+const ATTR_RE = /(\w+)="([^"]*)"/g;
+
+/**
+ * Every <QA> block in the content, extracted at build time. This powers the
+ * /review page: ratings made on lesson pages schedule these cards.
+ */
+export function getFlashcards(): Flashcard[] {
+  const out: Flashcard[] = [];
+  for (const d of allDocs()) {
+    const sectionLabel = getSection(d.section)?.label ?? d.section;
+    for (const m of d.body.matchAll(QA_RE)) {
+      const attrs: Record<string, string> = {};
+      for (const a of m[1].matchAll(ATTR_RE)) attrs[a[1]] = a[2];
+      if (!attrs.q) continue;
+      out.push({
+        id: attrs.id ?? attrs.q,
+        q: attrs.q,
+        answer: m[2].trim(),
+        href: d.href,
+        docTitle: d.title,
+        section: d.section,
+        sectionLabel,
+      });
+    }
+  }
+  return out;
+}
+
 /** Search records passed to the client-side Cmd-K palette (Fuse). */
 export function getSearchIndex(): SearchRecord[] {
   return allDocs().map((d) => {

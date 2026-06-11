@@ -13,6 +13,30 @@ SDE2-interview depth. Built as a docs-style study wiki: a section sidebar,
 **localStorage progress tracking**, syntax-highlighted code, and **Mermaid**
 architecture diagrams.
 
+No lesson is read-only — the interactive layer adds:
+
+- **Algorithm visualizers** (`<Visualizer algo="…"/>`): step-through
+  players covering every DSA topic — binary search, five sorting
+  algorithms, two pointers, sliding window, stack/queue, linked-list
+  reversal, BST insert+search, all four tree traversals, min-heap, BFS,
+  DFS, Dijkstra, DP table-filling (Fibonacci / coin change / grid paths /
+  LCS), backtracking (N-Queens + subsets), hash table with collisions,
+  trie, union-find with path compression, greedy activity selection,
+  merge intervals, naive-vs-KMP string matching, prefix sums and Fenwick
+  trees — with play/pause, step forward/back, scrubbing, speed control,
+  editable inputs, per-step narration, live variables and time/space
+  complexity badges.
+- **Guided problem walkthroughs** (`<ThinkThrough …/>`): the
+  [How to Think](src/content/dsa/how-to-think.mdx) lesson teaches the
+  clue → pattern decoder and stages the *thinking* behind classic
+  problems — each stage locked until you've answered its prompt yourself.
+- **Spaced repetition** (`/review`): every flashcard rating schedules the
+  card back at 1/3/7/14/30/60/90-day intervals; the topbar badge shows
+  what's due, and a retention score tracks recall accuracy. (See
+  [ARCHITECTURE.md](ARCHITECTURE.md) for the scheduler design.)
+- **Inline quizzes** (`<Quiz questions={…}/>`): MCQs with instant feedback
+  and explanations, authored as data in MDX.
+
 ## Stack
 
 Next.js 16 (App Router, React 19 RSC) · TypeScript · Tailwind CSS v4 ·
@@ -25,6 +49,7 @@ Next.js 16 (App Router, React 19 RSC) · TypeScript · Tailwind CSS v4 ·
 npm install
 npm run dev      # http://localhost:3000
 npm run build    # production build (verifies SSG + types)
+npm test         # vitest — visualizer step-generators + SRS scheduler
 npm start
 ```
 
@@ -51,9 +76,23 @@ Markdown + code fences, plus custom components:
 <Mermaid chart={`flowchart LR; A-->B`} />
 
 <QA q="An interview question?">
-The answer, revealed on click, with a "Knew it / Revise again" toggle.
+The answer, revealed on click. Rating it ("Knew it" / "Revise again")
+schedules it into the /review spaced-repetition queue.
 </QA>
+
+<Visualizer algo="binary-search" />
+
+<Quiz questions={[
+  { q: "…?", options: ["a", "b"], answer: 0, explain: "because…" }
+]} />
 ```
+
+Visualizer algos: `binary-search`, `sorting`, `two-pointers`,
+`sliding-window`, `stack`, `queue`, `linked-list-reverse`, `bst`,
+`tree-traversal`, `heap`, `bfs`, `dfs`, `dijkstra`, `dp`, `n-queens`,
+`subsets`, `hash-table`, `trie`, `union-find`, `activity-selection`,
+`merge-intervals`, `string-match`, `prefix-sum`, `fenwick`. Multi-variant
+players accept `problem` (e.g. `<Visualizer algo="dp" problem="lcs" />`).
 
 Sections live in `src/lib/nav.ts`; the content registry that powers nav/search
 is `src/lib/content.ts`. The Level 0–12 roadmap is data in `src/lib/roadmap.ts` —

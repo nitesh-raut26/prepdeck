@@ -1,6 +1,8 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import Link from "next/link";
+import { Brain, Menu, Search } from "lucide-react";
+import { useProgress } from "@/components/progress-provider";
 
 export function Topbar({
   onMenu,
@@ -41,9 +43,32 @@ export function Topbar({
         </div>
       )}
 
+      <ReviewLink />
+
       <span className="ml-auto hidden text-xs text-faint lg:block">
         SDE2 prep · built from a real portfolio
       </span>
     </header>
+  );
+}
+
+/** Link to /review with a badge showing how many flashcards are due. */
+function ReviewLink() {
+  const { mounted, dueIds } = useProgress();
+  const due = mounted ? dueIds().length : 0;
+
+  return (
+    <Link
+      href="/review"
+      className="relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 text-xs text-subtle transition-colors hover:border-line-strong hover:text-ink"
+    >
+      <Brain className="size-4 text-brand-400" />
+      <span className="hidden sm:inline">Review</span>
+      {due > 0 && (
+        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 font-mono text-[10px] font-semibold text-white">
+          {due > 99 ? "99+" : due}
+        </span>
+      )}
+    </Link>
   );
 }

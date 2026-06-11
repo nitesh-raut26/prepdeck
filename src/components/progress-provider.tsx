@@ -8,29 +8,61 @@ import {
   useMemo,
   useState,
 } from "react";
+import {
+  isDue,
+  rateCard,
+  retention,
+  type CardRating,
+  type CardRecord,
+  type CardStatus,
+} from "@/lib/srs";
 
 export type DocStatus = "reviewed" | "mastered";
-export type CardStatus = "known" | "review";
+export type { CardRating, CardRecord, CardStatus };
 
 type State = {
   docs: Record<string, DocStatus>;
-  cards: Record<string, CardStatus>;
+  cards: Record<string, CardRecord>;
 };
 
-const KEY = "prepdeck.progress.v1";
+const KEY = "prepdeck.progress.v2";
+const LEGACY_KEY = "prepdeck.progress.v1";
 const EMPTY: State = { docs: {}, cards: {} };
+
+/** v1 stored cards as plain "known" | "review" — seed the scheduler from it. */
+function migrateV1(raw: string): State {
+  try {
+    const parsed = JSON.parse(raw) as {
+      docs?: Record<string, DocStatus>;
+      cards?: Record<string, CardStatus>;
+    };
+    const cards: Record<string, CardRecord> = {};
+    for (const [id, status] of Object.entries(parsed.cards ?? {})) {
+      cards[id] = rateCard(undefined, status === "known" ? "knew" : "revise");
+    }
+    return { docs: parsed.docs ?? {}, cards };
+  } catch {
+    return EMPTY;
+  }
+}
 
 type ProgressCtx = {
   /** True once localStorage has been read (avoids hydration mismatch). */
   mounted: boolean;
   docs: Record<string, DocStatus>;
-  cards: Record<string, CardStatus>;
+  cards: Record<string, CardRecord>;
   getDoc: (href: string) => DocStatus | undefined;
   setDoc: (href: string, status: DocStatus | null) => void;
   /** none → reviewed → mastered → none */
   cycleDoc: (href: string) => void;
-  getCard: (id: string) => CardStatus | undefined;
-  setCard: (id: string, status: CardStatus | null) => void;
+  getCard: (id: string) => CardRecord | undefined;
+  /** Self-rate a flashcard; the SRS scheduler picks the next due date. */
+  rate: (id: string, rating: CardRating) => void;
+  clearCard: (id: string) => void;
+  /** Card ids due for review right now. */
+  dueIds: () => string[];
+  /** Recall accuracy across all ratings, 0–100 (null = nothing rated yet). */
+  retentionScore: () => number | null;
   /** Counts for a set of doc hrefs (for progress bars). */
   countFor: (hrefs: string[]) => { reviewed: number; mastered: number };
   reset: () => void;
@@ -48,6 +80,9 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<State>;
         setState({ docs: parsed.docs ?? {}, cards: parsed.cards ?? {} });
+      } else {
+        const legacy = localStorage.getItem(LEGACY_KEY);
+        if (legacy) setState(migrateV1(legacy));
       }
     } catch {
       /* ignore corrupt storage */
@@ -89,11 +124,17 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const setCard = useCallback((id: string, status: CardStatus | null) => {
+  const rate = useCallback((id: string, rating: CardRating) => {
+    setState((s) => ({
+      ...s,
+      cards: { ...s.cards, [id]: rateCard(s.cards[id], rating) },
+    }));
+  }, []);
+
+  const clearCard = useCallback((id: string) => {
     setState((s) => {
       const cards = { ...s.cards };
-      if (status === null) delete cards[id];
-      else cards[id] = status;
+      delete cards[id];
       return { ...s, cards };
     });
   }, []);
@@ -107,7 +148,16 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       setDoc,
       cycleDoc,
       getCard: (id) => state.cards[id],
-      setCard,
+      rate,
+      clearCard,
+      dueIds: () => {
+        const now = Date.now();
+        return Object.entries(state.cards)
+          .filter(([, c]) => isDue(c, now))
+          .sort((a, b) => a[1].due - b[1].due)
+          .map(([id]) => id);
+      },
+      retentionScore: () => retention(Object.values(state.cards)),
       countFor: (hrefs) => {
         let reviewed = 0;
         let mastered = 0;
@@ -120,7 +170,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       },
       reset: () => setState(EMPTY),
     }),
-    [mounted, state, setDoc, cycleDoc, setCard],
+    [mounted, state, setDoc, cycleDoc, rate, clearCard],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

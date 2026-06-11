@@ -8,6 +8,9 @@ import { QA } from "./qa";
 import { Mermaid } from "./mermaid";
 import { Callout } from "./callout";
 import { Figure } from "./figure";
+import { Quiz } from "./quiz";
+import { ThinkThrough } from "./think-through";
+import { Visualizer } from "@/components/viz/visualizer";
 import { CodeBlock, LanguageCoverageChecker } from "./code-block";
 
 const components = {
@@ -15,6 +18,9 @@ const components = {
   Mermaid,
   Callout,
   Figure,
+  Quiz,
+  ThinkThrough,
+  Visualizer,
   // Replace default <pre> with our language-aware CodeBlock
   pre: (props: ComponentProps<"pre">) => <CodeBlock {...props} />,
   // Keep wide tables from breaking the layout.
