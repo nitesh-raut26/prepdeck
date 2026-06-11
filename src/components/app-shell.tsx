@@ -1,14 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { X } from "lucide-react";
 import { ProgressProvider } from "@/components/progress-provider";
 import { LanguageProvider } from "@/components/language-provider";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { SearchPalette } from "@/components/search-palette";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import type { NavSection, SearchRecord } from "@/lib/content";
+
+/**
+ * Load LanguageSwitcher only on the client — it reads localStorage and
+ * renders a different DOM tree before/after mount, which would trigger
+ * a hydration mismatch if server-rendered.
+ */
+const LanguageSwitcher = dynamic(
+  () => import("@/components/language-switcher").then((m) => m.LanguageSwitcher),
+  { ssr: false },
+);
 
 export function AppShell({
   nav,
