@@ -72,6 +72,15 @@ manufacture colliding keys and turn your API's dict into a linked list — a
 process precisely to prevent it. (Great
 [security](/fundamentals/security) trivia that signals depth.)
 
+## Watch it run
+
+Drawers, a placement rule, and collisions handled with little chains —
+insert a batch of keys, then watch a lookup jump straight to the right
+drawer. Change the drawer count and see chains shrink (more drawers) or
+pile up (fewer).
+
+<Visualizer algo="hash-table" />
+
 ## Why keys must be immutable
 
 The table *files* a key under the bucket computed from its contents. Mutate

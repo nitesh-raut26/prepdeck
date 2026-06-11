@@ -34,6 +34,15 @@ realistic goals: rolling hashes you can *use* (they generalize beyond
 strings), KMP's *idea* you can explain (deriving it live is rare), and
 the judgment to say "in production I'd call the library."
 
+## Watch the obvious way struggle
+
+First, feel the problem: the naive method slides the pattern one step per
+mismatch and re-compares letters it already confirmed. Count the
+comparisons on this repetitive input — then come back after the KMP
+section and run the same search with the toggle flipped.
+
+<Visualizer algo="string-match" />
+
 ## Rolling hash & Rabin-Karp — compare numbers, not strings
 
 Comparing two m-character windows costs O(m). Comparing two *numbers*
@@ -153,6 +162,15 @@ that matches the string's own prefix — an alternative O(n) toolkit with
 the same applications), and **Aho-Corasick** (KMP generalized to many
 patterns simultaneously by building the failure links over a
 [trie](/dsa/tries) — the industrial-strength multi-pattern matcher).
+
+## Watch KMP never look back
+
+Same search, two phases: first the pattern studies *itself* (the "survives"
+row — how many letters of progress outlive a mismatch), then the scan where
+the text pointer only ever moves forward. Compare the final comparison
+count against the naive run above.
+
+<Visualizer algo="string-match" problem="kmp" />
 
 ## Where the failure function sneaks into interviews
 

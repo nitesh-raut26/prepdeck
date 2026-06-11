@@ -1,0 +1,87 @@
+---
+title: "Jargon Decoder"
+summary: "Every scary CS term translated into one plain sentence — so no lesson on this site (or answer in an interview) ever needs to feel like a foreign language."
+order: 4
+tags: ["glossary", "terminology", "plain-english"]
+---
+
+## How to use this
+
+Hit a term anywhere on the site that makes your eyes glaze? Find it here,
+read the plain version, go back. Each entry is one sentence of truth plus,
+where it helps, the picture to hold in your head.
+
+## Cost & analysis
+
+| Term | In plain words |
+|---|---|
+| **Big-O / O(n)** | "How does the work grow when the input grows?" — O(n) = double the input, double the work; O(n²) = double the input, 4× the work; O(log n) = doubling the input adds just one extra step. |
+| **Constant time, O(1)** | The work doesn't depend on input size at all — like opening drawer #5 directly instead of searching all drawers. |
+| **Amortized** | "Cheap on average" — one operation is occasionally expensive (a list growing) but spread over many operations each one effectively costs little. |
+| **Worst / average / best case** | The same algorithm graded on its unluckiest input, a typical input, and its luckiest input. Quicksort: O(n²) / O(n log n) / O(n log n). |
+| **Asymptotic** | "For large enough inputs" — Big-O ignores small inputs and constant factors on purpose. |
+| **Time–space trade-off** | Spending memory to save time (or vice versa). A hash map in Two Sum buys O(n) speed with O(n) memory. |
+
+## Data structure words
+
+| Term | In plain words |
+|---|---|
+| **Contiguous** | Stored side by side in memory with no gaps — what makes array indexing instant. |
+| **Node / pointer / reference** | A node is a box of data; a pointer is a note inside it saying where another box lives. |
+| **Hash / hash function** | A rule that turns any key into a drawer number — same key, same drawer, every time. |
+| **Collision** | Two different keys assigned the same drawer. Handled, not feared: the drawer keeps a short list. |
+| **Load factor** | How full the hash table is (items ÷ drawers). Too full → chains grow → table doubles its drawers and re-places everything. |
+| **Invariant** | A promise that stays true the whole time your code runs — "everything left of `lo` is too small." Loops are correct *because* of their invariant. |
+| **Monotonic** | Only moves one way (never decreases, or never increases). A monotonic stack keeps its contents sorted by throwing out violators. |
+| **Balanced (tree)** | No branch is much longer than another, so the height stays ~log n and every promise about O(log n) holds. |
+| **Stable (sort)** | Equal items keep their original left-to-right order — matters when sorting people by age after sorting by name. |
+| **In-place** | Rearranges the input inside itself, using only O(1) extra memory — no working copy. |
+
+## Algorithm words
+
+| Term | In plain words |
+|---|---|
+| **Brute force** | The honest, try-everything solution. Always state it first: it's your correctness baseline and your cost to beat. |
+| **Recursion / call stack** | A function that solves a big case by calling itself on smaller cases; the call stack is the pile of unfinished calls waiting for answers. |
+| **Divide and conquer** | Split the problem in half, solve each half, combine — merge sort is the poster child. |
+| **Greedy** | Take the locally best option at every step and never look back. Fast — but only *correct* when a swap argument proves no look-back could help. |
+| **Heuristic** | A rule of thumb that's usually good but carries no guarantee — what you use when exact is too expensive. |
+| **Memoization** | A notebook: before computing, check if the answer's already written down; after computing, write it down. (Top-down DP.) |
+| **Tabulation** | Fill the same notebook *in order*, smallest case first, no recursion. (Bottom-up DP.) |
+| **Pruning** | Cutting a branch of the search the moment you can prove nothing good lives down there — the difference between "instant" and "never finishes." |
+| **Traversal** | A planned walk that visits everything exactly once — trees and graphs differ only in what order you visit. |
+| **Pivot** | Quicksort's chosen reference element; everything gets split into "smaller than it" and "bigger than it." |
+| **Sentinel / dummy node** | A fake first node you add so the real first node stops being a special case. |
+| **Sliding window** | A range over the data that grows on the right and shrinks on the left, so you never re-scan from scratch. |
+| **Two pointers** | Two markers walking the data (often from both ends) where every comparison safely retires one of them inward. |
+
+## Graph & connectivity words
+
+| Term | In plain words |
+|---|---|
+| **Vertex / edge** | A dot and a line connecting two dots. V dots, E lines. |
+| **Directed / undirected** | One-way streets vs two-way streets. |
+| **Weighted** | Each street has a price (distance, time, cost). |
+| **Adjacency list** | Per dot, the list of its direct neighbours — the standard way to store a graph. |
+| **Frontier** | The dots you've discovered but not finished processing — BFS's queue, DFS's stack. |
+| **Relax (an edge)** | "Does going through u make reaching v cheaper than the best I knew?" If yes, update. Dijkstra is relaxation on repeat. |
+| **Topological order** | A line-up of tasks so every prerequisite comes before the task that needs it — only possible when there's no cycle. |
+| **Connected component** | An island: a group of dots all reachable from each other, unreachable from the rest. |
+
+## Interview-room words
+
+| Term | In plain words |
+|---|---|
+| **Edge case** | An input at the boundary of legal — empty, one element, all duplicates, the maximum size. Bugs live at boundaries. |
+| **Off-by-one** | The bug where a loop runs one time too many or too few — killed by writing the invariant down, not by hoping. |
+| **Optimal substructure** | The best answer to the big problem is built from best answers to its smaller versions — DP's first requirement. |
+| **Overlapping subproblems** | The same smaller question gets asked again and again — DP's second requirement, and why the notebook pays off. |
+| **Dry run** | Executing your code by hand on a small input, line by line, before claiming it works. |
+| **Trade-off** | The sentence every senior answer contains: what you gave up for what you gained ("O(n) memory for O(1) lookups"). |
+
+<Callout type="tip" title="The litmus test">
+You understand a term when you can explain it to a friend with zero CS
+background using one everyday object — drawers, notebooks, mazes, queues at
+a counter. If you can't yet, the linked lesson's visualizer will get you there
+faster than rereading the definition.
+</Callout>

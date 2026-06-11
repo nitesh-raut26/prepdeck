@@ -43,7 +43,21 @@ around it. Mention all three and pick by constraints; the heap also handles
 *streaming* input, which sort/quickselect can't.
 </Callout>
 
+## Watch it run
+
+The same heap shown both ways at once: the flat array that's actually in
+memory, and the complete binary tree it encodes. Watch values sift up on
+push and sift down after extract-min.
+
+<Visualizer algo="heap" />
+
 ## Intervals = sort first, then sweep
+
+Watch the sweep in action — after sorting by start, every new interval
+either overlaps the block being built (stretch it) or starts a fresh one
+(gap). One pass, no backtracking:
+
+<Visualizer algo="merge-intervals" />
 
 Almost every interval problem starts by **sorting by start (or end)**, then making
 one pass.

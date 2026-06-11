@@ -138,6 +138,15 @@ constants, harder to get wrong under pressure. **Segment tree** when you
 need min/max (not invertible: knowing min(1..8) and min(1..4) doesn't
 give min(5..8)), range updates, or anything exotic stored per node.
 
+## Watch the Fenwick tree run
+
+Each `tree` slot quietly owns a *block* of the array. Watch every value
+ripple into just the few blocks that contain it (the lowest-set-bit hops),
+then watch a prefix query collect its answer from a handful of blocks
+instead of re-adding everything.
+
+<Visualizer algo="fenwick" />
+
 ## Where they show up
 
 - **Interview classics:** count inversions / "count of smaller elements

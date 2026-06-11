@@ -1,16 +1,51 @@
 ---
 title: "Backtracking"
-summary: "The choose → explore → un-choose template behind subsets, permutations, combinations and constraint puzzles — plus how pruning turns exponential into tractable."
+summary: "Try a choice, check it's still legal, go deeper — and when you hit a dead end, undo and try the next option. The pattern behind subsets, permutations and every constraint puzzle."
 order: 16
 difficulty: "Core pattern"
 tags: ["backtracking", "recursion", "combinatorics"]
 ---
 
+## The idea, with zero jargon
+
+You're in a maze. At every junction you pick a corridor and walk. Hit a dead
+end? You **walk back to the junction and take the next corridor**. You never
+teleport, you never clone yourself — one walker, exploring everything, by
+remembering to *undo*.
+
+That's the entire algorithm:
+
+1. **Choose** — pick one of the available options.
+2. **Explore** — go deeper with that choice made.
+3. **Un-choose** — undo the choice, so the next option starts from a clean slate.
+
+The un-choose step is what beginners forget, and it's the whole trick: it's
+what lets the *same* path/board/array be reused for every branch instead of
+copying it at every step.
+
+## Watch it run: N-Queens
+
+The classic constraint puzzle: place queens so none can attack another. Watch
+three things — choices being made (green), illegal squares being rejected
+*before* going deeper (red ✕), and the backtrack itself: a queen being lifted
+off the board when everything below it failed.
+
+<Visualizer algo="n-queens" />
+
+## Watch it run: subsets
+
+Most backtracking interview problems are secretly this: walk the items left to
+right, and for each one make a yes/no decision. Every route through the
+decisions produces one subset.
+
+<Visualizer algo="subsets" />
+
 ## The template
 
 Build a candidate incrementally; at each step **choose** an option, **explore**
-deeper, then **un-choose** (undo) to try the next. It's DFS over the space of
-partial solutions.
+deeper, then **un-choose** (undo) to try the next. It's [DFS](/dsa/graphs-bfs-dfs)
+over the space of partial solutions — the "graph" is imaginary: nodes are
+partial answers, edges are choices.
 
 ```python
 def subsets(nums):
@@ -37,18 +72,68 @@ instead track a `used[]` set and iterate all indices.
 | Permutations | any unused item | `used[]` flags |
 | Partition / N-Queens / Sudoku | each valid placement | constraint check |
 
+## How to recognize a backtracking problem
+
+The wording gives it away. Reach for backtracking when the problem says:
+
+- "**all** subsets / **all** permutations / **all** combinations / **every** way to…"
+  → you're asked to *enumerate*, not to find one best answer.
+- "place / arrange / assign … such that **no two conflict**" → constraint
+  puzzle (N-Queens, Sudoku, graph coloring).
+- "can you split / partition the input into groups that…" → try assignments,
+  undo on failure.
+- The input is tiny (n ≤ ~15). Exponential is *expected*; the question is
+  whether your recursion is clean and your pruning is real.
+
+If instead it asks for the *count* of ways or the *best* value — and the same
+sub-questions repeat — that's [dynamic programming](/dsa/dynamic-programming):
+DP remembers answers, backtracking enumerates paths.
+
 ## Pruning is the whole point
 
 Naive enumeration is O(2ⁿ) or O(n!). **Pruning** — cutting branches that can't
-lead to a valid/better solution — is what makes it pass. Sort to enable early
+lead to a valid/better solution — is what makes it pass. You saw it in the
+N-Queens player: the red ✕ squares were rejected *before* recursing, killing
+whole subtrees of doomed arrangements in one comparison. Sort to enable early
 termination, skip equal siblings to dedupe, and check constraints *before*
-recursing (e.g. N-Queens: don't place a queen on an attacked square).
+recursing.
 
 <Callout type="tip" title="Backtracking is viable when n is tiny">
 If the constraints say n ≤ ~12–15, exponential backtracking is expected — the
 interviewer wants a clean recursion with correct pruning, not a polynomial trick.
 The input size is the hint (see the DSA study plan).
 </Callout>
+
+## Think one through
+
+<ThinkThrough
+  title="Permutations"
+  difficulty="Medium — LeetCode 46"
+  problem="Given an array of distinct numbers like [1, 2, 3], return every possible ordering: [1,2,3], [1,3,2], [2,1,3], [2,3,1], [3,1,2], [3,2,1]."
+  stages={[
+    {
+      label: "Spot the pattern",
+      prompt: "What word in the problem tells me which tool to grab?",
+      reveal: "\"Every possible ordering\" — the word EVERY means enumerate, and enumerate means backtracking. Sanity-check with size: n distinct items have n! orderings (3! = 6 here), so any solution is at least O(n!) — exponential is unavoidable and therefore acceptable."
+    },
+    {
+      label: "Frame the decisions",
+      prompt: "Building one permutation step by step — what is the choice at each step?",
+      reveal: "Slot by slot: \"who goes in position 0? then position 1? …\" At each slot the options are every number NOT already used. That differs from subsets (yes/no per item, start index) — here order matters, so every unused item is a candidate at every level, and we need a used[] checklist."
+    },
+    {
+      label: "Write the skeleton",
+      prompt: "Where exactly do choose, explore, and un-choose go?",
+      reveal: "Choose = append the number and tick used[i]. Explore = recurse for the next slot. Un-choose = pop it back off and untick used[i] — this line is what frees the number for a different slot in the next branch. Record a result when the path is full (length n).",
+      code: "def permute(nums):\n    res, path = [], []\n    used = [False] * len(nums)\n    def backtrack():\n        if len(path) == len(nums):\n            res.append(path[:])      # full — record a copy\n            return\n        for i in range(len(nums)):\n            if used[i]:\n                continue\n            path.append(nums[i]); used[i] = True    # choose\n            backtrack()                              # explore\n            path.pop(); used[i] = False              # un-choose\n    backtrack()\n    return res"
+    },
+    {
+      label: "Check the cost, test the edges",
+      prompt: "How much work is this, and what inputs could break it?",
+      reveal: "n! permutations, each copied in O(n) → O(n · n!). State: one path + one used[] — O(n) extra space thanks to un-choose. Edge cases: empty array (return [[]]), single element. In the interview, say the n·n! bound BEFORE coding — it shows you know enumeration's floor and chose it deliberately."
+    }
+  ]}
+/>
 
 <QA q="What's the difference in code between generating subsets and permutations?">
 
@@ -72,3 +157,39 @@ generating the same candidate twice. Good pruning often turns an intractable
 search into one that finishes instantly on the given constraints.
 
 </QA>
+
+<Quiz questions={[
+  {
+    q: "In choose → explore → un-choose, what breaks if you forget the un-choose step?",
+    options: [
+      "Later branches see leftovers from earlier ones — paths contain ghosts of choices that were supposed to be undone",
+      "Nothing — it just uses more memory",
+      "The recursion never terminates",
+      "Only performance suffers"
+    ],
+    answer: 0,
+    explain: "There's one shared path/board for the whole search. Un-choose restores it so sibling branches start clean. Skip it and your second branch begins with the first branch's choices still applied — wrong answers, not just waste."
+  },
+  {
+    q: "A problem says: 'count the number of ways to climb n stairs taking 1 or 2 steps'. Backtracking or DP?",
+    options: [
+      "DP — it asks for a count, and the same sub-questions (ways from step k) repeat massively",
+      "Backtracking — 'ways' means enumerate",
+      "Greedy — always take 2 steps",
+      "Either, they're equivalent in cost"
+    ],
+    answer: 0,
+    explain: "You need the NUMBER of ways, not the list of them. Enumerating would be exponential; counting with a table is O(n) because ways(k) is asked again and again. Rule of thumb: list them all → backtracking; count/best → DP."
+  },
+  {
+    q: "Why does checking N-Queens conflicts BEFORE recursing matter so much?",
+    options: [
+      "One cheap check kills an entire subtree of doomed arrangements",
+      "It makes the code shorter",
+      "It avoids stack overflow",
+      "It's only a style convention"
+    ],
+    answer: 0,
+    explain: "Placing an attacked queen and descending wastes work on every arrangement below that point — exponentially many. Pruning at the junction is the difference between 'finishes instantly' and 'finishes never'."
+  }
+]} />

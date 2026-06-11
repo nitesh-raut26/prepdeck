@@ -1,0 +1,256 @@
+---
+title: "How to Think (the Interview Cheat Code)"
+summary: "The problem statement is full of clues that name the right pattern. Learn the decoder table and the 7-step routine, then practice the thinking itself on guided walkthroughs."
+order: 2
+difficulty: "Read me first"
+tags: ["patterns", "interview", "problem-solving", "framework"]
+---
+
+## The secret nobody tells beginners
+
+Interviewers aren't testing whether you've memorized 500 solutions. They're
+testing whether you can **recognize which of ~15 patterns a new problem is
+wearing**, and then apply that pattern calmly. Strong candidates aren't
+faster thinkers — they've just learned that *the problem statement itself
+names the pattern*, if you know the code words.
+
+This page is that decoder. Pin it.
+
+## The decoder table
+
+Read the problem. The moment one of these phrases appears, you have your
+prime suspect:
+
+| The problem says… | Reach for | Why it works |
+|---|---|---|
+| "sorted array", "find in sorted…" | [Binary search](/dsa/binary-search) | Sorted = you can throw away half per question |
+| "minimum X **such that** it works", "max of min" | [Binary search on the answer](/dsa/binary-search) | Feasibility flips once → search the boundary |
+| "pair / triplet that sums to…", "compare two ends" | [Two pointers](/dsa/two-pointers) | Each comparison safely moves one pointer inward |
+| "longest/shortest **substring** or **subarray** with…" | [Sliding window](/dsa/sliding-window) | Grow/shrink a range instead of re-scanning |
+| "have I seen this before?", "count occurrences", "two things match" | [Hash table](/dsa/hash-tables) | Trades memory for instant lookups |
+| "next greater element", "matching brackets", "undo", "most recent" | [Stack](/dsa/stacks-and-queues) | Last-in first-out mirrors nesting & recency |
+| "process in arrival order", "level by level", "shortest path, equal steps" | [Queue / BFS](/dsa/graphs-bfs-dfs) | First-in first-out explores nearest-first |
+| "top k", "k-th largest", "merge k streams", "median of a stream" | [Heap](/dsa/heaps-and-intervals) | Always hands you the current best in O(log n) |
+| "**all** subsets / permutations / ways to place…" | [Backtracking](/dsa/backtracking) | Enumerate by choose → explore → un-choose |
+| "**how many** ways", "minimum cost to reach", "can it be formed" (+ choices overlap) | [DP](/dsa/dynamic-programming) | Same sub-questions repeat → answer each once, in a table |
+| "connected", "islands", "reachable", "depends on" | [Graph BFS/DFS](/dsa/graphs-bfs-dfs) | Relationships = nodes + edges; traverse them |
+| "are these in the same group?", "merge groups", "detect cycle while adding edges" | [Union-Find](/dsa/union-find) | Leaders + sticky notes answer 'same group?' instantly |
+| "intervals", "meetings", "overlapping ranges" | [Sort + sweep](/dsa/heaps-and-intervals) | After sorting, only neighbours can interact |
+| "prefix", "autocomplete", "starts with" | [Trie](/dsa/tries) | Shared beginnings stored once, walked letter by letter |
+| "range sum/min, many queries", "updates between queries" | [Prefix sums / Fenwick](/dsa/segment-and-fenwick-trees) | Precompute block answers; reuse forever |
+| "linked list" + "cycle / middle / k-th from end" | [Fast & slow pointers](/dsa/linked-lists) | Different speeds reveal structure without extra memory |
+
+Two suspects at once is normal ("sorted" + "pair" → two pointers on a sorted
+array). The table narrows fifteen options to two — your worked examples
+settle the rest.
+
+## The 7-step routine
+
+Same moves, every problem, out loud. Interviewers grade the moves as much as
+the code.
+
+1. **Restate the problem in your own words.** One sentence. If you can't,
+   you don't understand it yet — and discovering that now costs nothing.
+2. **Interrogate the edges.** Empty input? Duplicates? Negative numbers?
+   Sorted already? How big is n? (n ≤ 15 whispers *backtracking is fine*;
+   n = 10⁵ shouts *nothing slower than O(n log n)*.)
+3. **Run the decoder.** Which phrases above appear? Name 1–2 candidate
+   patterns *out loud* — "all orderings, so this smells like backtracking."
+4. **Solve it by hand first.** Take a 5-element example and get the answer
+   with pencil logic. Watch what your own brain does — your hand-method
+   usually *is* the algorithm.
+5. **State the brute force and its cost.** Twenty seconds: "check every
+   pair, O(n²)." Now you have a baseline, and improving it has direction:
+   what work is being repeated? Repeated lookups → hash. Repeated halves →
+   binary search. Repeated sub-answers → DP.
+6. **Code the chosen pattern's template.** Not from inspiration — from the
+   template you drilled. Say the invariant while you type ("window is always
+   valid after this while-loop").
+7. **Test like a skeptic.** Trace the smallest real example, then one edge
+   case from step 2. Fix quietly, don't panic loudly.
+
+<Callout type="tip" title="The honest version of 'I don't know'">
+Stuck after the decoder? Say: "Brute force is O(n²); I'm looking for the
+repeated work to eliminate." That sentence — naming the baseline and the
+search direction — earns more points than silent staring ever lost.
+</Callout>
+
+## Practice the thinking, not the typing
+
+Each walkthrough below hides the thinking behind the same questions you
+should ask yourself. **Answer each prompt in your head before revealing** —
+that rep, not the final code, is what transfers to a new problem.
+
+<ThinkThrough
+  title="Two Sum"
+  difficulty="Easy — LeetCode 1"
+  problem="Given an array of numbers and a target, return the indices of the two numbers that add up to the target. Example: nums = [2, 7, 11, 15], target = 9 → [0, 1]."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What am I actually returning, and what could be weird about the input?",
+      reveal: "Indices (not values!) of two different positions summing to target. Weird inputs to ask about: duplicates ([3,3], target 6 — valid!), negatives, exactly one solution guaranteed? The array is NOT sorted — that detail kills one tempting pattern, see next stage."
+    },
+    {
+      label: "Brute force first",
+      prompt: "What's the dumbest correct solution, and what does it cost?",
+      reveal: "Try every pair: two nested loops, O(n²) time, O(1) space. Say this out loud in 15 seconds. Now the real question: what work is repeated? For each number x I'm SEARCHING the rest of the array for (target − x). A repeated search for 'have I seen this value?'…"
+    },
+    {
+      label: "Run the decoder",
+      prompt: "'Have I seen this value before?' — which row of the table is that?",
+      reveal: "Hash table. (Two pointers also whispers 'pair that sums to' — but it needs a sorted array, and sorting scrambles the indices we must return. Decoder gave two suspects; the edge-detail from stage 1 eliminated one. That elimination IS the skill.) Plan: walk once; for each number, check if its partner (target − x) is already in the map; otherwise store x → its index."
+    },
+    {
+      label: "Code the template",
+      prompt: "One pass, checking before storing — why that order?",
+      reveal: "Check-then-store handles duplicates correctly: for [3,3] target 6, the second 3 finds the first in the map. Store-then-check would let a number partner with itself.",
+      code: "def two_sum(nums, target):\n    seen = {}                       # value -> index\n    for i, x in enumerate(nums):\n        if target - x in seen:      # partner already seen?\n            return [seen[target - x], i]\n        seen[x] = i                 # remember me for future partners\n    return []"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "What did the hash map buy, and what did it cost?",
+      reveal: "O(n) time — each element: one lookup + one insert, both O(1) average (watch it happen in the hash table visualizer). Cost: O(n) extra memory. Classic trade: memory for speed. Trace [3,3]/6: i=0 stores {3:0}; i=1 finds 3 → [0,1]. ✓"
+    }
+  ]}
+/>
+
+<ThinkThrough
+  title="Valid Parentheses"
+  difficulty="Easy — LeetCode 20"
+  problem="Given a string of brackets like '({[]})', decide if it's valid: every opener closes, in the right order. '([)]' is invalid."
+  stages={[
+    {
+      label: "Solve it by hand",
+      prompt: "Scan '({[]})' left to right with a pencil — what is my brain tracking?",
+      reveal: "Reading along, I keep a mental pile of 'currently open' brackets. A closer is fine only if it matches the MOST RECENT unclosed opener — then I cross that opener off. 'Most recent first'… that's a last-in-first-out pile."
+    },
+    {
+      label: "Run the decoder",
+      prompt: "Which table row says 'most recent', 'matching brackets', 'nesting'?",
+      reveal: "Stack — the decoder literally lists 'matching brackets'. Nesting always means stack, because the innermost (newest) thing must finish first. Plan: push openers; on a closer, the stack top must be its partner — pop it. Valid iff we never mismatch and end with an empty stack."
+    },
+    {
+      label: "Code the template",
+      prompt: "What are the THREE ways a string can fail?",
+      reveal: "1) Closer arrives, stack empty (')(' — nothing to close). 2) Closer arrives, top is the wrong kind ('([)]'). 3) String ends, stack not empty ('((' — unfinished business). The empty-stack check before popping is the bug interviewers wait for.",
+      code: "def is_valid(s):\n    pairs = {')': '(', ']': '[', '}': '{'}\n    stack = []\n    for ch in s:\n        if ch in '([{':\n            stack.append(ch)            # new open business\n        else:\n            if not stack or stack[-1] != pairs[ch]:\n                return False            # fail 1 or 2\n            stack.pop()                 # matched — cross it off\n    return not stack                    # fail 3 if leftovers"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Complexity, and which edge cases hit each failure mode?",
+      reveal: "O(n) time (one pass, O(1) per char), O(n) space worst case ('(((('). Tests: '' → valid; ')' → fail 1; '([)]' → fail 2; '(' → fail 3. Four tests, four code paths — THAT'S what 'testing like a skeptic' means: each test exists to kill a specific bug."
+    }
+  ]}
+/>
+
+<ThinkThrough
+  title="Coin Change"
+  difficulty="Medium — LeetCode 322"
+  problem="Coins of denominations [1, 3, 4] and an amount, say 6. Return the FEWEST coins that make the amount, or -1 if impossible. (Answer for 6: two coins — 3 + 3.)"
+  stages={[
+    {
+      label: "Trap check",
+      prompt: "'Fewest coins' — why not just greedily grab the biggest coin every time?",
+      reveal: "Try it: amount 6, biggest-first gives 4 + 1 + 1 = three coins. But 3 + 3 = two. Greedy fails because taking the 4 changes what's reachable afterwards — choices interact. When the 'obvious greedy' fails on a small example, that example IS your counterexample to mention in the interview, and your signal to look at DP."
+    },
+    {
+      label: "Run the decoder",
+      prompt: "'Minimum number of X to reach Y', choices overlap — which row?",
+      reveal: "DP. Confirm with the two DP fingerprints: (1) the answer to 'fewest coins for 6' is built from 'fewest for 5, 3, and 2' — answers to smaller versions of the SAME question; (2) those sub-questions repeat massively across branches. Repeating sub-questions = write answers in a table, compute each once."
+    },
+    {
+      label: "Define the table cell",
+      prompt: "Complete the sentence: best[a] = …  (this sentence is 80% of any DP problem)",
+      reveal: "best[a] = the fewest coins that make amount a. Base case: best[0] = 0 (zero coins make zero). Transition — think about the LAST coin: if it was a 1, the rest cost best[a−1]; if a 3, best[a−3]; if a 4, best[a−4]. Take the cheapest option + 1. Unreachable amounts stay ∞."
+    },
+    {
+      label: "Code it",
+      prompt: "Fill the table smallest amount first — why that direction?",
+      reveal: "Because best[a] reads best[a − coin], every cell it needs must already be final — smaller amounts first guarantees that. (Watch the same fill happen cell by cell in the DP visualizer below.)",
+      code: "def coin_change(coins, amount):\n    INF = float('inf')\n    best = [0] + [INF] * amount        # best[a] = fewest coins for a\n    for a in range(1, amount + 1):\n        for c in coins:\n            if c <= a and best[a - c] + 1 < best[a]:\n                best[a] = best[a - c] + 1   # last coin = c\n    return best[amount] if best[amount] < INF else -1"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost in terms of amount and number of coin types? Edge cases?",
+      reveal: "O(amount × coin types) time, O(amount) space — each cell does one cheap check per coin. Edges: amount 0 → 0 coins; impossible (coins [2], amount 3) → best stays ∞ → −1. In the interview, contrast with backtracking: enumerating coin sequences explodes exponentially; the table stays tiny because it stores ANSWERS, not paths."
+    }
+  ]}
+/>
+
+Want to watch that last table fill itself? Same problem, cell by cell:
+
+<Visualizer algo="dp" problem="coins" />
+
+## Drill the decoder
+
+<Quiz questions={[
+  {
+    q: "“Return the k closest points to the origin from a stream of 10⁶ points.” First pattern to consider?",
+    options: [
+      "Heap — 'k closest' from a stream is the heap's home turf",
+      "Sort everything — O(n log n) is fine",
+      "Binary search on the answer",
+      "Backtracking over subsets of points"
+    ],
+    answer: 0,
+    explain: "'Top/closest k' + streaming = keep a size-k heap: O(n log k), and you never need all the data in memory at once. Sorting works but does strictly more work for less."
+  },
+  {
+    q: "“Count how many distinct ways you can decode a digit string.” Which pattern, and which clue?",
+    options: [
+      "DP — 'count how many ways' with overlapping sub-questions",
+      "Backtracking — generate all decodings and count them",
+      "Sliding window — it's about substrings",
+      "Trie — digits form prefixes"
+    ],
+    answer: 0,
+    explain: "'How MANY ways' (a count, not a list) plus the fact that ways(rest-of-string) repeats across branches = DP. Backtracking would enumerate exponentially many decodings just to throw them away and keep a number."
+  },
+  {
+    q: "“Find the longest substring with at most 2 distinct characters.” Which pattern?",
+    options: [
+      "Sliding window — 'longest substring with a condition'",
+      "DP over all substrings",
+      "Two pointers from both ends",
+      "Hash table alone"
+    ],
+    answer: 0,
+    explain: "'Longest substring such that…' is the sliding window signature: grow the right edge, shrink the left edge only when the condition breaks (track counts with a hash map inside the window). O(n), because each index enters and leaves the window once."
+  },
+  {
+    q: "You're 10 minutes in with no idea. What's the highest-value move?",
+    options: [
+      "State the brute force with its cost, then hunt the repeated work out loud",
+      "Stay silent until the optimal solution arrives",
+      "Start coding something to show activity",
+      "Ask for a completely different question"
+    ],
+    answer: 0,
+    explain: "A stated brute force proves you can solve it at all, gives a complexity baseline, and turns 'no idea' into a directed search: find what's recomputed, then pick the tool that removes it (hash for lookups, table for sub-answers, sorting for structure)."
+  }
+]} />
+
+<QA q="Interviewer cheat-sheet: what do you do in the first two minutes after hearing a problem?">
+
+Restate the problem in one sentence and confirm it. Ask about edges: input
+size, duplicates, negatives, empty input, sorted or not. Then run the pattern
+decoder on the wording — phrases like "all ways" (backtracking), "how many
+ways/min cost" (DP), "top k" (heap), "longest substring with…" (sliding
+window) name their pattern directly. Name your 1–2 suspects out loud, state
+the brute force and its cost, and only then start designing. No code before
+minute five.
+
+</QA>
+
+<QA q="How do you decide between backtracking and DP when a problem involves making choices?">
+
+Ask what the output is. If it's the *list of solutions themselves* ("return
+all valid combinations") you must enumerate — backtracking. If it's a *count
+or a best value* ("how many ways", "minimum coins") and the same smaller
+sub-questions recur, you don't need the paths — store one answer per
+sub-question in a table: DP. Quick test: could two different choice-sequences
+land in the same sub-problem? If yes, a table collapses them; enumeration
+would redo them.
+
+</QA>

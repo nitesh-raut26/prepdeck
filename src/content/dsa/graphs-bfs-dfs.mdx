@@ -103,6 +103,14 @@ for (int i = 0; i < m; i++) {
 
 ## Part 2 — BFS (Breadth-First Search)
 
+### Watch BFS run
+
+Before the code: watch the queue drive the traversal. Visited nodes turn
+green, the frontier waits in amber, and the highlighted edges form the BFS
+tree — shortest paths by hop count. Try different start nodes.
+
+<Visualizer algo="bfs" />
+
 BFS explores nodes **level by level** using a queue. The first time you reach a node = **shortest path** (fewest edges).
 
 <Callout type="warn" title="The #1 BFS Bug — Mark visited on ENQUEUE, not dequeue">
@@ -358,6 +366,13 @@ vector<vector<int>> bfsGrid(vector<vector<char>>& grid, int sr, int sc) {
 ---
 
 ## Part 3 — DFS (Depth-First Search)
+
+### Watch DFS run
+
+Same graph, same start node as BFS above — but a stack instead of a queue.
+Compare the shapes: long tendrils instead of expanding rings.
+
+<Visualizer algo="dfs" />
 
 DFS dives as deep as possible before backtracking. Natural fit for: connectivity, all paths, cycle detection, topological order, SCCs, bridges.
 
@@ -706,6 +721,14 @@ bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
 | Weights 0 or 1 | 0-1 BFS (deque) | O(V+E) |
 
 ### Dijkstra's Algorithm
+
+#### Watch Dijkstra run
+
+Follow the distance table as it tightens: the cheapest unsettled node gets
+settled (green), its edges relax neighbours (amber = improved, red = no
+improvement). The greedy choice is safe *because* weights are non-negative.
+
+<Visualizer algo="dijkstra" />
 
 ```python
 import heapq
@@ -1705,6 +1728,42 @@ Negative cycles: Floyd-Warshall detects them via `dist[i][i] < 0` after the main
 </QA>
 
 ---
+
+<Quiz questions={[
+  {
+    q: "You need the shortest path in an unweighted graph. Which traversal guarantees it, and why?",
+    options: [
+      "BFS — it explores nodes in rings of increasing hop distance",
+      "DFS — it reaches the target fastest by diving deep",
+      "Either, as long as you track the path",
+      "Dijkstra only"
+    ],
+    answer: 0,
+    explain: "BFS processes all nodes at distance d before any at d+1, so the first time it reaches a node is via a shortest path. DFS can wander arbitrarily far first. Dijkstra also works but is overkill when every edge costs 1."
+  },
+  {
+    q: "Why must BFS mark a node visited when it is *enqueued*, not when it is dequeued?",
+    options: [
+      "Otherwise the same node can be enqueued multiple times before it's processed",
+      "Dequeue-time marking visits nodes in the wrong order",
+      "It saves memory",
+      "It's only a style preference"
+    ],
+    answer: 0,
+    explain: "Between enqueue and dequeue, other neighbours can discover the same node and enqueue duplicates — in dense graphs this blows the queue up and can degrade to exponential work."
+  },
+  {
+    q: "Dijkstra fails with negative edge weights because…",
+    options: [
+      "settling a node assumes no future path can beat its current distance — a negative edge can break that promise",
+      "priority queues can't store negative numbers",
+      "the algorithm divides by edge weights",
+      "it doesn't — Dijkstra handles negative edges fine"
+    ],
+    answer: 0,
+    explain: "The greedy 'settle the cheapest node' step is only valid if extending a path never decreases its cost. A negative edge discovered later could undercut an already-settled node — that's what Bellman-Ford handles."
+  }
+]} />
 
 ## Practice Ladder
 

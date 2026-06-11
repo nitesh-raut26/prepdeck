@@ -48,6 +48,14 @@ The complexity teaching point: trie costs depend on **word length, not on
 how many words are stored**. A million-word dictionary answers a 3-letter
 prefix query in ~3 steps.
 
+## Watch it run
+
+Insert words that share beginnings and watch the branches merge — "car",
+"cat" and "card" pay for c→a→r exactly once. The dashed ring marks "a word
+ends here"; look up "ca" to see why that mark matters.
+
+<Visualizer algo="trie" />
+
 ## Implementation
 
 The node is just "children by character, plus an end-flag" — a

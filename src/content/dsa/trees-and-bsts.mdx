@@ -58,6 +58,12 @@ already compute size, height, sums, mirror a tree, compare two trees…
 
 ## The four traversals
 
+Same tree, four different visit orders — the only question is *when each
+node gets to speak*. Flip between them and watch the output row; notice
+in-order reading the BST in sorted order, and level-order being plain BFS:
+
+<Visualizer algo="tree-traversal" />
+
 "Visit every node" has four standard orders, and naming them is interview
 table stakes:
 
@@ -138,6 +144,14 @@ def search(node, target):
         return search(node.left, target)
     return search(node.right, target)
 ```
+
+## Watch it run
+
+Build a BST by inserting values one at a time, then search — every comparison
+discards a whole subtree. Now change the insert order to `1, 2, 3, 4, 5, 6, 7`
+and watch the next section's warning come true.
+
+<Visualizer algo="bst" />
 
 ## The catch: balance
 

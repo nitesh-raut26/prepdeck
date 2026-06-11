@@ -6,6 +6,14 @@ difficulty: "Core pattern"
 tags: ["binary-search", "search-space", "monotonic"]
 ---
 
+## Watch it run
+
+Step through the search: each comparison throws away half the remaining
+space. Change the array and target, or scrub backwards if a step went by too
+fast.
+
+<Visualizer algo="binary-search" />
+
 ## A template you won't get wrong
 
 Use a half-open `[lo, hi)` and converge on the **first index that satisfies a
@@ -76,3 +84,34 @@ Classic cases: minimum capacity/speed/size to satisfy a constraint, or
 maximizing a minimum. Complexity is O(check · log(value range)).
 
 </QA>
+
+<Quiz questions={[
+  {
+    q: "An array has 1,000,000 sorted elements. Roughly how many comparisons does binary search need in the worst case?",
+    options: ["~20", "~1,000", "~500,000", "~1,000,000"],
+    answer: 0,
+    explain: "Each comparison halves the space: log₂(1,000,000) ≈ 20. This is why binary search feels instant at any realistic scale."
+  },
+  {
+    q: "In the half-open template ([lo, hi), while lo < hi), why is `hi = mid` safe but `lo = mid` an infinite-loop bug?",
+    options: [
+      "Because mid rounds down, lo = mid can fail to advance when hi = lo + 1",
+      "Because hi must always stay one past the end",
+      "Because mid might be negative",
+      "It isn't — both are equally safe"
+    ],
+    answer: 0,
+    explain: "With integer floor division, mid can equal lo. `lo = mid` then makes no progress, looping forever. `lo = mid + 1` always advances; `hi = mid` always shrinks because mid < hi."
+  },
+  {
+    q: "“Minimum ship capacity to deliver all packages within D days” is solved with binary search because…",
+    options: [
+      "feasibility is monotonic in capacity: if capacity c works, every c′ > c works too",
+      "the weights array is sorted",
+      "D is always a power of two",
+      "shipping problems always use greedy"
+    ],
+    answer: 0,
+    explain: "Monotonic feasibility creates a sorted false…false|true…true boundary over the answer space — binary-search the boundary, checking each candidate in O(n)."
+  }
+]} />

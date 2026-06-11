@@ -31,6 +31,14 @@ Why it's O(n): each pointer only moves one direction, so together they take ≤ 
 steps. The "sorted" precondition is what lets a single comparison decide which
 pointer to advance.
 
+## Watch it run
+
+Converging pointers on a sorted array: every comparison moves exactly one
+pointer inward, so the whole scan is a single pass. Try a target with no
+valid pair and watch the pointers meet empty-handed.
+
+<Visualizer algo="two-pointers" />
+
 ## Fast & slow — cycle detection (Floyd's)
 
 ```python

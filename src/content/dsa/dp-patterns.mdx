@@ -115,10 +115,17 @@ supersequence, delete-operations-to-make-equal, longest palindromic
 *subsequence* (LCS of s and reversed s — a lovely reduction to state
 out loud).
 
+Watch the LCS table fill cell by cell — diagonal jump on a match, max of
+top/left otherwise:
+
+<Visualizer algo="dp" problem="lcs" />
+
 ## Family 4 — Grid paths
 
 **Tell:** a 2-D grid, moving right/down (or 4-directionally with no
 cycles), count paths or optimize a path cost.
+
+<Visualizer algo="dp" problem="paths" />
 
 **State:** `dp[r][c]` = answer arriving at cell (r, c); transition pulls
 from top and left. **Unique Paths**, **Minimum Path Sum**, obstacle

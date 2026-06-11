@@ -30,6 +30,14 @@ O(n log n) is provably the floor for *comparison* sorting — counting sort
 beats it only by not comparing (it indexes by value, an
 [array trick](/dsa/arrays-and-strings)).
 
+## Watch them run
+
+The complexity table above becomes obvious once you *watch* the work happen.
+Switch algorithms on the same array — count how many steps each one takes,
+then shuffle and try again.
+
+<Visualizer algo="sorting" />
+
 ## Merge sort — divide and conquer, canonically
 
 Split in half, sort each half (recursively), **merge** the two sorted

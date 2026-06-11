@@ -48,6 +48,13 @@ once, so the two pointers move a total of `2n` steps → **O(n)** even with the
 nested loop.
 </Callout>
 
+## Watch it run
+
+The "add one, drop one" trick in motion — the window never recomputes its
+sum from scratch. Change `k` and watch the work per slide stay O(1).
+
+<Visualizer algo="sliding-window" />
+
 ## Complexity
 
 | | Brute force | Sliding window |
