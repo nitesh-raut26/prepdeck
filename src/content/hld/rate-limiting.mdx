@@ -26,6 +26,20 @@ specialized one-token limiter.
 **Token bucket** is the most common answer: it permits short bursts (up to the
 bucket size) while bounding the long-run rate.
 
+<Mermaid chart={`flowchart TB
+  REFILL["Refill: R tokens/sec<br/>(steady drip)"] --> BUCKET[("Bucket<br/>capacity = B tokens<br/>(burst allowance)")]
+  REQ[Request arrives] --> CHECK{token<br/>available?}
+  BUCKET --> CHECK
+  CHECK -->|"yes — take one"| PASS[✓ forward to service]
+  CHECK -->|"no — bucket empty"| REJECT["✗ 429 + Retry-After"]
+  style BUCKET fill:#E0E7FF,stroke:#4F46E5
+  style REJECT fill:#FFE4E6,stroke:#E11D48
+  style PASS fill:#DCFCE7,stroke:#16A34A`} />
+
+The two knobs map directly to behavior: **R bounds the long-run rate**,
+**B bounds the burst**. A full bucket after a quiet period is the "controlled
+burst" — that's a feature, not a bug.
+
 ```python
 import time
 
@@ -52,6 +66,18 @@ limit by the server count. So keep the counter in a **shared store (Redis)** and
 mutate it atomically — a Lua script or `INCR` + `EXPIRE` makes the
 read-modify-write a single atomic op, avoiding the same race that bites naive
 balance checks.
+
+<Mermaid chart={`flowchart LR
+  C[Clients] --> GW[API gateway]
+  GW --> S1[App server 1]
+  GW --> S2[App server 2]
+  GW --> S3[App server 3]
+  S1 & S2 & S3 --> R[("Redis<br/>one shared counter per key<br/>atomic Lua / INCR+EXPIRE")]
+  R -.-> NOTE["❌ without this: each server counts alone<br/>→ real limit = limit × N servers"]
+  style R fill:#E0E7FF,stroke:#4F46E5
+  style NOTE fill:#FFE4E6,stroke:#E11D48`} />
+
+
 
 <Callout type="tip" title="Always return the right signal">
 On limit, respond **429 Too Many Requests** with a `Retry-After` header so good

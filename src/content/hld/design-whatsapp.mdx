@@ -77,6 +77,33 @@ recipient online?**
 3. *Read* (blue) is purely client-emitted when the chat is viewed —
    product semantics layered on the same receipt channel.
 
+The whole flow, both branches of the one decision:
+
+<Mermaid chart={`sequenceDiagram
+  participant A as Phone A
+  participant GA as Gateway 1
+  participant CS as Chat service
+  participant SR as Session registry
+  participant GB as Gateway 7
+  participant IX as Offline inbox
+  participant B as Phone B
+  A->>GA: message m-77 (sender UUID)
+  GA->>CS: forward
+  CS->>CS: persist durably FIRST
+  CS-->>A: ack → ✓ sent (server has it)
+  CS->>SR: where is B?
+  alt B online (socket on gateway 7)
+    SR-->>CS: gateway 7
+    CS->>GB: push m-77
+    GB->>B: deliver
+    B-->>CS: device ack → ✓✓ delivered
+  else B offline
+    SR-->>CS: not connected
+    CS->>IX: append to B's durable inbox
+    Note over IX,B: B reconnects later → gateway drains inbox,<br/>B acks each → ✓✓ fires late
+  end
+  Note over B: blue ✓✓ = client-emitted when chat is viewed`} />
+
 **No-loss mechanics:** every hop is ack-or-retry with the message kept
 until acked — at-least-once delivery, so duplicates can occur (network
 blips, retries) → client **dedupes by message id** (sender-generated
@@ -100,6 +127,41 @@ precisely to bound fan-out cost; "what if groups were 1 M?" → that's a
 the server forwards ciphertext it cannot read — which *forces* server-side
 features (search, spam filtering) onto the client. One sentence of this
 earns the depth point; the crypto itself is out of scope.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design WhatsApp"
+  difficulty="HLD Classic — realtime messaging"
+  problem="1:1 and group messaging: real-time delivery, offline users catch up on return, sent/delivered/read receipts, media. Billions of users. No message loss, ever."
+  stages={[
+    {
+      label: "Find the number that designs the system",
+      prompt: "100B messages/day sounds scary. Run the estimate — what's the ACTUAL hard number?",
+      reveal: "1.2M msg/sec of ~100-byte payloads — bandwidth is trivial. The real number: hundreds of millions of SIMULTANEOUSLY OPEN connections, because polling 2B phones is 400M wasted requests/sec. So: persistent WebSockets, servers push, ~1M sockets per tuned box → a fleet of chat gateways + a session registry answering 'where is B connected right now?'"
+    },
+    {
+      label: "One decision, repeated forever",
+      prompt: "Strip the system to its core loop. What single question does it answer per message?",
+      reveal: "'Is the recipient online?' Online → push down their gateway socket. Offline → append to a durable per-user inbox, drained on reconnect. Receipts are tiny system messages flowing back on the same pipes. Every other feature rides this split — and every online-path failure degrades to the offline path, so DESIGN THE OFFLINE PATH FIRST; it's the safety net."
+    },
+    {
+      label: "No-loss is an ack chain",
+      prompt: "Where can a message die between two phones, and what plugs each gap?",
+      reveal: "Durable-before-ack at every hop: server acks ✓ only AFTER persisting; delivery retries until the device acks; offline messages rest in the durable inbox. Gateways hold ZERO authoritative state — a crash means re-deliver, never gone. Retries create duplicates → client dedupes by sender-generated UUID. Say it as a law: at-least-once + idempotent receive; exactly-once-on-the-wire is a trap to walk past out loud."
+    },
+    {
+      label: "Ordering without a global clock",
+      prompt: "Messages must appear in order. Global ordering? Timestamps? What's actually needed?",
+      reveal: "Only PER-CONVERSATION ordering — global order is unnecessary and unscalable. Per-sender sequence numbers per conversation; the receiver sorts and gap-detects. Never wall-clock timestamps: phone clocks lie. 'Sequence numbers, not timestamps' is a sentence interviewers wait for."
+    },
+    {
+      label: "Groups, and the push→pull boundary",
+      prompt: "Group of 1024 → fine. Group of 1M → different design. Why, and where's the line?",
+      reveal: "Groups reuse 1:1 machinery: upload once, server fans out N online/offline deliveries (media stays O(1) — fan-out carries URLs). The 1024 cap exists to BOUND fan-out cost. At tens of thousands of members, push-per-member dies → flip to pull (broadcast channel: members fetch on open; only active viewers get pushes). Naming the push→pull boundary — and that it's Netflix's read path wearing chat clothes — is the senior close."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

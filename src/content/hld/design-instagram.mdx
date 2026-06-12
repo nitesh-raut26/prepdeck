@@ -106,6 +106,26 @@ Also skip fan-out to **dormant users** (no login in 30 days) and
 rebuild their feed lazily on return — why maintain 200 M feeds nobody
 is reading?
 
+Both halves of the hybrid, on one timeline:
+
+<Mermaid chart={`sequenceDiagram
+  participant N as Normal user (5K followers)
+  participant API as API
+  participant Q as Fan-out queue
+  participant W as Workers
+  participant FC as Feed cache (Redis)
+  participant R as Reader
+  participant PDB as Posts DB
+  N->>API: post photo
+  API->>PDB: insert post p-882
+  API->>Q: enqueue fan-out(p-882)
+  W->>FC: push p-882 into 5K follower lists (async, seconds)
+  Note over Q,W: celebrity post? NOT fanned out —<br/>flagged for pull-at-read instead
+  R->>API: load feed
+  API->>FC: get feed:{reader} → [p-882, …] (O(1))
+  API->>PDB: + recent posts from the 2 celebrities reader follows (cached — millions share this query)
+  API-->>R: merge by time, hydrate ids → feed in <200 ms`} />
+
 ### Likes & comments at scale
 
 Counters are their own mini-problem: a viral post takes thousands of
@@ -129,6 +149,41 @@ first, no fan-out.
 - `feed:{userId}` — Redis list of post ids, capped; the product
   decision hiding inside: scroll past the cap → fall back to
   fan-out-on-read for older content.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Instagram"
+  difficulty="HLD Classic — the feed problem"
+  problem="Photo-sharing app: post photos, follow people, scroll a home feed. Hundreds of millions of users. You have 40 minutes."
+  stages={[
+    {
+      label: "Scope + find the one hard problem",
+      prompt: "Photos, follows, feed, likes — which one is THE problem, and how do I find it from the numbers?",
+      reveal: "Estimate first: ~1,200 uploads/sec (modest) vs 25–50K feed reads/sec, each logically touching hundreds of followees. The number that designs the system: 'a join across hundreds of accounts, 50K times a second.' Everything else (photo bytes → blob + CDN, likes → counters) is routine. Cut scope to the feed and say so."
+    },
+    {
+      label: "Separate bytes from ids",
+      prompt: "Where do the photos live, and what does the feed actually store?",
+      reveal: "Photos are BYTES: object storage + CDN; the API hands out URLs and never proxies images. The feed is IDS: small Redis lists of post ids, hydrated on read. Announce this split immediately — it collapses the problem to 'how do the right ids get into each user's list?'"
+    },
+    {
+      label: "Fan-out: pay on write or on read?",
+      prompt: "Precompute each feed at post time, or compute at read time? Argue from the 100:1 ratio.",
+      reveal: "Read-heavy says precompute: fan-out on write pushes the post id to every follower's list via queue workers; reads become one O(1) list fetch. Fan-out on read does hundreds of queries on the FREQUENT operation to subsidize the rare one — backwards. So write-fan-out is the default… until the follow-up."
+    },
+    {
+      label: "The celebrity problem",
+      prompt: "Someone with 50M followers posts. What just happened to your design?",
+      reveal: "50M list pushes per post — unbounded write amplification. The hybrid: fan-out on write below a follower threshold (~100K); above it, DON'T fan out — each reader merges their precomputed list with a live query of the few celebrities they follow (bounded, and massively cache-friendly: millions request the same posts). Plus: skip dormant users, rebuild lazily. This follow-up IS the interview; the hybrid with reasoning is table stakes."
+    },
+    {
+      label: "Failure modes prove the design",
+      prompt: "Redis dies. A post is deleted. The fan-out queue backs up. Which of these is a disaster?",
+      reveal: "None — and saying why is the close: feeds are DERIVED data, rebuildable from posts (cache loss = degraded latency, not data loss). Deletes don't chase ids out of millions of lists; hydration skips tombstones (except legal takedowns — then pay for synchronous invalidation + blocklist). Queue backlog = stale feeds; prioritize active-now users. 'The source of truth is small and durable; everything big is rebuildable.'"
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

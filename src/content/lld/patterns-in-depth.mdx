@@ -115,6 +115,19 @@ class RetryingGateway(PaymentGateway):          # wraps ANY gateway
 gateway = MeteredGateway(RetryingGateway(StripeAdapter(sdk)))   # stack at runtime
 ```
 
+The call passes through each layer like an onion — every wrapper speaks
+`PaymentGateway` on both sides, which is exactly why they stack:
+
+<Mermaid chart={`flowchart LR
+  C[Caller] -->|"charge()"| M[MeteredGateway]
+  subgraph onion["each layer: same interface in, same interface out"]
+    M -->|"charge()"| R[RetryingGateway]
+    R -->|"charge()"| A[StripeAdapter]
+  end
+  A -->|"submit_transaction()"| SDK[Stripe SDK]
+  SDK -.result.-> A -.Receipt.-> R -.Receipt.-> M -.Receipt.-> C
+  style A fill:#E0E7FF,stroke:#4F46E5`} />
+
 Same interface in, same interface out — so decorators **stack** in any
 order, chosen at runtime. You've used it: Python's `@lru_cache` /
 `@app.get` decorators (the language feature is named after the
@@ -143,6 +156,15 @@ class Folder(Node):
     def __init__(self): self.children: list[Node] = []
     def size(self): return sum(c.size() for c in self.children)   # recursion!
 ```
+
+<Mermaid chart={`flowchart TD
+  ROOT["📁 Folder: project — size() = Σ children"]
+  ROOT --> SRC["📁 Folder: src"]
+  ROOT --> README["📄 File: README.md — 4 KB"]
+  SRC --> APP["📄 File: app.py — 12 KB"]
+  SRC --> SUB["📁 Folder: utils"]
+  SUB --> H["📄 File: helpers.py — 3 KB"]
+  style ROOT fill:#E0E7FF,stroke:#4F46E5`} />
 
 The tree shape from [recursion](/programming/recursion) and
 [trees](/dsa/trees-and-bsts), expressed as classes: leaves and

@@ -49,6 +49,25 @@ clients can branch on `code`, not parse prose.
   so a retried "place trade" or "charge card" doesn't double-execute. (Razorpay
   webhooks in StockVision are verified + deduped for the same reason.)
 
+Here's the retry that *would* have double-charged, made safe:
+
+<Mermaid chart={`sequenceDiagram
+  participant C as Client
+  participant S as Server
+  participant DB as Store
+  C->>S: POST /trades (Idempotency-Key: abc123)
+  S->>DB: key abc123 seen? → no, record it
+  S->>DB: execute trade #44, save result under abc123
+  S--xC: 201 Created (response lost — timeout!)
+  Note over C: client never saw the answer,<br/>so it retries
+  C->>S: POST /trades (Idempotency-Key: abc123) — retry
+  S->>DB: key abc123 seen? → YES
+  DB-->>S: stored result: trade #44
+  S-->>C: 201 Created (same response, no second trade)`} />
+
+The key insight: the server answers "have I *finished* this key?" before doing
+any work — so the retry replays the stored answer instead of re-executing.
+
 <Callout type="tip" title="Design the failure path, not just the happy path">
 Seniors are judged on the unhappy path: what's the error contract, how does a
 client retry safely (idempotency), what's the rate-limit response (429 +

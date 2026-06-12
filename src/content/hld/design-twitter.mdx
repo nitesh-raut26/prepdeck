@@ -80,6 +80,28 @@ the Twitter-specific torques:
   **fan-out is fully async**; "instant post" means "durably logged,"
   not "delivered to 100 M lists."
 
+The famous trace — an 80M-follower account tweets — in one picture:
+
+<Mermaid chart={`sequenceDiagram
+  participant CEL as Celebrity (80M followers)
+  participant API as API
+  participant LOG as Event log
+  participant FAN as Fan-out workers
+  participant CC as Celebrity-recent cache
+  participant TL as Timeline cache
+  participant F as Follower (one of 40M active)
+  CEL->>API: tweet
+  API->>LOG: append (durable) — author sees success NOW
+  LOG->>FAN: consume
+  FAN->>FAN: author > threshold → skip 80M pushes
+  FAN->>CC: write once to hot celebrity cache
+  Note over CC: one cache line about to do<br/>40M timelines' work
+  F->>API: read timeline
+  API->>TL: precomputed list (normal-tier content)
+  API->>CC: + recent tweets from followed celebrities
+  API-->>F: merge by time — O(few celebrities) per read
+  Note over LOG: same log also feeds trending,<br/>search, analytics — independently`} />
+
 ### Trending topics (the streaming subsystem)
 
 "What's spiking *right now*" is a **windowed heavy-hitters** problem
@@ -126,6 +148,41 @@ Likes/retweet counts on viral tweets are the
 windowed aggregation; display lags seconds; nobody pays per like, so
 no settlement pipeline needed. One sentence in the room; the cross-
 reference is the point.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Twitter/X"
+  difficulty="HLD Classic — fan-out + streaming"
+  problem="Microblogging: short posts, follows, home timeline, retweets, trending topics, search. Hundreds of millions of users; some have 100M followers."
+  stages={[
+    {
+      label: "What's different from Instagram?",
+      prompt: "You've done the feed problem. What does THIS prompt add that transfers nothing?",
+      reveal: "Tweets are tiny text — storage is trivial; ALL difficulty moves to distribution and derived computation. Celebrity content is the product, not the exception. Retweets make fan-out recursive. And two new subsystems are first-class: trending and search. Opening with this delta shows transfer, not memorization."
+    },
+    {
+      label: "One log, N views",
+      prompt: "Timelines, trending, search, analytics all need every tweet. How many write paths?",
+      reveal: "One. Every tweet appends to a durable event log; four independent consumers build four derived views. Adding a fifth view never touches the write path, and consumers fail independently (search lags → trending still works). This is the architectural headline — announce it before any deep dive."
+    },
+    {
+      label: "Timelines under a power law",
+      prompt: "Average 700 followers, but the head of the distribution hits 100M. What does the hybrid look like HERE?",
+      reveal: "Push for normal users (async fan-out workers), pull for celebrities — but on Twitter the pull side carries the main traffic, so the celebrity-recent cache is the hardest-engineered piece: one replicated cache line serving 40M concurrent timeline merges. Retweets: new timeline entry REFERENCING the original (counters stay singular) + dedup at insert so five retweet paths render once."
+    },
+    {
+      label: "Trending = acceleration, not frequency",
+      prompt: "Why does 'Monday' never trend, and what structure counts a firehose in fixed memory?",
+      reveal: "Raw frequency is the wrong metric — 'Monday' is frequent every Monday. Score by acceleration: current window vs the term's historical baseline; an 80× spike on a small base beats a 1.02× wiggle on a huge one. Count with count-min sketch (probabilistic, fixed memory, slight overestimates) + exact counters for the top-K candidates. Windowed, per-region, spam-filtered, published as one tiny cached top-K."
+    },
+    {
+      label: "Search, and the closing trace",
+      prompt: "Index every tweet ever — what's the Twitter-specific sharding? Then trace the 80M-follower tweet.",
+      reveal: "Inverted index sharded BY TIME: queries want recent matches, so fresh shards are small/hot/in-memory and searched first; old shards cold. The trace: write once + log append → fan-out skips the push, writes the celebrity cache → 40M readers merge it at read → counters absorb the like-storm sharded → trending sees the spike in a window → search has it in seconds. Nothing was special-cased at write time — the threshold at fan-out IS the celebrity handling."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

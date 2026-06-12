@@ -61,6 +61,25 @@ call** is just (floor). Conflating them breaks scheduling later.
   least-loaded, same-direction-first — swappable without touching the
   elevator.
 
+Here's that state machine drawn out — note what's *missing*: there is no
+arrow from MOVING to DOORS_OPEN's neighbor states that skips STOPPED, and
+no arrow out of DOORS_OPEN while moving. Illegal transitions simply don't
+exist in the diagram, which is the whole point of the State pattern:
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> MOVING_UP : stop added above
+  IDLE --> MOVING_DOWN : stop added below
+  MOVING_UP --> STOPPED : reached a stop
+  MOVING_DOWN --> STOPPED : reached a stop
+  STOPPED --> DOORS_OPEN : open doors
+  DOORS_OPEN --> STOPPED : dwell elapsed, close doors
+  STOPPED --> MOVING_UP : up-stops remain
+  STOPPED --> MOVING_DOWN : down-stops remain
+  STOPPED --> IDLE : no stops left`} />
+
+
+
 ## The scheduling insight: SCAN, not FIFO
 
 Serving requests in arrival order (FIFO) makes the cabin ping-pong: 2 → 9
@@ -119,6 +138,41 @@ elevator 2 is at floor 5 with doors open") and demo in the interview
 without threads. Real-time is then just a loop calling `step()` on a
 timer.
 </Callout>
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design an Elevator System"
+  difficulty="LLD Classic"
+  problem="Design the classes and scheduling for N elevators serving M floors. Hall calls (up/down on a floor) and cabin calls (floor button inside) arrive continuously; minimize average wait."
+  stages={[
+    {
+      label: "Split the problem",
+      prompt: "This prompt hides two different problems. Can I name them before designing?",
+      reveal: "Object model (states, doors, requests) AND scheduling (who answers, in what order). Say it out loud — interviewers reward decomposition. Then scope: 'N elevators, M floors, both call types, optimize average wait; ignore weight sensors and maintenance mode, OK?'"
+    },
+    {
+      label: "Find the state machine",
+      prompt: "An elevator can't move with doors open. Where should that rule LIVE?",
+      reveal: "Not in scattered if-checks — in a state machine. IDLE / MOVING_UP / MOVING_DOWN / STOPPED / DOORS_OPEN with explicit transitions. An illegal move (MOVING + doors open) isn't 'checked for'; it has no transition, so it can't be expressed. Whenever an entity 'behaves differently per mode', reach for State."
+    },
+    {
+      label: "Model the two request types",
+      prompt: "Hall call vs cabin call — same class or different? What data does each carry?",
+      reveal: "Different. Hall call = (floor, direction) and belongs to the SYSTEM — any elevator may claim it. Cabin call = (floor) and belongs to ONE elevator forever. Conflating them breaks scheduling: dispatch only applies to hall calls. The modeling decision IS the scheduling decision."
+    },
+    {
+      label: "Derive the algorithm, then the data structure",
+      prompt: "Requests at floors 2, 9, 3, 8 from floor 1 — what order do I serve them, and what structure holds them?",
+      reveal: "FIFO ping-pongs (21 floors). SCAN sweeps up through 2,3,8,9 (14 floors): keep direction, serve every stop en route, reverse when empty. The structure follows: two sorted sets per elevator (stops above, stops below) — not a queue. Algorithm first, data structure second; that ordering is a transferable habit."
+    },
+    {
+      label: "Walk a scenario + break it",
+      prompt: "Floor 6 presses DOWN; A is at 3 going up with stops {7,9}; B idle at 8. Who goes — and what's the race?",
+      reveal: "Cost A ≈ (9−3)+(9−6) = 9; B is idle, distance 2 → B. The race: two simultaneous hall calls both 'see' B idle and both claim it (check-then-act). Fix: serialize dispatch — single-threaded event loop or a lock around assign-and-add-stop. Buildings emit tens of events/sec; the simple fix is the right fix, and saying THAT is senior judgment."
+    }
+  ]}
+/>
 
 ## Walk a scenario + the concurrency question
 

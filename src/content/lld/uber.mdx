@@ -150,6 +150,41 @@ freeze when shown). All arithmetic in integer paise with explicit
 rounding policy — [the Splitwise laws](/lld/splitwise) apply
 unchanged.
 
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Uber (LLD)"
+  difficulty="LLD Classic — rich state machine"
+  problem="Design the domain model for ride-hailing: trips and their lifecycle, riders and drivers, matching policy, fares with surge, ratings. Geo-indexing at scale is out of scope."
+  stages={[
+    {
+      label: "Pick the aggregate root",
+      prompt: "Trips, riders, drivers, fares, ratings — which object is the center of gravity?",
+      reveal: "Trip. It's the unit of consistency, the only place state transitions happen, and what everything else hangs off. Riders don't set drivers; TRIPS assign drivers. Choosing the aggregate root first organizes every later decision — and saying 'aggregate root' signals you've done domain modeling."
+    },
+    {
+      label: "Draw the state machine with actors",
+      prompt: "REQUESTED → … → COMPLETED. But who is allowed to trigger each transition?",
+      reveal: "Transitions have actors AND guards: start() is driver-only and legal only from ARRIVING. Driver.status is a second, smaller machine (AVAILABLE → OFFERED → ON_TRIP) that must stay consistent with trips — OFFERED is the double-booking guard. Two coupled state machines, kept honest at the assignment transition."
+    },
+    {
+      label: "One verb, many meanings → policy object",
+      prompt: "cancel() is legal from four states and means something different in each. Method or something more?",
+      reveal: "CancellationPolicy consulted per (state, actor): free at REQUESTED, fee at ARRIVING, driver-cancel hits driver metrics not rider wallet. The rule: when a transition's LEGALITY is fixed but its CONSEQUENCES are business-variable, split the guard (state machine) from the outcome (policy object). PMs retune fees monthly; they shouldn't redeploy your state machine."
+    },
+    {
+      label: "Fares = ordered pipeline of policies",
+      prompt: "Base + distance + time, ×surge, −promo, floor at minimum. What structure is that?",
+      reveal: "A chain of FarePolicy objects transforming a running total — and ORDER IS SEMANTICS: surge-then-promo ≠ promo-then-surge; the list order is a business rule under test. Capture surge at REQUEST time onto the trip — the rider pays the quoted price, and the fare must be reproducible from the trip alone (disputes, receipts, audits). Integer paise, always."
+    },
+    {
+      label: "The atomicity follow-up",
+      prompt: "Assignment flips Trip(MATCHING→ASSIGNED) and Driver(OFFERED→ON_TRIP). What if those are two writes?",
+      reveal: "A crash between them makes the system lie: double-booked driver (trip-first) or leaked driver locked out of work (driver-first). State the invariant — 'a driver serves at most one trip' — then the fixes in order: one DB transaction; or driver-reservation-as-lock with TTL'd reclaim (the seat-lock pattern); or a full saga. Invariant first, mechanism second — that ordering is what's being screened."
+    }
+  ]}
+/>
+
 ## Walk a scenario
 
 Rider requests: `Trip(REQUESTED)`, surge 1.4× stamped on it →

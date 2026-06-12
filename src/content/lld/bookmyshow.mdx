@@ -83,6 +83,28 @@ free a seat** — abandonment self-heals. Expiry via lazy check
 (`isLocked() = state == LOCKED && now < expiresAt`) plus a sweeper; lazy
 checking means correctness never depends on the sweeper being on time.
 
+Here's the whole two-phase flow with the race resolving correctly — two
+users, one pair of seats, 80 ms apart:
+
+<Mermaid chart={`sequenceDiagram
+  participant A as Asha
+  participant R as Rahul
+  participant BS as BookingService
+  participant SS as ShowSeating (per-show mutex)
+  participant P as Payment gateway
+  A->>BS: lock F7+F8 (9 PM show)
+  BS->>SS: atomic check-and-set both seats
+  SS-->>BS: LOCKED(asha, +7 min) ✓
+  BS-->>A: PENDING booking — pay within 7:00
+  R->>BS: lock F7+F8 (80 ms later)
+  BS->>SS: atomic check-and-set
+  SS--xBS: F7 already LOCKED & unexpired ✗
+  BS-->>R: SeatUnavailable → suggest next-best pair
+  A->>P: pay
+  P-->>BS: success callback
+  BS->>SS: F7,F8 LOCKED → BOOKED
+  Note over SS: had Asha abandoned: at minute 7 the lock<br/>lazily reads as expired — seats free again,<br/>no cleanup job required`} />
+
 ## The race, and the only acceptable answer
 
 Two users hit "lock F7" in the same 10 ms. A read-then-write
@@ -136,6 +158,41 @@ check-and-set under a per-show lock, with TTL so abandoned locks
 self-release."* Mechanism without the invariant sounds memorized;
 invariant first proves you know *why*.
 </Callout>
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design BookMyShow"
+  difficulty="LLD Classic — concurrency"
+  problem="Design movie-ticket booking: browse shows, view a seat map, hold seats, pay, get a ticket. Two users will inevitably grab the same seat in the same second."
+  stages={[
+    {
+      label: "Identify what's REALLY being asked",
+      prompt: "Every classic has one core test. What is BookMyShow actually grading?",
+      reveal: "Concurrency. Other classics hide the race at the end; here two-users-one-seat IS the question — entities are supporting cast. Scope fast ('one city, payment as success/failure callback, no pricing tiers — OK?') and budget your time for the race."
+    },
+    {
+      label: "The entity ladder + the trap",
+      prompt: "City → Cinema → Screen → Seat… so where does 'is F7 free?' live?",
+      reveal: "NOT on Seat. F7 is physical and permanent; its availability is per-SHOW (free at 6 PM, taken at 9 PM). Show owns Map<Seat, SeatState> with AVAILABLE | LOCKED | BOOKED. Hanging state on Seat is the classic mistake — it's the type-vs-instance trap from the library problem, one level deeper."
+    },
+    {
+      label: "Design around the slow step",
+      prompt: "Payment takes a minute and might fail. What does that force on the flow?",
+      reveal: "Booking can't be atomic, so: two-phase with TTL. Lock (AVAILABLE → LOCKED, all-or-nothing across the seat group, expiresAt = +7 min) → pay → confirm (LOCKED → BOOKED) or let the TTL release. The TTL is the quiet hero: abandonment self-heals with zero user action and zero cleanup dependency."
+    },
+    {
+      label: "Kill the race at the mutation point",
+      prompt: "Two lock requests, 10 ms apart, both read F7 as AVAILABLE. Where's the bug, and where's the fix?",
+      reveal: "The bug is check-then-act — the gap between read and write. Fix: collapse them into one atomic step. Whiteboard: per-show mutex around validate-then-lock. Production: one conditional UPDATE … WHERE state='AVAILABLE' and verify affected rows; plus a unique constraint on (show, seat) as the schema-level backstop. Say the invariant first: 'a seat is never held by two users for the same show.'"
+    },
+    {
+      label: "Scale the answer",
+      prompt: "Follow-up: blockbuster tickets open at 9 AM. The per-show lock melts. Now what?",
+      reveal: "Correctness stays, enforcement moves: queue admission (waiting room) caps concurrent bookers; the READ path (seat map) serves from cache slightly stale; the WRITE path stays strictly atomic in Redis/DB with the same conditional-write semantics. Browsing stale is fine, booking stale is not — that one line is the LLD→HLD seam."
+    }
+  ]}
+/>
 
 ## Walk a scenario
 

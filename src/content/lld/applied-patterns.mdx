@@ -18,6 +18,17 @@ Each external source is an adapter behind a common interface (**Strategy**),
 looked up by a **Registry**, and fronted by a **Guard / Proxy** (`RobotsGate`)
 that can refuse to run a non-permitted source.
 
+<Mermaid chart={`flowchart LR
+  CALL[Caller: ingest] --> REG[(Source Registry)]
+  REG --> GATE{RobotsGate<br/>permitted?}
+  GATE -->|no| ERR[ComplianceError —<br/>source can't run]
+  GATE -->|yes| SA{{SourceAdapter interface}}
+  OSM[OSM Overpass adapter] -.implements.-> SA
+  PORTAL[Listing portal adapter] -.implements.-> SA
+  GOV[Gov records adapter] -.implements.-> SA
+  style SA fill:#E0E7FF,stroke:#4F46E5
+  style ERR fill:#FFE4E6,stroke:#E11D48`} />
+
 ```ts
 interface SourceAdapter { id: string; permitted: boolean; fetch(q: Query): Promise<Raw>; }
 
@@ -40,6 +51,17 @@ function ingest(sourceId: string, q: Query) {
   `source · license · confidence · freshness` to every value.
 
 ## StockVision — middleware & engines
+
+<Mermaid chart={`flowchart LR
+  REQ[Request] --> A[Auth]
+  A -->|ok| RL[Rate limit]
+  RL -->|ok| CSP[CSP headers]
+  CSP -->|ok| GW[B2B gateway]
+  GW -->|ok| H[Handler]
+  A -->|fail| R1[401]
+  RL -->|fail| R2[429]
+  GW -->|fail| R3[403]
+  style H fill:#DCFCE7,stroke:#16A34A`} />
 
 - **Chain of Responsibility / Decorator:** the request passes through auth →
   rate-limit → CSP → B2B-gateway middleware, each free to short-circuit. Adding a

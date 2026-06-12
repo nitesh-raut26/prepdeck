@@ -104,6 +104,22 @@ version is **asynchronous by construction**:
    ([webhooks](/basics/what-is-an-api)) advance it. A small
    [state machine](/lld/atm), one more time.
 
+<Mermaid chart={`flowchart LR
+  CALLER[Orders service<br/>publishes OrderShipped] --> NS[NotificationService<br/>validate · assign id · persist]
+  NS --> Q[[Queue<br/>at-least-once]]
+  Q --> W[Worker]
+  W --> PREF[(Preferences<br/>checked at SEND time)]
+  W --> T[Template<br/>renders per channel]
+  W --> DEDUP{"(request id, channel)<br/>already sent?"}
+  DEDUP -->|yes| NOOP[no-op — dedup]
+  DEDUP -->|no| CH[Channel decorators:<br/>Metered → RateLimited → Retrying]
+  CH --> EMAIL[SES adapter]
+  CH --> SMS[Twilio adapter]
+  CH --> PUSH[FCM adapter]
+  CH -->|N retries exhausted| DLQ[[Dead-letter queue —<br/>never silent drop]]
+  style DEDUP fill:#E0E7FF,stroke:#4F46E5
+  style DLQ fill:#FFE4E6,stroke:#E11D48`} />
+
 Plus the two product-integrity rules that distinguish people who've
 run one: **opt-outs are checked at send time, not enqueue time** (a
 user who unsubscribes between enqueue and send must not be messaged —
@@ -112,6 +128,41 @@ per-provider** (a bug upstream must not let one user get 400 pushes —
 the [token bucket](/hld/rate-limiting), applied with empathy). For
 ordering ("OTP must beat marketing"): separate queues per priority
 class, never one queue with sorting.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design a Notification System"
+  difficulty="LLD Classic — the pattern showcase"
+  problem="A service other teams call to notify users via email, SMS and push: templates, user preferences, retries, no duplicates, rate limits."
+  stages={[
+    {
+      label: "Design the API before the classes",
+      prompt: "What should callers pass — a message, or something else? This decision decides everything downstream.",
+      reveal: "Events, never messages: notify(user, ORDER_SHIPPED, {orderId}). Callers know WHAT happened; the notification system owns HOW users hear it. That centralizes channel choice, copy, localization, opt-outs and compliance at one chokepoint. send(user, 'email', 'text…') scatters all five across every team forever."
+    },
+    {
+      label: "Let the patterns earn their keep",
+      prompt: "Channels vary, vendors vary, cross-cutting concerns stack. Which pattern goes where?",
+      reveal: "Channel is Strategy (one interface; WhatsApp = one new class). Each channel wraps a vendor SDK = Adapter. Retries/rate-limit/metrics wrap any channel = Decorator stack. A Factory + registry picks the channel so dispatch never names concrete classes. Callers publish events the service subscribes to = Observer. Five patterns, each tied to a force — THIS page is why the vocabulary matters."
+    },
+    {
+      label: "Go async by construction",
+      prompt: "Twilio is down for 10 minutes. What may callers of notify() experience?",
+      reveal: "Nothing. notify() = validate → assign request id → persist → enqueue → return in milliseconds. Workers consume, render, dispatch; transient failures retry with backoff + jitter; after N attempts → dead-letter queue, never silent drop. Provider outages become invisible queue depth, not caller timeouts."
+    },
+    {
+      label: "Make 'no duplicates' a mechanism, not a hope",
+      prompt: "The queue is at-least-once and providers time out ambiguously. Where exactly do duplicates die?",
+      reveal: "Three layers of one idea: stable request id at creation (caller retries collapse); atomic check-and-record of (request id, channel) before dispatch (queue redeliveries no-op); pass the id as the provider's idempotency key (their retries collapse). Honest caveat for providers without idempotency: choose duplicate-vs-miss per class — duplicate for OTPs, miss for marketing."
+    },
+    {
+      label: "The two rules only operators know",
+      prompt: "What checks happen at SEND time rather than enqueue time, and why per-user rate limits?",
+      reveal: "Opt-outs at send time — a user who unsubscribes between enqueue and send must not be messaged; that's compliance, not courtesy. Per-user rate limiting — an upstream bug must not give one person 400 pushes. And priority = separate queues (OTP lane never queues behind a campaign blast), never one sorted queue. These three lines signal you've actually run one."
+    }
+  ]}
+/>
 
 ## Walk a scenario
 

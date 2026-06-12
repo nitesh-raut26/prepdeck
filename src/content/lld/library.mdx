@@ -74,7 +74,7 @@ endlessly because so many candidates fail it.
   Book "1" --> "*" BookCopy
   Loan --> BookCopy
   Loan --> Member
-  Reservation --> Book : note: BOOK, not copy
+  Reservation --> Book : targets the BOOK, not a copy
   Library --> Loan : creates`} />
 
 The supporting decisions worth saying out loud:
@@ -98,6 +98,41 @@ The supporting decisions worth saying out loud:
   DVDs), then *persists* until paid. Money facts are
   [append-only](/lld/splitwise).
 
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design a Library Management System"
+  difficulty="LLD Classic — entity modeling"
+  problem="Members search a catalog, borrow and return physical copies, reserve books that are out, and pay late fines. Librarians manage inventory. Design the classes."
+  stages={[
+    {
+      label: "Scope, then find the trap",
+      prompt: "This problem is famously 'easy'. So what is it actually grading?",
+      reveal: "Entity modeling — there's no concurrency drama to hide behind. Pin scope ('single branch, physical copies, fines — OK?'), then hunt for the modeling trap every classic carries. Here it's hiding in plain sight: is 'a book' one thing or two?"
+    },
+    {
+      label: "Type vs instance",
+      prompt: "'1984 by Orwell' and 'the copy with barcode #4471' — same object?",
+      reveal: "No. Book = catalog entry (ISBN, title), exists once, the unit of SEARCH and RESERVATION. BookCopy = physical object (barcode, condition, status), the unit of LOANS and FINES. Merge them and 'who has the book?' has no answer. Same split as product/stock-unit, flight/departure, BookMyShow's Seat/SeatState — learn it once, spot it everywhere."
+    },
+    {
+      label: "Relationships with history become classes",
+      prompt: "Where do dueDate and returnedAt live — on Member? On BookCopy?",
+      reveal: "Neither — on a Loan class. When two entities relate WITH ATTRIBUTES (who, what, when due, when returned), the relationship itself is an entity. Past loans are the audit trail and the input to fines. Same rule gives you Reservation and Fine as records, not fields."
+    },
+    {
+      label: "Attach things at the right level",
+      prompt: "A reservation — does it point at the Book or at a BookCopy?",
+      reveal: "The Book. The member wants ANY copy; binding to copy #4471 strands them while #4472 sits free. A FIFO queue per book; on return, the head converts to a 48-hour hold. Asking 'what does the user actually want?' resolves most attach-level decisions."
+    },
+    {
+      label: "Walk the busiest scenario",
+      prompt: "Asha returns 1984 three days late, and Rahul has a reservation. Narrate every object touched.",
+      reveal: "Loan closes → FineStrategy creates a ₹15 Fine record → copy's transition consults the reservation queue → ON_LOAN → RESERVED (skipping ON_SHELF) → Rahul notified, 48h timer. Rules live with the data they protect: loan-limit check in Library.checkout, transition guards in BookCopy. If your scenario walk touches a god class doing everything, the model is wrong."
+    }
+  ]}
+/>
+
 ## Walk a scenario
 
 "Asha borrows 1984": search finds the Book with
@@ -111,6 +146,25 @@ Rahul reserved 1984, so `ON_SHELF` is skipped for `RESERVED`, Rahul
 gets a [notification](/lld/notification-system) and 48 hours to
 collect, expiry releases it ([TTL self-healing](/lld/bookmyshow),
 the library edition).
+
+That late-return path is the busiest flow in the system — worth seeing
+end to end:
+
+<Mermaid chart={`sequenceDiagram
+  participant L as Librarian
+  participant LIB as Library
+  participant LN as Loan
+  participant BC as BookCopy #4471
+  participant RQ as Reservation queue (Book)
+  participant N as Notifier
+  L->>LIB: returnCopy(#4471)
+  LIB->>LN: close() — 3 days late
+  LN->>LIB: Fine ₹15 created on Asha (record, not arithmetic)
+  LIB->>RQ: any reservations for this Book?
+  RQ-->>LIB: head = Rahul
+  LIB->>BC: status ON_LOAN → RESERVED (skips ON_SHELF)
+  LIB->>N: notify Rahul — 48h hold timer starts
+  Note over BC,RQ: timer expiry → next reservation,<br/>or release to shelf (TTL self-healing)`} />
 
 Business-rule placement is the quiet test here: the loan-limit check
 lives in `Library.checkout` (it spans member + loans), the

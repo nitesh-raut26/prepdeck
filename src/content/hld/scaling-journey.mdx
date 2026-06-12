@@ -159,6 +159,31 @@ latency for global users; one codebase for 50 teams.
   and the [engineering ladder's](/career/engineering-ladder)
   staff/principal work *is* this page's decisions.
 
+## The whole machine, assembled
+
+Every box below is labeled with the stage that *earned* it. Cover the diagram
+and rebuild it stage by stage — if you can say what broke to justify each box,
+you own this page:
+
+<Mermaid chart={`flowchart TB
+  U[Users worldwide] --> GR["Global routing — S6"]
+  GR --> CDN["CDN — S4"]
+  CDN --> LB["Load balancer — S2"]
+  subgraph region["Region (one of N — S6); cells bound blast radius"]
+    LB --> APP["Stateless app servers × auto — S2/S4"]
+    APP --> REDIS[("Cache — S3")]
+    APP --> ROUTER["Shard router — S5"]
+    ROUTER --> SH1[("Shard A–F — S5")]
+    ROUTER --> SH2[("Shard G–M — S5")]
+    SH1 --> RR1[("Read replicas — S3")]
+    APP --> Q[["Queue — S4"]]
+    Q --> W["Workers × auto — S4"]
+  end
+  region <-.->|"async replication — S6"| R2["Region 2: full stack"]
+  OBS["Observability: metrics · logs · alerts — S4"] -.watches.- region
+  style GR fill:#E0E7FF,stroke:#4F46E5
+  style ROUTER fill:#E0E7FF,stroke:#4F46E5`} />
+
 ## The journey on one card
 
 | Stage | Users | You add | You pay |

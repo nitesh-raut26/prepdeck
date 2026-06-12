@@ -88,6 +88,41 @@ passes the remainder. Edge to volunteer: amounts not formable by any
 combination (₹3,750 with no 50s) are rejected at *amount entry* —
 validate early, fail cheap.
 
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design an ATM"
+  difficulty="LLD Classic — state + consistency"
+  problem="Design an ATM: PIN auth, balance, withdraw, deposit. It talks to the bank over a network. The interviewer will steer you into 'what if the network dies mid-withdrawal?'"
+  stages={[
+    {
+      label: "Spot the two design centers",
+      prompt: "Before drawing classes: what are the TWO hard parts hiding in this 'easy' prompt?",
+      reveal: "(1) The session is a state machine — every button means something different per state. (2) Withdrawal spans two systems that can't share a transaction: the bank's ledger and a physical cash drawer. Naming both up front tells the interviewer you've seen the whole board."
+    },
+    {
+      label: "Make illegal actions unrepresentable",
+      prompt: "Where does 'you can't withdraw before entering a PIN' live in the code?",
+      reveal: "Not in if-checks — in the State pattern. Each state is a class whose base methods throw InvalidAction by default; IdleState only implements insert_card, AuthenticatedState only exposes withdraw. Dispensing-without-auth isn't 'checked for'; it has no code path. Adding maintenance mode = one new class, not 12 new elifs."
+    },
+    {
+      label: "Hide hardware behind ports",
+      prompt: "How do I unit-test a machine with a cash drawer?",
+      reveal: "The controller never touches metal: CardReader, CashDispenser, Screen, BankNetwork are interfaces; tests inject fakes. Denomination logic is greedy coin-change down a chain of cassette handlers (2000s → 500s → 100s) — and validate formability at amount ENTRY, before any money moves."
+    },
+    {
+      label: "The ordering question",
+      prompt: "Debit first or dispense first? Don't pick — compare the FAILURES.",
+      reveal: "Dispense-first failure: cash out, debit lost → free money, irreversible, fleet-scale leak. Debit-first failure: charged but no cash → bad, but REFUNDABLE by software. The asymmetry of recoverability decides it: order cross-system steps so every partial failure is compensable. That sentence is the whole interview."
+    },
+    {
+      label: "Survive the ambiguous timeout",
+      prompt: "The debit request times out — did it land? The machine can't know. Now what?",
+      reveal: "You can't eliminate ambiguity over a network; you make it RETRIABLE. Journal locally before each step (a write-ahead log in a metal box), send the debit with an idempotency key, retry the same key on timeout — the bank applies it once or replays the result. Dispense fails? Reversal by the same id, queued offline if needed. Crash recovery = replay the journal."
+    }
+  ]}
+/>
+
 ## The real question: debit first, or dispense first?
 
 Withdrawal touches two systems that can't share a transaction: the
@@ -116,6 +151,29 @@ So the protocol is debit-first plus compensation
    append-only local log of every step — [event
    sourcing](/databases/event-sourcing-cqrs) in a metal box) is the
    evidence for disputes.
+
+<Mermaid chart={`sequenceDiagram
+  participant C as Customer
+  participant ATM as ATM controller
+  participant J as Journal (local WAL)
+  participant B as Bank
+  participant D as Dispenser
+  C->>ATM: withdraw ₹3,700
+  ATM->>J: log: DEBIT_REQUESTED txn-91
+  ATM->>B: debit ₹3,700 (idempotency key: txn-91)
+  B-->>ATM: debited ✓
+  ATM->>J: log: DEBIT_OK txn-91
+  ATM->>D: dispense 1×2000, 3×500, 2×100
+  alt sensors confirm notes out
+    D-->>ATM: dispensed ✓
+    ATM->>J: log: DISPENSED txn-91
+    ATM->>B: confirm settlement txn-91
+  else dispenser jams
+    D--xATM: jam ✗
+    ATM->>J: log: DISPENSE_FAILED txn-91
+    ATM->>B: reversal txn-91 (queued + replayed if offline)
+    B-->>ATM: refunded — customer made whole
+  end`} />
 
 Every step writes the journal *before* acting — after any crash, the
 machine replays its journal to discover what it was doing and

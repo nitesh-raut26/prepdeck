@@ -28,6 +28,22 @@ tags: ["OOP", "SOLID", "design-principles"]
 
 ### Dependency Inversion in one example
 
+The whole principle is one arrow flip. Before: high-level policy points *down*
+at a concrete detail. After: **both** point at an abstraction — the detail now
+depends on the interface, not the other way around.
+
+<Mermaid chart={`flowchart LR
+  subgraph Before["❌ Before — policy welded to detail"]
+    OS1[OrderService] -->|"new SmtpEmailSender()"| SMTP1[SmtpEmailSender]
+  end
+  subgraph After["✅ After — both depend on the abstraction"]
+    OS2[OrderService] -->|depends on| N{{Notifier interface}}
+    SMTP2[SmtpEmailSender] -.implements.-> N
+    SMS[SmsSender] -.implements.-> N
+    FAKE[FakeNotifier for tests] -.implements.-> N
+  end
+  style N fill:#E0E7FF,stroke:#4F46E5`} />
+
 ```ts
 // ❌ High-level policy welded to a concrete detail
 class OrderService {
@@ -57,6 +73,26 @@ Deep inheritance trees are rigid (a change high up ripples down) and force a
 single axis of variation. Composition lets you assemble behavior from small
 parts and swap them at runtime — it's why Strategy, Decorator and Dependency
 Injection all favor "has-a".
+
+<Mermaid chart={`flowchart TB
+  subgraph Inheritance["Inheritance — one rigid axis, classes multiply"]
+    V[Vehicle] --> EC[ElectricCar]
+    V --> GC[GasCar]
+    V --> ET[ElectricTruck]
+    V --> GT[GasTruck]
+    note1["adding Hybrid ⇒ 2 more classes,<br/>adding Bike ⇒ 3 more…"]
+  end
+  subgraph Composition["Composition — assemble from swappable parts"]
+    C[Car] -->|has-a| E{{Engine}}
+    EE[ElectricEngine] -.implements.-> E
+    GE[GasEngine] -.implements.-> E
+    HE[HybridEngine] -.implements.-> E
+  end
+  style E fill:#E0E7FF,stroke:#4F46E5`} />
+
+The left side pays 2^N classes for N independent choices; the right side pays
+one interface per *axis of variation*. "What varies here?" is the question that
+leads you to every pattern on the [design patterns page](/lld/design-patterns).
 
 <QA q="What does the Single Responsibility Principle actually mean — give a smell.">
 

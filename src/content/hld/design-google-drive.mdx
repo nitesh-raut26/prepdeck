@@ -80,6 +80,26 @@ Files are split into **chunks** (~4–8 MB). Each chunk is named by the
   scale). Immutability is what makes the blob tier "dumb": cacheable,
   replicable, no coordination.
 
+The upload protocol in motion — note how little actually moves:
+
+<Mermaid chart={`sequenceDiagram
+  participant C as Client (device A)
+  participant M as Metadata service
+  participant B as Block service
+  participant D2 as Device B (same user)
+  C->>C: edit lands → re-chunk → hash each chunk
+  C->>M: here's my chunk-hash list (400 hashes)
+  M-->>C: I already have 398 — send chunks #212, #213
+  C->>B: upload 2 chunks (~10 MB, not 2 GB)
+  B-->>M: chunks stored (content-addressed, immutable)
+  C->>M: commit version 12 (parent: v11, new chunk list)
+  M->>M: append to change log (seq 4408)
+  M--)D2: poke — change log advanced
+  D2->>M: changes after my cursor (4405)
+  M-->>D2: v12 chunk list
+  D2->>B: fetch only #212, #213 → splice locally
+  Note over C,D2: same machinery, offline edition:<br/>an offline device just has an older cursor`} />
+
 ### Delta sync (the bandwidth engine)
 
 Edit 5 MB in the middle of a 2 GB file → re-hash chunks → only the
@@ -133,6 +153,41 @@ tree, so deep hierarchies cache *effective* permissions per
 authorized via short-lived signed URLs minted by the metadata layer —
 the blob store itself stays dumb and trusts nobody
 ([the API-gateway instinct](/backend/auth)).
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Google Drive"
+  difficulty="HLD Classic — sync + storage"
+  problem="Cloud file storage with sync: any file, edit on one device → appears everywhere, sharing with permissions, version history. Billions of files, exabytes. Never lose a byte."
+  stages={[
+    {
+      label: "Split metadata from blocks — first and loudly",
+      prompt: "Exabytes of file bytes, trillions of tiny rows about them. One system or two?",
+      reveal: "Two, with opposite requirements on every axis. Metadata: small, hot, mutable, consistency-critical, relational → sharded transactional store. Blocks: huge, cold, immutable, dumb → object storage, content-addressed. Every operation talks to metadata first; bytes move only when strictly necessary. This is the same split as Netflix's control/data planes and Unix inodes — name the pattern."
+    },
+    {
+      label: "Content addressing does three jobs",
+      prompt: "Chunks named by SHA-256 of their content. What falls out of that one decision?",
+      reveal: "(1) Dedup — millions of users storing the same installer = one stored copy, reference-counted; a file ANY user ever uploaded syncs instantly. (2) Free versions — a 'file' is an ordered chunk-hash list; editing one chunk = new list sharing 399 entries with the old (git's trick). (3) Immutability — chunks are never edited, so the blob tier needs no coordination: cacheable, replicable, boring."
+    },
+    {
+      label: "Delta sync + the boundary subtlety",
+      prompt: "Edit 5 MB inside a 2 GB file on hotel Wi-Fi. What uploads — and what breaks with fixed-size chunks?",
+      reveal: "Re-hash → only changed chunks have new hashes → upload ~2 of 400. But fixed-size chunking has a fatal flaw: INSERT one byte at the front and every boundary shifts — all hashes change, delta sync collapses. Fix: content-defined chunking — boundaries from a rolling hash (Rabin-Karp's hash, literally), so an insertion disturbs only its own chunk. This subtlety separates understanding sync from having read about it."
+    },
+    {
+      label: "Conflicts: never merge, never drop",
+      prompt: "Two devices edited the same file, one offline. The fork is detected (stale parent version). Resolve it.",
+      reveal: "Keep BOTH: the later upload becomes a 'conflicted copy (Asha's MacBook)' sibling; a human merges; version history makes every choice reversible. Auto-merging opaque binaries risks valid-looking-but-corrupt files — silent damage, the unforgivable sin in a durability product. Real-time co-editing (OT/CRDTs on operations, not bytes) is a different product — naming that boundary IS the answer."
+    },
+    {
+      label: "Sync freshness + the cowardly GC",
+      prompt: "How do other devices find out, and what's the scariest background job in the system?",
+      reveal: "Ordered change log per namespace + per-device cursors; devices get poked over a light connection, pull after their cursor — offline devices are just old cursors, same code path. The scary job: garbage collection of unreferenced chunks. A refcount bug deletes live data silently → GC must be cowardly: delays, tombstones, audits. 'Slow deletion is a feature' is the closing line."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

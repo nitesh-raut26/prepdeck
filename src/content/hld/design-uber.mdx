@@ -99,6 +99,28 @@ as feed caches). Only *trips* are precious.
 4. Decline/timeout → next candidate. Nobody available → expand radius,
    then surge (below).
 
+<Mermaid chart={`sequenceDiagram
+  participant R as Rider
+  participant M as Matching service
+  participant G as Geo index
+  participant D1 as Driver 1 (top-ranked)
+  participant D2 as Driver 2
+  participant T as Trip store (durable)
+  R->>M: request ride (pickup, destination)
+  M->>G: candidates in cell + 8 neighbors
+  G-->>M: ranked by ETA / rating / acceptance
+  M->>D1: offer (15s TTL) — driver state → OFFERED
+  Note over D1: OFFERED excludes them from<br/>every other match — the reservation IS the lock
+  alt Driver 1 accepts in time
+    D1->>M: accept
+    M->>T: atomic: trip PENDING→MATCHED + driver OFFERED→ON_TRIP
+    T-->>R: matched — car is 4 min away
+  else timeout / decline
+    D1--xM: TTL expires — driver auto-released to AVAILABLE
+    M->>D2: offer next candidate (15s TTL)
+  end
+  Note over M,T: nobody at all? expand radius → then surge`} />
+
 The **trip state machine** (`REQUESTED → MATCHED → ARRIVING →
 IN_PROGRESS → COMPLETED/CANCELLED`) lives in a durable, replicated
 store — this is the system's [BookMyShow booking](/lld/bookmyshow) /
@@ -125,6 +147,41 @@ Two honest notes: it's a *control system* (the multiplier exists to
 move supply toward demand), and it's lag-tolerant — a 60-second-stale
 multiplier is fine, which is why it's a streaming aggregate and not a
 synchronous query.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Uber"
+  difficulty="HLD Classic — geospatial + matching"
+  problem="Ride-hailing: riders request, nearby drivers match, both track each other live, pricing responds to demand. Millions of concurrent drivers and riders."
+  stages={[
+    {
+      label: "Find the asymmetry",
+      prompt: "Run the estimate: 5M drivers reporting every 4s vs ~300 matches/sec. What does that tell you?",
+      reveal: "1.25M location writes/sec of DISPOSABLE data (only the latest point matters) next to a trickle of PRECIOUS transactional writes (trips). The asymmetry IS the architecture: an ephemeral in-memory firehose layer and a small durable transactional core, designed separately. Announce this split in your first two minutes."
+    },
+    {
+      label: "Index moving points with cells, not trees",
+      prompt: "'Drivers near me' — why not a quadtree, and why not WHERE distance() < 2km?",
+      reveal: "Naive distance scans every driver per request. Trees (quadtree/k-d) index static points beautifully but restructure constantly when millions of points move per second. Cells (geohash/H3 hexagons): cell id → driver set in an in-memory map; an update is two O(1) set ops (leave old cell, join new); a query reads the rider's cell + 8 neighbors. Constant-time updates, no rebalancing — cells beat trees when everything moves."
+    },
+    {
+      label: "Matching = seat-lock with a TTL",
+      prompt: "Two matching servers pick the same driver in the same second. Where does correctness live?",
+      reveal: "The offer RESERVES the driver: atomic transition to OFFERED (with 15s TTL) excludes them from other matches — the reservation is the lock, expiry self-releases. Accept = conditional update ('only if still OFFERED to this trip') flipping trip→MATCHED + driver→ON_TRIP together. It's BookMyShow's seat lock wearing a seatbelt. Bonus point: at high density, match BATCHES (assignment problem) instead of greedy one-by-one — a second of latency for globally better ETAs."
+    },
+    {
+      label: "Defend non-durability",
+      prompt: "You're proposing NOT persisting 1.25M writes/sec. Justify it before the interviewer pounces.",
+      reveal: "A location is stale in 4 seconds by definition — after a crash, recovered data would be useless before recovery finished; the next update wave rebuilds the index organically in seconds. Durability would purchase nothing. Keep replicas for availability; persist only trip-attached traces (receipts, safety) and surge aggregates. The generalizable principle: classify data ephemeral / derived / precious, and pay durability only for precious."
+    },
+    {
+      label: "Close with locality",
+      prompt: "What makes this system EASY to scale — and what are the designed relief valves for a demand spike?",
+      reveal: "Mumbai and Delhi share nothing at runtime — city-level sharding is natural cellular architecture, bounding every blast radius. Concert ends, requests ×10 in one cell: radius expansion and surge pricing ARE the relief valves (surge is a control system moving supply toward demand, computed as a lag-tolerant streaming aggregate). A geo-index shard dying is a non-event: it rebuilds from the stream. Ephemeral-layer crashes being non-events is the payoff of stage 1's split — close the loop."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

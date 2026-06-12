@@ -68,6 +68,44 @@ balancer over **stateless** app servers, a cache in front of the database, read
 replicas for read scale, and a queue + workers to push slow work off the request
 path.
 
+## Think it through like the interview
+
+The framework only sticks once you've *run* it. Here it is end to end on the
+most common warm-up question — try each stage yourself before revealing:
+
+<ThinkThrough
+  title="Design a URL Shortener (the 7 steps, live)"
+  difficulty="HLD warm-up — every step visible"
+  problem="Design bit.ly: turn long URLs into short ones, redirect short → long. 100M new URLs/month, redirects must be fast, links live for years."
+  stages={[
+    {
+      label: "Step 1–2: Scope, then put numbers on it",
+      prompt: "What do I clarify, and what do the numbers tell me before I draw anything?",
+      reveal: "Functional: shorten + redirect; custom aliases and analytics out of scope unless asked. Non-functional: redirect latency (the product IS the redirect), high availability, links immortal. Estimate: 100M/month ≈ 40 writes/sec. Reads? Assume 10:1 → 400 redirects/sec, spiky. Storage: 100M × 500 B ≈ 50 GB/year — tiny! The numbers just told me: this is a READ-HEAVY, LATENCY-SENSITIVE, small-data problem. Cache hard, don't shard early."
+    },
+    {
+      label: "Step 3: API — pin the contract",
+      prompt: "Two endpoints. What are they, exactly — and what status code does the redirect use?",
+      reveal: "POST /urls {longUrl} → {shortCode}, and GET /{shortCode} → 301/302 redirect. Detail that earns signal: 301 (permanent) lets browsers cache the redirect — great for latency, terrible for analytics (you never see repeat clicks). 302 keeps every click visible. State the trade-off and pick per requirements; that's the senior move at every step."
+    },
+    {
+      label: "Step 4: Data model + the key question",
+      prompt: "One table — but how do I GENERATE the short code? This is the design's one real problem.",
+      reveal: "Table: short_code (PK) → long_url, created_at. Generation options: (a) hash the URL and take 7 chars — collisions need handling, same URL dedupes free; (b) auto-increment counter encoded base62 — no collisions, but sequential codes are guessable and the counter is a single point of coordination; (c) pre-generated key pool — a service hands out batches. 62^7 ≈ 3.5 trillion codes — 7 chars is plenty. Pick (b) with ranged counter batches per server, mention (a)'s dedup as a variant."
+    },
+    {
+      label: "Step 5: High-level — draw the skeleton",
+      prompt: "Which boxes from the reusable skeleton survive for THIS problem's numbers?",
+      reveal: "Clients → LB → stateless app servers → cache → DB. The numbers said read-heavy + latency-sensitive: so Redis caches shortCode → longUrl (hot links are VERY hot — power law), and the DB is a simple key-value lookup any store handles at 400 QPS. No queues (nothing slow), no shards (50 GB/year). Drawing LESS than the skeleton, justified by the estimate, is stronger than drawing more."
+    },
+    {
+      label: "Step 6–7: Deep-dive + trade-offs",
+      prompt: "Interviewer: 'a celebrity link gets 100K clicks/sec.' And: 'what breaks at 10×?'",
+      reveal: "Hot key: that one code lives in every cache layer — CDN edge caching the 301, Redis, even app-local memory; it's immutable data, so cache freely with long TTLs (immutability is the gift this problem gives you — say it). 10×: still fine — 4K redirects/sec is one good Redis. The honest bottleneck is write-path code generation coordination → ranged counter batches already solved it. Close crisply: 'read-heavy immutable data → cache-everything; the only consistency need is unique codes, handled at generation.'"
+    }
+  ]}
+/>
+
 <QA q="The interviewer asks you to 'design Twitter'. What's your first move?">
 
 Don't draw anything yet. Scope it: *"Twitter is huge — should I focus on posting

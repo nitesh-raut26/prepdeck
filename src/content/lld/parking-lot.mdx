@@ -70,6 +70,44 @@ enum plus `spot.canFit(vehicle)` keeps it small and handles "a car can use a
 large spot if no compact is free" without new types.
 </Callout>
 
+## Think it through like the interview
+
+Before reading further, try to run the method yourself — this widget walks the
+exact five moves, one at a time:
+
+<ThinkThrough
+  title="Design a Parking Lot"
+  difficulty="LLD Classic"
+  problem="Design the classes for a parking lot: vehicles arrive, get a spot that fits, receive a ticket, and pay on exit. You have ~35 minutes and a whiteboard."
+  stages={[
+    {
+      label: "Clarify scope",
+      prompt: "What would change my design the most? Ask THOSE questions first.",
+      reveal: "Multiple levels? (adds a Level class.) Vehicle sizes? (adds the canFit problem.) Pricing? (adds a fee calculation that varies → Strategy smell.) Payments? (usually out of scope — say so.) Pin it: 'single lot, multiple levels, three spot sizes, hourly pricing, ignore payments — OK?' Writing the agreed scope down IS the first deliverable."
+    },
+    {
+      label: "Nouns → entities",
+      prompt: "Read the problem statement back. Which nouns survive as classes?",
+      reveal: "ParkingLot, Level, ParkingSpot, Vehicle (Car/Motorcycle/Bus), Ticket. Test each: does it have state AND behavior? Ticket qualifies (entry time, spot → fee basis). 'Driver' doesn't — we never act on the driver, only the vehicle. Dropping a noun deliberately is as strong a signal as keeping one."
+    },
+    {
+      label: "Verbs → responsibilities",
+      prompt: "Who owns parkVehicle? Who owns findSpot? Why not all on ParkingLot?",
+      reveal: "ParkingLot.parkVehicle(v) is the facade — callers shouldn't know about levels. But spot search belongs to Level.findSpot(v): each level knows its own spots (Single Responsibility). ParkingSpot.canFit(v) keeps size rules next to the data. If one class holds every verb, you've written a god class — the #1 LLD red flag."
+    },
+    {
+      label: "Spot what varies → patterns",
+      prompt: "Which decisions might change next month without the structure changing?",
+      reveal: "Spot assignment policy (nearest? smallest-fit?) and pricing (flat? hourly? tiered?). Both are Strategy: inject SpotAssignmentStrategy into Level, FeeStrategy into the fee calculator. New policy = new class, zero edits to existing code (Open/Closed). Don't pattern anything else — the rest is stable."
+    },
+    {
+      label: "Walk a scenario + break it",
+      prompt: "Narrate 'a car arrives'. Then: two cars, one spot left. What breaks?",
+      reveal: "parkVehicle(car) → each Level's strategy proposes a spot → mark occupied → issue Ticket. The race: both cars read the spot as free (check-then-act). Fix at the mutation point: compare-and-set free→occupied, or a per-level lock around find-and-reserve. Ending with the invariant — 'a spot holds at most one vehicle, enforced atomically' — is what separates senior answers."
+    }
+  ]}
+/>
+
 ## Walk a scenario + concurrency
 
 "A car arrives": `ParkingLot.parkVehicle(car)` → ask each `Level` for a spot via

@@ -85,6 +85,26 @@ codecs, 12-hour streams. The pipeline:
    copyright matching** (fingerprint against a known-content index —
    acknowledge, don't deep-dive), metadata indexing for search.
 
+The pipeline as a timeline — note where durability lands and where the
+creator's experience comes from:
+
+<Mermaid chart={`sequenceDiagram
+  participant C as Creator
+  participant UP as Upload service
+  participant RAW as Raw storage
+  participant Q as Queue
+  participant W as Transcode workers
+  participant CDN as CDN/origins
+  C->>UP: chunks 1..N (resumable — drop resumes at last chunk)
+  UP->>RAW: raw file durable ✓ — everything downstream can retry
+  UP->>Q: enqueue processing job
+  UP-->>C: "upload complete — processing…"
+  Q->>W: split into segments, transcode in PARALLEL
+  W->>CDN: publish 360p first
+  W-->>C: video is LIVE (watchable) — "processing HD…"
+  W->>CDN: backfill 720p, 1080p, 4K renditions
+  Note over W: + thumbnails, moderation/fingerprinting,<br/>search indexing — idempotent, per-segment retries,<br/>poison-pill lane for corrupt files`} />
+
 ### View counting (counters are money)
 
 A viral video takes **tens of thousands of views/sec**; row-level
@@ -131,6 +151,41 @@ attach them to the video (no fan-out), paginate by cursor
 first page hard (that's 95% of reads), rank asynchronously, and
 rate-limit per user ([rate limiting](/hld/rate-limiting)) because
 comment spam is an industry.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design YouTube"
+  difficulty="HLD Classic — UGC video"
+  problem="A video platform where anyone uploads: process and serve globally, count views (creators are paid on them), search, comments. 500 hours uploaded per minute."
+  stages={[
+    {
+      label: "Inherit, then isolate the new",
+      prompt: "You've (mentally) designed Netflix. What transfers unchanged, and what are the three NEW problems?",
+      reveal: "Playback transfers: segments, adaptive bitrate, CDN. New: (1) ingest is adversarial — unbounded user files, not studio masters; (2) the catalog has a massive long tail no edge cache can hold; (3) counters are money. Saying 'I inherit the CDN/ABR machinery and deep-dive the three deltas' wins the room in one sentence."
+    },
+    {
+      label: "Durability first, then everything retries",
+      prompt: "A 4GB phone video over hotel Wi-Fi. What's the FIRST guarantee the pipeline makes?",
+      reveal: "Resumable chunked upload → the raw file lands in object storage BEFORE any processing. Once durable, the whole downstream (queue → parallel segment transcode → publish) can fail and retry forever: idempotent workers, per-segment retries, poison-pill lane. Progressive availability (360p live fast, HD backfills) turns the async architecture into a product feature."
+    },
+    {
+      label: "Counters that are money",
+      prompt: "50K views/sec on one video, and creators are paid per view. Why does UPDATE views+1 fail twice?",
+      reveal: "Once technically: 50K row-lock contentions/sec is the hot-row failure. Once financially: 'roughly right' isn't payable. Split them — beacons into a partitioned log; stream processors window-aggregate (one write per 10s, not 30K); DISPLAY reads the aggregate (seconds stale, fine); BILLING replays the durable raw log with dedup/min-watch/bot rules. Display = eventually consistent; settlement = exact, auditable. Hot-partition flourish: salt a viral video's beacons across partitions."
+    },
+    {
+      label: "Cache for YOUR popularity curve",
+      prompt: "Why can't you just do what Netflix does at the CDN — and what's the tiered answer?",
+      reveal: "Netflix pre-pushes a small concentrated catalog; ~everything serves from edge. YouTube is billions of videos where much traffic hits the rarely-watched tail — no edge holds it. Tier it: edges cache the hot head (with trend-following pre-positioning), regional origins the warm middle, cheap archival storage the cold tail pulled through on demand (+ request collapsing against stampedes). The lesson: caching strategy is a function of the popularity distribution, not a checkbox."
+    },
+    {
+      label: "Failure modes close the loop",
+      prompt: "Transcode backlog. Viral video in minutes. Count pipeline lags. Which one pages someone?",
+      reveal: "Almost none, and the WHY is the design: upload and watch planes are decoupled (backlog never touches playback); a viral video warms edges organically while windowing absorbs the beacon storm; count-pipeline lag freezes display counts but billing reads the durable log — decoupling display from settlement is THE counter insight. Money paths and product paths fail independently. That's the closing sentence."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

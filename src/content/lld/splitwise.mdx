@@ -95,6 +95,23 @@ Raw: A→B ₹20, B→C ₹20, C→A ₹10        Nets: A −10, B 0, C +10
 Simplified: A pays C ₹10.  (3 transactions → 1; B vanished entirely)
 ```
 
+<Mermaid chart={`flowchart LR
+  subgraph before["Before — raw IOU web (3 transactions)"]
+    A1[A] -->|₹20| B1[B]
+    B1 -->|₹20| C1[C]
+    C1 -->|₹10| A1
+  end
+  subgraph after["After — net & match (1 transaction)"]
+    A2["A (net −10)"] -->|₹10| C2["C (net +10)"]
+    B2["B (net 0) — out of the picture"]
+  end
+  before ==>|"compute nets,<br/>match debtors↔creditors"| after
+  style B2 fill:#F3ECDA,stroke:#A6997A,stroke-dasharray: 5 5`} />
+
+The graph view is why this works: individual edges (who-paid-whom) are
+noise; only each node's **net flow** matters, and any set of transactions
+that produces the same nets is equally valid.
+
 ```python
 def simplify(net):                       # net: user → paise (sum == 0)
     owes  = [(u, -v) for u, v in net.items() if v < 0]
@@ -119,6 +136,42 @@ transactions; the true *minimum* transaction count is NP-hard
 (subset-sum in disguise) — knowing that "good greedy, optimal is NP-hard,
 n−1 is fine" line is exactly the [greedy-judgment](/dsa/greedy) graders
 want.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Splitwise"
+  difficulty="LLD Classic — Strategy + money"
+  problem="Users create group expenses — one payer, many participants, split equally / by exact amounts / by percentages. Show who owes whom, and simplify the debts."
+  stages={[
+    {
+      label: "Scope to the three tests",
+      prompt: "What three distinct skills is this one prompt secretly probing?",
+      reveal: "(1) A Strategy seam — split types vary. (2) Money correctness — rounding and invariants. (3) One real algorithm — debt simplification. Scope to hit all three: 'single currency, ignore settlement execution and auth — OK?' Knowing what the grader is grading is half the interview."
+    },
+    {
+      label: "Spot what varies → Strategy",
+      prompt: "Equal, exact, percent splits — and next month, 'by shares'. Where does that variability live?",
+      reveal: "Behind SplitStrategy.computeSplits(amount, participants, args) → List<Split>. Each strategy validates its OWN args (exact sums to total, percents to 100) — the class that defines the rule enforces it. New split type = new class, zero edits. Also: Expense is immutable; edits create versions. Finance code never destroys history."
+    },
+    {
+      label: "Handle money like you've been burned",
+      prompt: "₹100 split three ways. What does your code return, exactly?",
+      reveal: "Integer paise, never floats: divmod(10000, 3) → 3333 r 1 → shares 3334/3333/3333, remainder to the first participant deterministically. Two invariants, asserted: each expense's splits sum exactly to its amount; all nets globally sum to zero (money is conserved). Saying these UNPROMPTED is what separates people who've touched financial code.",
+      code: "base, rem = divmod(amount_paise, len(users))\nshares = [base + (1 if i < rem else 0) for i in range(len(users))]\nassert sum(shares) == amount_paise   # always"
+    },
+    {
+      label: "See the graph, then simplify",
+      prompt: "A→B ₹20, B→C ₹20, C→A ₹10. What's the minimal settle-up — and what made it easy?",
+      reveal: "Only NET balances matter: A −10, B 0, C +10 → A pays C ₹10, done. Algorithm: net out, then two-pointer (or two-heap greedy) match debtors to creditors — at most n−1 transactions. The judgment line: 'true minimum is NP-hard (subset-sum in disguise); greedy is near-optimal; I ship the greedy.'"
+    },
+    {
+      label: "The concurrency follow-up",
+      prompt: "Two people add expenses to the same group simultaneously. What races, and what's the elegant fix?",
+      reveal: "BalanceSheet update is read-modify-write → lost update. Fix A: atomic per-group mutation (lock/serialized queue). Fix B — the elegant one: make balances DERIVED. Append expenses to a log (appends don't race), compute nets on read or rebuild the cache by replay. That's event sourcing in miniature, and it doubles as your corruption escape hatch."
+    }
+  ]}
+/>
 
 ## Walk a scenario + concurrency
 

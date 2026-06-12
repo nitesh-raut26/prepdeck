@@ -19,6 +19,26 @@ tags: ["design-patterns", "GoF", "behavioral"]
 | Behavioral | **Observer** | notify many subscribers when state changes |
 | Behavioral | **State** | behavior changes with an internal state object |
 
+## How to pick — follow the force, not the name
+
+Patterns are answers to recurring *forces*. Start from the problem you can feel
+in the code, and the pattern falls out:
+
+<Mermaid chart={`flowchart TD
+  Q{What's the pain?} -->|"an algorithm/policy varies<br/>(pricing, sorting, routing)"| ST[Strategy]
+  Q -->|"many things must react<br/>when one thing changes"| OB[Observer]
+  Q -->|"object behaves differently<br/>per mode/lifecycle phase"| SP[State]
+  Q -->|"optional features stack<br/>in any combination"| DE[Decorator]
+  Q -->|"which concrete class to create<br/>depends on input/config"| FM[Factory Method]
+  Q -->|"constructor has 8 params,<br/>half optional"| BU[Builder]
+  Q -->|"third-party interface<br/>doesn't fit mine"| AD[Adapter]
+  Q -->|"callers juggle 5 subsystems<br/>to do one task"| FA[Facade]
+  style Q fill:#E0E7FF,stroke:#4F46E5`} />
+
+In an interview, *say the force out loud first* ("seat-assignment policy varies
+→ I'll put it behind a Strategy"), then name the pattern. Naming without the
+force is buzzword bingo; the force without the name still earns full credit.
+
 ## Strategy — the most useful one
 
 Encapsulate interchangeable algorithms behind a common interface and inject the

@@ -82,6 +82,23 @@ Every rendition is cut into **~4-second segments**; a **manifest**
 3. Picks each *next* segment's quality from the measured bandwidth —
    shifting up on good network, down *before* the buffer empties.
 
+<Mermaid chart={`sequenceDiagram
+  participant P as Player
+  participant API as Control plane
+  participant E as CDN edge (in your ISP)
+  P->>API: play "Title X" (auth ✓)
+  API-->>P: manifest: every segment × every quality + nearest-edge URLs
+  P->>E: segment 1 @ 480p (conservative → instant start)
+  E-->>P: 12 Mbps measured — headroom!
+  P->>E: segment 2 @ 1080p
+  E-->>P: still fast
+  P->>E: segment 3 @ 4K
+  Note over P: train enters a tunnel —<br/>throughput collapses
+  P->>E: segment 4 @ 720p (stepped down BEFORE buffer empties)
+  P->>E: segment 5 @ 480p
+  Note over P,E: quality degrades gracefully, playback never pauses.<br/>All intelligence in the client — the edge just serves immutable files
+  P--)API: progress heartbeat (user, title, position) every few seconds`} />
+
 **ABR (adaptive bitrate)** is why playback survives a train ride: quality
 degrades gracefully instead of pausing. The intelligence is **in the
 client**; servers just serve files. Segments also make seeking trivial
@@ -111,6 +128,41 @@ is harmless, so it can be async/batched ([eventual consistency where it's
 free](/hld/cap-consistency)). Resume-on-another-device = read your last
 heartbeat. This contrast — 50 Tbps of reads vs 2 M trivial writes — *is*
 the system in one sentence.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design Netflix"
+  difficulty="HLD Classic — distribution"
+  problem="Video streaming: catalog browsing, smooth playback on any device and network, resumable progress. Hundreds of millions of subscribers worldwide."
+  stages={[
+    {
+      label: "Let the estimate write the conclusion",
+      prompt: "~10M concurrent 5 Mbps streams vs a ~1 PB near-static catalog. What kind of problem is this?",
+      reveal: "50 Tbps of egress reading a static petabyte: a DISTRIBUTION problem, not a computation problem. Read-heavy in its most extreme form, ~zero hot-path writes. Conclusion to state in minute three: 'nothing else matters if the bytes don't sit near the viewers — the CDN is 95% of this design.'"
+    },
+    {
+      label: "Two planes that share nothing",
+      prompt: "Where's the boundary that organizes the whole architecture?",
+      reveal: "Control plane (browse, auth, progress — small JSON, ordinary scalable web service) vs data plane (video bytes — CDN only). API servers never touch video; the CDN never makes decisions. Bonus: control-plane-down ≠ video-down — active sessions keep streaming with manifest in hand. Decoupled planes shrink every blast radius."
+    },
+    {
+      label: "The write path is offline — exploit it",
+      prompt: "One studio master → dozens of renditions. What property of this pipeline makes it cheap?",
+      reveal: "No latency requirement. Chunk the source, encode chunks in parallel across thousands of workers (a film in minutes), reassemble, package into ~4s segments + manifest. Failed chunk retries alone — idempotent workers, queue-orchestrated. 'This plane has no latency requirement, which is what lets it be cheap' is a senior sentence."
+    },
+    {
+      label: "ABR: smoothness beats sharpness",
+      prompt: "Why does playback survive a train ride — and why MUST the logic live in the client?",
+      reveal: "Player starts conservative (instant start), measures real throughput per segment, picks each NEXT segment's quality — down before the buffer empties, up when headroom returns. Client-side because only the client knows its radio, buffer, and screen — and because it keeps servers as dumb immutable-file servers, which is exactly what lets CDNs cache everything. Server-side adaptation = per-viewer state = uncacheable = the whole model forfeited."
+    },
+    {
+      label: "Invert the scary scenario",
+      prompt: "New-release night: 100M people press play on ONE title at 8 PM. Disaster?",
+      reveal: "The EASIEST night of the year: one hot title, pre-pushed to every edge (including Open Connect boxes inside ISPs) during off-peak — fully cached everywhere before the first click. Popularity is predictable; push-based caching beats pull-on-miss. The only hot write is the progress heartbeat (~2M tiny KV writes/sec, loss-tolerant, Cassandra-class). '50 Tbps of reads vs 2M trivial writes' is the system in one sentence — close with it."
+    }
+  ]}
+/>
 
 ## 5. Bottlenecks & failure modes
 

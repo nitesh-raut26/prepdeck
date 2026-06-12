@@ -24,6 +24,45 @@ You need two things in O(1): **lookup by key** and **"move this to most-recent"
   MAP[HashMap<br/>key → node] --> N2
   HEAD[head/MRU] --> N1[node A] --> N2[node B] --> N3[node C] --> TAIL[tail/LRU]`} />
 
+## Think it through like the interview
+
+Don't memorize the structure — derive it. The derivation is reusable; the
+memorized answer dies on the first follow-up.
+
+<ThinkThrough
+  title="LRU Cache"
+  difficulty="LLD Coding Classic — LeetCode 146"
+  problem="Build a fixed-capacity cache with O(1) get(key) and put(key, value). When full, evict the least-recently-used entry."
+  stages={[
+    {
+      label: "Turn 'LRU' into operations",
+      prompt: "Forget data structures. What operations must be O(1), stated precisely?",
+      reveal: "Three: (1) find a value by key, (2) mark an entry 'used just now' — i.e. move it to the most-recent end of some ordering, (3) find and remove the least-recent entry. Writing the operation list FIRST is the move — structures are chosen to serve operations, never the reverse."
+    },
+    {
+      label: "Audit the candidates",
+      prompt: "Which single structure gives all three in O(1)? Try each and find its failure.",
+      reveal: "Hash map: O(1) lookup, but no ordering at all — can't find least-recent. Array/list: ordering yes, but moving an element to the front is O(n) shifting. Singly linked list: O(1) front-insert, but removing an arbitrary node needs its predecessor — O(n) scan. Heap by timestamp: O(log n), and updating recency is worse. NO single structure works. That conclusion is progress, not failure."
+    },
+    {
+      label: "Combine: each covers the other's weakness",
+      prompt: "Map gives lookup but no order; doubly linked list gives O(1) reorder but no lookup. How do I wire them together?",
+      reveal: "map: key → NODE (not key → value!). The map hands you the exact node in O(1); the doubly linked list lets you unlink that node in O(1) because it knows its own prev. Head = most recent, tail = least recent. get = lookup + move-to-front; evict = unlink tail. Every requirement now has an O(1) path."
+    },
+    {
+      label: "Kill the edge cases structurally",
+      prompt: "Empty list, single element, removing the head… how do I avoid a forest of null checks?",
+      reveal: "Sentinel (dummy) head and tail nodes. Real nodes always have non-null neighbors, so remove() and addFront() are unconditional pointer splices. Saying 'sentinels remove the edge cases' while writing them is a strong signal — it shows you've been burned by pointer code before.",
+      code: "private remove(n: Node) {\n  n.prev!.next = n.next;   // never null, thanks to sentinels\n  n.next!.prev = n.prev;\n}"
+    },
+    {
+      label: "Trace it, then take the follow-ups",
+      prompt: "capacity=2: put(1), put(2), get(1), put(3). Who got evicted — and what breaks under threads?",
+      reveal: "get(1) promotes 1, so put(3) evicts 2 (not 1) — trace it on the board unprompted. Follow-ups: thread-safety (one lock works but serializes; shard into N segments by hash(key) % N); TTL (expiry per node, treat expired as miss); LFU (frequency buckets — say it's a different, harder structure). Each answer comes straight from the operation list in stage 1."
+    }
+  ]}
+/>
+
 ## Implementation
 
 ```ts

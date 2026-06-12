@@ -90,13 +90,18 @@ Decisions to narrate as you draw:
 Every sent message walks one state machine, and every transition has
 a *trigger and an owner*:
 
-```
-PENDING ──(server ack)──→ SENT ──(recipient device ack)──→ DELIVERED
-   │            ✓                        ✓✓                     │
-   │                                              (recipient opens chat)
-   └─(retries exhausted)──→ FAILED                              ↓
-                                                          READ  ✓✓ blue
-```
+<Mermaid chart={`stateDiagram-v2
+  [*] --> PENDING : send tapped — local only, grey clock
+  PENDING --> SENT : server ack — one tick ✓
+  PENDING --> FAILED : retries exhausted
+  SENT --> DELIVERED : recipient device ack — two ticks ✓✓
+  DELIVERED --> READ : recipient opens chat — blue ✓✓
+  note right of PENDING : exists only in local store + outbox
+  note right of SENT : durable on server —<br/>no claim about recipient
+  note right of READ : product event, privacy-gated —<br/>not a transport event`} />
+
+Pin the diagram next to the chat UI in your head: those states *are* the
+clock, the single tick, the double tick, and the blue double tick.
 
 - **PENDING** — exists only locally: rendered in the UI instantly
   ([optimistic UI](/basics/frontend-and-backend)), sitting in the
@@ -143,6 +148,41 @@ The design's center of gravity. The phone must work in a tunnel:
   self-heals — explicitly contrasting them with messages shows you
   classify data by durability need
   ([the Uber location argument](/hld/design-uber)).
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design a Chat System (LLD)"
+  difficulty="LLD Classic — offline-first"
+  problem="Design the classes for a WhatsApp-like client and its session layer: 1:1 and group chats, sent/delivered/read states, offline users syncing on return."
+  stages={[
+    {
+      label: "Find the hard half",
+      prompt: "Server or client — which side is the real design problem here, and why?",
+      reveal: "The client. Phones are offline-first databases with a UI: they must render instantly in a tunnel, survive app kills mid-send, and reconcile on reconnect. Scope accordingly: 'the HLD moves a billion messages; I'll design what a message IS and how a phone keeps it safe — OK?'"
+    },
+    {
+      label: "Give the message identity before the network",
+      prompt: "Who generates the message id — client or server? This one decision carries the design.",
+      reveal: "Client-generated UUID, created before any network contact. It makes every retry an idempotent replay (the ambiguous-timeout problem, pre-solved), lets the UI thread receipts immediately, and gives the message identity while it exists only on the phone. Server still assigns seq for ORDERING — identity and order are different concerns, owned by different parties."
+    },
+    {
+      label: "Model the ticks as a state machine",
+      prompt: "Grey clock, ✓, ✓✓, blue ✓✓ — what are these, precisely?",
+      reveal: "PENDING (local only) → SENT (server has it durably) → DELIVERED (recipient DEVICE acked) → READ (recipient opened the chat). Two distinctions worth saying aloud: SENT makes no claim about the recipient; and READ is a product event (privacy-gated), not a transport event. In groups the machine runs PER RECIPIENT with an aggregate view."
+    },
+    {
+      label: "Make the client a database",
+      prompt: "The UI must never block on the network, yet no message may be lost. What architecture squares that?",
+      reveal: "Local-first + outbox. UI reads ONLY the local store; sending = append locally (PENDING) + enqueue in a persistent outbox a background SyncEngine drains with backoff. Durability comes from the first local write, not from awaiting the server. Kill the app mid-send; the message still goes. Reads flow network → store → UI via Observer — strictly one direction."
+    },
+    {
+      label: "Sync = cursors, not diffs",
+      prompt: "Asha was offline for an hour. How does her phone catch up — and how does the same trick fix mid-session gaps?",
+      reveal: "Per-conversation cursor: 'give me everything after seq 409.' Reconnect and gap-detection use the identical fetch — one mechanism heals both. Monotonic cursors also compress read receipts ('read up to N' instead of per-message events). Contrast typing indicators: fire-and-forget, never stored, 3 s TTL — classifying data by durability need is the senior tell."
+    }
+  ]}
+/>
 
 ## Walk a scenario
 

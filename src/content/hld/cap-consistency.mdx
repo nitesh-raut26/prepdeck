@@ -15,6 +15,23 @@ P isn't optional — so the real choice **during a partition** is:
 - **AP** — keep serving, accept that replicas may diverge and reconcile later
   (e.g. a social feed, a shopping cart).
 
+Here's the moment CAP actually bites — the same partition, the two choices:
+
+<Mermaid chart={`flowchart TB
+  subgraph healthy["Network healthy — no choice needed"]
+    A1[(Replica A)] <-->|replicating| B1[(Replica B)]
+  end
+  subgraph partition["⚡ Partition — A and B can't talk. A write arrives at A."]
+    direction TB
+    A2[(Replica A — has new write)] x--x|link down| B2[(Replica B — stale)]
+  end
+  partition --> CP["CP: B refuses reads/writes<br/>until the link heals.<br/>Consistent, but unavailable.<br/>→ ledgers, inventory"]
+  partition --> AP["AP: B keeps answering<br/>with stale data; reconcile later.<br/>Available, but divergent.<br/>→ feeds, carts, counters"]
+  style CP fill:#E0E7FF,stroke:#4F46E5
+  style AP fill:#DCFCE7,stroke:#16A34A`} />
+
+
+
 <Callout type="warn" title="CAP is a partition-time choice, not an always-on label">
 When the network is healthy you can have both consistency and availability. CAP
 only bites *during* a partition. PACELC extends it: **E**lse (no partition),
