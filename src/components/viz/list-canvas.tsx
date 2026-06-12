@@ -48,7 +48,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path d="M0,0 L8,4 L0,8 z" fill="#6b7689" />
+          <path d="M0,0 L8,4 L0,8 z" fill="#7e7458" />
         </marker>
         <marker
           id={`arrg-${markerId}`}
@@ -59,7 +59,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path d="M0,0 L8,4 L0,8 z" fill="#34d399" />
+          <path d="M0,0 L8,4 L0,8 z" fill="#059669" />
         </marker>
       </defs>
 
@@ -72,7 +72,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
             textAnchor="middle"
             fontSize={11}
             fontFamily="var(--font-mono)"
-            fill="#818cf8"
+            fill="#4f46e5"
           >
             head
           </text>
@@ -81,7 +81,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
             y1={18}
             x2={x(head) + NODE_W / 2}
             y2={TOP - 4}
-            stroke="#818cf8"
+            stroke="#4f46e5"
             strokeWidth={1.2}
             markerEnd={`url(#arr-${markerId})`}
           />
@@ -101,7 +101,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
                 y1={cy}
                 x2={fromX + 18}
                 y2={cy}
-                stroke="#6b7689"
+                stroke="#7e7458"
                 strokeWidth={1.2}
                 markerEnd={`url(#arr-${markerId})`}
               />
@@ -109,7 +109,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
                 x={fromX + 26}
                 y={cy + 4}
                 fontSize={12}
-                fill="#6b7689"
+                fill="#7e7458"
                 fontFamily="var(--font-mono)"
               >
                 ∅
@@ -125,7 +125,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
               y1={cy}
               x2={x(to) - 3}
               y2={cy}
-              stroke="#6b7689"
+              stroke="#7e7458"
               strokeWidth={1.2}
               markerEnd={`url(#arr-${markerId})`}
             />
@@ -140,7 +140,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
             key={`e${node.id}`}
             d={`M ${sx} ${by} C ${sx} ${by + 26}, ${tx} ${by + 26}, ${tx} ${by + 4}`}
             fill="none"
-            stroke="#34d399"
+            stroke="#059669"
             strokeWidth={1.2}
             markerEnd={`url(#arrg-${markerId})`}
           />
@@ -183,7 +183,7 @@ export function ListCanvas({ step }: { step: ListStep }) {
           y={height - 10}
           fontSize={11}
           fontFamily="var(--font-mono)"
-          fill="#6b7689"
+          fill="#7e7458"
         >
           {pointers
             .filter((q) => q.at === null)

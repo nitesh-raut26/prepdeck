@@ -23,7 +23,7 @@ export function GraphCanvas({ graph, step }: { graph: GraphInput; step: GraphSte
           const a = pos[e.a];
           const b = pos[e.b];
           const tone = step.edgeTones[edgeKey(e.a, e.b)];
-          const stroke = tone ? SVG_TONE[tone].stroke : "#324056";
+          const stroke = tone ? SVG_TONE[tone].stroke : "#c3b58e";
           const mx = (a.x + b.x) / 2;
           const my = (a.y + b.y) / 2;
           return (
@@ -38,14 +38,14 @@ export function GraphCanvas({ graph, step }: { graph: GraphInput; step: GraphSte
               />
               {e.w !== undefined && (
                 <>
-                  <circle cx={mx} cy={my} r={3.2} fill="#0d111b" stroke="#222b3b" strokeWidth={0.3} />
+                  <circle cx={mx} cy={my} r={3.2} fill="#faf5e9" stroke="#dcd0b3" strokeWidth={0.3} />
                   <text
                     x={mx}
                     y={my + 1.2}
                     textAnchor="middle"
                     fontSize={3.4}
                     fontFamily="var(--font-mono)"
-                    fill={tone ? SVG_TONE[tone].stroke : "#aab3c5"}
+                    fill={tone ? SVG_TONE[tone].stroke : "#5c5440"}
                   >
                     {e.w}
                   </text>

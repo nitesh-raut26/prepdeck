@@ -55,7 +55,7 @@ export function TreeCanvas({ step }: { step: TreeStep }) {
               y1={n.parent.y}
               x2={n.x}
               y2={n.y}
-              stroke="#324056"
+              stroke="#c3b58e"
               strokeWidth={1.2}
             />
           ),
@@ -79,7 +79,7 @@ export function TreeCanvas({ step }: { step: TreeStep }) {
         );
       })}
       {nodes.length === 0 && (
-        <text x={width / 2} y={height / 2} textAnchor="middle" fontSize={12} fill="#6b7689">
+        <text x={width / 2} y={height / 2} textAnchor="middle" fontSize={12} fill="#7e7458">
           (empty tree)
         </text>
       )}
@@ -145,7 +145,7 @@ export function HeapCanvas({ step }: { step: ArrayStep }) {
                 y1={p.y}
                 x2={c.x}
                 y2={c.y}
-                stroke="#324056"
+                stroke="#c3b58e"
                 strokeWidth={1.2}
               />
             );

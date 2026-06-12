@@ -69,7 +69,7 @@ export function UfCanvas({ step }: { step: UfStep }) {
               y1={Y(i) - R}
               x2={X(parent[i])}
               y2={Y(parent[i]) + R - 2}
-              stroke="#324056"
+              stroke="#c3b58e"
               strokeWidth={1.2}
             />
           ) : null,

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "highlight.js/styles/github-dark.css";
+import "highlight.js/styles/github.css";
 import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 import { getNav, getSearchIndex } from "@/lib/content";

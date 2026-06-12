@@ -15,16 +15,43 @@ function loadMermaid(): Promise<MermaidApi> {
       const mermaid = mod.default as unknown as MermaidApi;
       mermaid.initialize({
         startOnLoad: false,
-        theme: "dark",
+        theme: "base",
         securityLevel: "strict",
         fontFamily: "inherit",
         themeVariables: {
           background: "transparent",
-          primaryColor: "#1e2433",
-          primaryBorderColor: "#4f46e5",
-          primaryTextColor: "#e7ebf3",
-          lineColor: "#64748b",
           fontSize: "14px",
+          // Warm paper palette — keep in sync with globals.css tokens
+          primaryColor: "#f3ecda",
+          primaryBorderColor: "#4f46e5",
+          primaryTextColor: "#36301e",
+          secondaryColor: "#e9dfc6",
+          tertiaryColor: "#faf5e9",
+          mainBkg: "#f3ecda",
+          textColor: "#36301e",
+          lineColor: "#7e7458",
+          clusterBkg: "#ece3cb",
+          clusterBorder: "#c3b58e",
+          titleColor: "#36301e",
+          edgeLabelBackground: "#faf5e9",
+          // sequence diagrams
+          actorBkg: "#e9dfc6",
+          actorBorder: "#c3b58e",
+          actorTextColor: "#36301e",
+          actorLineColor: "#a6997a",
+          signalColor: "#5c5440",
+          signalTextColor: "#5c5440",
+          labelBoxBkgColor: "#e9dfc6",
+          labelBoxBorderColor: "#c3b58e",
+          labelTextColor: "#36301e",
+          loopTextColor: "#36301e",
+          activationBkgColor: "#e0e7ff",
+          activationBorderColor: "#4f46e5",
+          sequenceNumberColor: "#faf5e9",
+          // notes
+          noteBkgColor: "#f8ecc3",
+          noteTextColor: "#574a1f",
+          noteBorderColor: "#d9c36a",
         },
       });
       return mermaid;

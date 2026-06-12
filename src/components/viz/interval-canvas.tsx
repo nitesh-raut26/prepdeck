@@ -61,7 +61,7 @@ export function IntervalCanvas({ step }: { step: IntervalStep }) {
             y1={16}
             x2={PAD_X + t * scale}
             y2={height - 4}
-            stroke="#222b3b"
+            stroke="#dcd0b3"
             strokeWidth={0.7}
           />
           <text
@@ -70,7 +70,7 @@ export function IntervalCanvas({ step }: { step: IntervalStep }) {
             textAnchor="middle"
             fontSize={8.5}
             fontFamily="var(--font-mono)"
-            fill="#6b7689"
+            fill="#7e7458"
           >
             {t}
           </text>
@@ -86,7 +86,7 @@ export function IntervalCanvas({ step }: { step: IntervalStep }) {
             y1={22 + inH}
             x2={width - 8}
             y2={22 + inH}
-            stroke="#324056"
+            stroke="#c3b58e"
             strokeWidth={1}
             strokeDasharray="3 3"
           />
@@ -95,7 +95,7 @@ export function IntervalCanvas({ step }: { step: IntervalStep }) {
             y={36 + inH}
             fontSize={9}
             fontFamily="var(--font-mono)"
-            fill="#6b7689"
+            fill="#7e7458"
           >
             merged
           </text>

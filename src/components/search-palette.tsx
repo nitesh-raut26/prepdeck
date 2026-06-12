@@ -76,7 +76,7 @@ export function SearchPalette({
         type="button"
         aria-label="Close search"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 cursor-default bg-black/30 backdrop-blur-sm"
       />
       <div className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-2xl">
         <div className="flex items-center gap-3 border-b border-line px-4">

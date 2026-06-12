@@ -26,11 +26,11 @@ export const TEXT_TONE: Record<Tone, string> = {
 
 /** Tone → SVG fill/stroke (hex, matching the Tailwind palette used above). */
 export const SVG_TONE: Record<Tone, { fill: string; stroke: string; text: string }> = {
-  idle: { fill: "#1c2433", stroke: "#324056", text: "#e8ecf4" },
-  active: { fill: "rgba(79,70,229,0.45)", stroke: "#818cf8", text: "#e0e7ff" },
-  focus: { fill: "rgba(14,165,233,0.30)", stroke: "#38bdf8", text: "#bae6fd" },
-  good: { fill: "rgba(16,185,129,0.30)", stroke: "#34d399", text: "#a7f3d0" },
-  bad: { fill: "rgba(244,63,94,0.30)", stroke: "#fb7185", text: "#fecdd3" },
-  muted: { fill: "#141a26", stroke: "#222b3b", text: "#6b7689" },
-  accent: { fill: "rgba(245,158,11,0.30)", stroke: "#fbbf24", text: "#fde68a" },
+  idle: { fill: "#e9dfc6", stroke: "#c3b58e", text: "#36301e" },
+  active: { fill: "rgba(79,70,229,0.14)", stroke: "#4f46e5", text: "#3730a3" },
+  focus: { fill: "rgba(2,132,199,0.12)", stroke: "#0284c7", text: "#075985" },
+  good: { fill: "rgba(5,150,105,0.12)", stroke: "#059669", text: "#065f46" },
+  bad: { fill: "rgba(225,29,72,0.10)", stroke: "#e11d48", text: "#9f1239" },
+  muted: { fill: "#f3ecda", stroke: "#dcd0b3", text: "#7e7458" },
+  accent: { fill: "rgba(217,119,6,0.12)", stroke: "#d97706", text: "#92400e" },
 };

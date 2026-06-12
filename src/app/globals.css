@@ -2,7 +2,12 @@
 @plugin "@tailwindcss/typography";
 
 /* ──────────────────────────────────────────────────────────
-   PrepDeck — dark study-wiki design system
+   PrepDeck — warm sepia "paper" reading theme
+   Built for long study sessions: cream surfaces (less glare
+   and blue light than white), dark warm-gray ink (~11:1
+   contrast — high but below the harsh pure-black-on-white
+   that causes halation), and accents darkened to stay
+   WCAG-readable on light ground.
    ────────────────────────────────────────────────────────── */
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
@@ -10,34 +15,46 @@
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
     monospace;
 
-  /* Brand — indigo → violet */
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
+  /* Brand — indigo, darkened for text-on-cream legibility.
+     brand-300 is used site-wide as accent TEXT, so on a light
+     theme it must be dark, not a pastel tint. */
+  --color-brand-300: #4338ca;
+  --color-brand-400: #4f46e5;
+  --color-brand-500: #4f46e5;
   --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-violet-500: #8b5cf6;
+  --color-brand-700: #3730a3;
+  --color-violet-500: #7c3aed;
 
-  /* Surfaces & ink (dark) */
-  --color-bg: #090c14;
-  --color-surface-1: #0d111b;
-  --color-surface-2: #141a26;
-  --color-surface-3: #1c2433;
-  --color-ink: #e8ecf4;
-  --color-subtle: #aab3c5;
-  --color-faint: #6b7689;
-  --color-line: #222b3b;
-  --color-line-strong: #324056;
+  /* Accent tints: -300 steps are accent text in components and
+     visualizers; remapped to ~700-grade for contrast on cream. */
+  --color-amber-300: #a16207;
+  --color-amber-400: #b45309;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-sky-300: #0369a1;
+
+  /* Surfaces & ink (warm paper) */
+  --color-bg: #f1e8d2;
+  --color-surface-1: #faf5e9;
+  --color-surface-2: #f3ecda;
+  --color-surface-3: #e9dfc6;
+  --color-ink: #36301e;
+  --color-subtle: #5c5440;
+  --color-faint: #7e7458;
+  --color-line: #dcd0b3;
+  --color-line-strong: #c3b58e;
 
   --radius-xl: 0.875rem;
   --radius-2xl: 1.125rem;
 
-  --shadow-glow: 0 12px 40px -16px rgba(99, 102, 241, 0.55);
+  --shadow-glow: 0 12px 40px -16px rgba(79, 70, 229, 0.28);
 }
 
 /* ── Base ─────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -86,10 +103,14 @@ body {
   }
 }
 
-/* ── Prose tuning for the dark study theme ───────────────────── */
+/* ── Prose tuning for the paper study theme ──────────────────
+   Markup still uses `prose prose-invert`; the invert variables
+   are remapped here to the warm-light palette so every MDX page
+   picks the sepia colors up with zero markup changes. */
 .prose-invert {
   --tw-prose-invert-body: var(--color-subtle);
   --tw-prose-invert-headings: var(--color-ink);
+  --tw-prose-invert-lead: var(--color-subtle);
   --tw-prose-invert-bold: var(--color-ink);
   --tw-prose-invert-links: var(--color-brand-300);
   --tw-prose-invert-bullets: var(--color-faint);
@@ -97,9 +118,12 @@ body {
   --tw-prose-invert-hr: var(--color-line);
   --tw-prose-invert-quotes: var(--color-subtle);
   --tw-prose-invert-quote-borders: var(--color-brand-600);
+  --tw-prose-invert-captions: var(--color-faint);
+  --tw-prose-invert-kbd: var(--color-ink);
   --tw-prose-invert-th-borders: var(--color-line);
   --tw-prose-invert-td-borders: var(--color-line);
   --tw-prose-invert-code: var(--color-ink);
+  --tw-prose-invert-pre-code: var(--color-ink);
   --tw-prose-invert-pre-bg: var(--color-surface-2);
 }
 
@@ -193,24 +217,24 @@ body {
 .lang-btn-active {
   color: var(--color-ink) !important;
   background: var(--color-surface-3) !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(86, 70, 35, 0.18);
 }
 
-/* Per-language active accent colours */
+/* Per-language active accent colours (darkened for light ground) */
 .lang-btn-python.lang-btn-active {
-  color: #60a5fa !important;
-  background: rgba(59, 130, 246, 0.12) !important;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #1d4ed8 !important;
+  background: rgba(37, 99, 235, 0.1) !important;
+  border: 1px solid rgba(37, 99, 235, 0.3);
 }
 .lang-btn-java.lang-btn-active {
-  color: #fbbf24 !important;
-  background: rgba(245, 158, 11, 0.12) !important;
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #b45309 !important;
+  background: rgba(180, 83, 9, 0.1) !important;
+  border: 1px solid rgba(180, 83, 9, 0.3);
 }
 .lang-btn-cpp.lang-btn-active {
-  color: #34d399 !important;
-  background: rgba(16, 185, 129, 0.12) !important;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #047857 !important;
+  background: rgba(4, 120, 87, 0.1) !important;
+  border: 1px solid rgba(4, 120, 87, 0.3);
 }
 
 .lang-icon {

@@ -74,7 +74,7 @@ export function TrieCanvas({ step }: { step: TrieStep }) {
               y1={byId.get(n.parent)!.y}
               x2={n.x}
               y2={n.y}
-              stroke="#324056"
+              stroke="#c3b58e"
               strokeWidth={1.2}
             />
           ),

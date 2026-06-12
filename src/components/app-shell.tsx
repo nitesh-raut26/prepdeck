@@ -58,7 +58,7 @@ export function AppShell({
               type="button"
               aria-label="Close navigation"
               onClick={() => setSidebarOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             />
             <aside className="absolute inset-y-0 left-0 w-72 max-w-[82%] border-r border-line bg-surface-1">
               <button
