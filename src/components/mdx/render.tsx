@@ -39,6 +39,11 @@ export function Mdx({ source }: { source: string }) {
         source={source}
         components={components}
         options={{
+          // next-mdx-remote v6 defaults blockJS + blockDangerousJS to true.
+          // Our MDX is trusted static content (local repo files, not user input),
+          // so we opt out to allow JSX attribute expressions (arrays, objects).
+          blockJS: false,
+          blockDangerousJS: false,
           mdxOptions: {
             remarkPlugins: [remarkGfm],
             rehypePlugins: [
