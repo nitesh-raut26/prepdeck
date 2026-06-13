@@ -79,7 +79,7 @@ export function AppShell({
             collapsed ? "w-0 border-r-0" : "w-72 border-r border-line"
           }`}
         >
-          <div className="w-72">
+          <div className="h-full w-72">
             <Sidebar nav={nav} />
           </div>
         </aside>

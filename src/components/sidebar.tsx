@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -7,6 +8,7 @@ import {
   Boxes,
   BrainCircuit,
   Briefcase,
+  ChevronDown,
   Cloud,
   Code2,
   Cpu,
@@ -45,6 +47,8 @@ const ICONS: Record<string, LucideIcon> = {
   ScrollText,
 };
 
+const SECTIONS_KEY = "pd-sidebar-sections-v1";
+
 function StatusDot({ status }: { status?: "reviewed" | "mastered" }) {
   return (
     <span
@@ -70,6 +74,42 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { getDoc, countFor, mounted } = useProgress();
+  // Unique per Sidebar instance so the desktop + mobile-drawer copies don't
+  // emit duplicate panel ids (which would break aria-controls).
+  const uid = useId();
+
+  // The section that owns the current route, e.g. "/dsa/arrays" → "dsa".
+  const activeSection = pathname.split("/")[1] ?? "";
+
+  // Per-section expand/collapse, persisted so the chosen layout sticks.
+  // Default (no stored choice): only the active section is open; the rest
+  // collapse into clean dropdown headers you click to reveal.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SECTIONS_KEY);
+      if (raw) setOpenMap(JSON.parse(raw));
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
+  function isOpen(id: string) {
+    return openMap[id] ?? id === activeSection;
+  }
+
+  function toggleSection(id: string) {
+    setOpenMap((prev) => {
+      const next = { ...prev, [id]: !(prev[id] ?? id === activeSection) };
+      try {
+        localStorage.setItem(SECTIONS_KEY, JSON.stringify(next));
+      } catch {
+        /* best-effort */
+      }
+      return next;
+    });
+  }
 
   return (
     <nav className="flex h-full flex-col">
@@ -119,14 +159,22 @@ export function Sidebar({
           const hrefs = section.docs.map((d) => d.href);
           const { reviewed, mastered } = countFor(hrefs);
           const done = reviewed + mastered;
+          const expanded = isOpen(section.id);
+          const panelId = `sidebar-section-${uid}-${section.id}`;
           return (
-            <div key={section.id} className="mt-5">
-              <div className="flex items-center gap-2 px-3 pb-1.5">
+            <div key={section.id} className="mt-4">
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={expanded}
+                aria-controls={panelId}
+                className="group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-surface-2"
+              >
                 <Icon
-                  className="size-3.5"
+                  className="size-3.5 shrink-0"
                   style={{ color: section.accent }}
                 />
-                <span className="text-xs font-semibold uppercase tracking-wider text-faint">
+                <span className="text-xs font-semibold uppercase tracking-wider text-faint transition-colors group-hover:text-subtle">
                   {section.label}
                 </span>
                 {mounted && done > 0 && (
@@ -134,31 +182,48 @@ export function Sidebar({
                     {done}/{section.docs.length}
                   </span>
                 )}
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    "size-3.5 shrink-0 text-faint transition-transform duration-200 group-hover:text-subtle",
+                    expanded ? "" : "-rotate-90",
+                    mounted && done > 0 ? "ml-1.5" : "ml-auto",
+                  )}
+                />
+              </button>
+              <div
+                id={panelId}
+                inert={expanded ? undefined : true}
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-200 ease-out",
+                  expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <ul className="overflow-hidden">
+                  {section.docs.map((doc) => {
+                    const active = pathname === doc.href;
+                    return (
+                      <li key={doc.href}>
+                        <Link
+                          href={doc.href}
+                          onClick={onNavigate}
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] transition-colors",
+                            active
+                              ? "bg-surface-3 font-medium text-ink"
+                              : "text-subtle hover:bg-surface-2 hover:text-ink",
+                          )}
+                        >
+                          <StatusDot
+                            status={mounted ? getDoc(doc.href) : undefined}
+                          />
+                          <span className="truncate">{doc.title}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              <ul>
-                {section.docs.map((doc) => {
-                  const active = pathname === doc.href;
-                  return (
-                    <li key={doc.href}>
-                      <Link
-                        href={doc.href}
-                        onClick={onNavigate}
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] transition-colors",
-                          active
-                            ? "bg-surface-3 font-medium text-ink"
-                            : "text-subtle hover:bg-surface-2 hover:text-ink",
-                        )}
-                      >
-                        <StatusDot
-                          status={mounted ? getDoc(doc.href) : undefined}
-                        />
-                        <span className="truncate">{doc.title}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
             </div>
           );
         })}
