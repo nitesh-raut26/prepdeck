@@ -1,7 +1,7 @@
 ---
 title: "Arrays & Strings"
 summary: "Contiguous memory, O(1) indexing vs O(n) insertion, dynamic arrays, and why strings are arrays with rules."
-order: 2
+order: 3
 difficulty: "Foundation"
 tags: ["arrays", "strings", "memory", "fundamentals"]
 ---
@@ -228,3 +228,41 @@ itself is a classic worth knowing.
 
 Next structure: [Linked Lists](/dsa/linked-lists) — what you get when you
 give up contiguity.
+
+## Practice — climb the ladder
+
+Concept done — now make it muscle memory. Solve in order on LeetCode; each
+rung uses the array mechanics above plus everything earlier on the ladder.
+
+<PracticeLadder
+  topic="Arrays & Strings"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "indexing, in-place edits, two indices moving",
+      problems: [
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "The hello-world of arrays — brute force it first, you will fix it on the hash-tables rung." },
+        { name: "Remove Duplicates from Sorted Array", lc: "remove-duplicates-from-sorted-array", difficulty: "Easy", trains: "In-place overwrite with a write pointer — the O(1)-extra-space habit." },
+        { name: "Merge Sorted Array", lc: "merge-sorted-array", difficulty: "Easy", trains: "Filling from the BACK to avoid shifting — the classic contiguity workaround." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "the interview regulars",
+      problems: [
+        { name: "Best Time to Buy and Sell Stock", lc: "best-time-to-buy-and-sell-stock", difficulty: "Easy", trains: "One pass while tracking a running minimum — state instead of nested loops." },
+        { name: "Product of Array Except Self", lc: "product-of-array-except-self", difficulty: "Medium", trains: "Prefix and suffix passes — the build-two-sweeps trick you will reuse forever." },
+        { name: "Rotate Array", lc: "rotate-array", difficulty: "Medium", trains: "The triple-reversal trick; in-place thinking under index arithmetic." },
+        { name: "Spiral Matrix", lc: "spiral-matrix", difficulty: "Medium", trains: "2D boundary bookkeeping — four shrinking walls, zero off-by-ones allowed." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "prove the foundation is solid",
+      problems: [
+        { name: "Rotate Image", lc: "rotate-image", difficulty: "Medium", trains: "Transpose + reverse — seeing a 2D transform as two 1D ones." },
+        { name: "First Missing Positive", lc: "first-missing-positive", difficulty: "Hard", trains: "The array AS the hash table — index-as-value cycling, O(n)/O(1)." }
+      ]
+    }
+  ]}
+/>

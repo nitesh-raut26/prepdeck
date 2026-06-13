@@ -1,7 +1,7 @@
 ---
 title: "Linked Lists"
 summary: "Nodes and pointers, O(1) insertion vs O(n) access, dummy heads, and the in-place reversal every interviewer asks."
-order: 3
+order: 4
 difficulty: "Foundation"
 tags: ["linked-list", "pointers", "fundamentals"]
 ---
@@ -245,3 +245,42 @@ length).
 
 Next: [Stacks & Queues](/dsa/stacks-and-queues) — restricting access to
 gain power.
+
+## Practice — climb the ladder
+
+Every linked-list problem is pointer surgery: draw boxes and arrows before
+typing, and re-draw after every operation.
+
+<PracticeLadder
+  topic="Linked Lists"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "the three moves every list problem combines",
+      problems: [
+        { name: "Reverse Linked List", lc: "reverse-linked-list", difficulty: "Easy", trains: "THE pointer drill — prev/curr/next until you can do it half-asleep, iterative and recursive." },
+        { name: "Middle of the Linked List", lc: "middle-of-the-linked-list", difficulty: "Easy", trains: "Slow/fast pointers — the rabbit and turtle you will reuse in five other problems." },
+        { name: "Merge Two Sorted Lists", lc: "merge-two-sorted-lists", difficulty: "Easy", trains: "Dummy-head technique — kills every empty-list edge case structurally." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "combinations of the three moves",
+      problems: [
+        { name: "Linked List Cycle", lc: "linked-list-cycle", difficulty: "Easy", trains: "Floyd detection — why a faster pointer MUST lap a slower one in a loop." },
+        { name: "Remove Nth Node From End of List", lc: "remove-nth-node-from-end-of-list", difficulty: "Medium", trains: "Two pointers with a fixed gap — one pass, no length precount." },
+        { name: "Palindrome Linked List", lc: "palindrome-linked-list", difficulty: "Easy", trains: "Find middle + reverse second half + compare — three drills composed." },
+        { name: "Reorder List", lc: "reorder-list", difficulty: "Medium", trains: "Same composition, harder splice — the test of whether your pointer hygiene is real." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "design + k-way thinking",
+      problems: [
+        { name: "LRU Cache", lc: "lru-cache", difficulty: "Medium", trains: "Hash map + doubly linked list — the LLD classic, derived on its own page." },
+        { name: "Merge k Sorted Lists", lc: "merge-k-sorted-lists", difficulty: "Hard", trains: "Lists + heap working together — preview of the heaps rung." },
+        { name: "Reverse Nodes in k-Group", lc: "reverse-nodes-in-k-group", difficulty: "Hard", trains: "Reversal under strict group boundaries — maximum pointer discipline." }
+      ]
+    }
+  ]}
+/>

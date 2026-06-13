@@ -1,7 +1,7 @@
 ---
 title: "Stacks & Queues"
 summary: "LIFO and FIFO — the two access disciplines behind undo, the call stack, BFS, and every task queue you'll ever deploy."
-order: 4
+order: 5
 difficulty: "Foundation"
 tags: ["stack", "queue", "deque", "fundamentals"]
 ---
@@ -255,3 +255,40 @@ one of the cleanest insights in DSA ([full treatment](/dsa/graphs-bfs-dfs)).
 
 Next: [Hash Tables](/dsa/hash-tables) — the O(1) lookup machine that powers
 half of all interview solutions.
+
+## Practice — climb the ladder
+
+If the problem whispers "most recent first" it is a stack; "first come,
+first served" is a queue; "next greater/smaller" is a monotonic stack.
+
+<PracticeLadder
+  topic="Stacks & Queues"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "LIFO/FIFO mechanics",
+      problems: [
+        { name: "Valid Parentheses", lc: "valid-parentheses", difficulty: "Easy", trains: "The canonical stack problem — nesting means LIFO, with three distinct failure modes." },
+        { name: "Implement Queue using Stacks", lc: "implement-queue-using-stacks", difficulty: "Easy", trains: "Two stacks make a queue — amortized analysis you can explain out loud." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "stacks carrying extra state",
+      problems: [
+        { name: "Min Stack", lc: "min-stack", difficulty: "Medium", trains: "Auxiliary stack tracking the running minimum — state rides along with each push." },
+        { name: "Daily Temperatures", lc: "daily-temperatures", difficulty: "Medium", trains: "Monotonic stack — indices wait on the stack until a warmer day pops them." },
+        { name: "Next Greater Element I", lc: "next-greater-element-i", difficulty: "Easy", trains: "Monotonic stack + hash map — the same pattern in its simplest costume." },
+        { name: "Evaluate Reverse Polish Notation", lc: "evaluate-reverse-polish-notation", difficulty: "Medium", trains: "Stack as evaluator — how compilers and calculators actually run expressions." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the two famous hard ones",
+      problems: [
+        { name: "Largest Rectangle in Histogram", lc: "largest-rectangle-in-histogram", difficulty: "Hard", trains: "Monotonic stack at full power — each bar pops exactly once; O(n) where brute force is O(n²)." },
+        { name: "Sliding Window Maximum", lc: "sliding-window-maximum", difficulty: "Hard", trains: "Monotonic DEQUE — front holds the answer, back evicts the obsolete." }
+      ]
+    }
+  ]}
+/>
