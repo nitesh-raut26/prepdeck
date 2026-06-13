@@ -1,7 +1,7 @@
 ---
 title: "Trees & BSTs"
 summary: "Hierarchy as a data structure — tree vocabulary, the four traversals, binary search trees, and why balance is everything."
-order: 6
+order: 7
 difficulty: "Foundation"
 tags: ["trees", "bst", "recursion", "fundamentals"]
 ---
@@ -256,3 +256,42 @@ difficulties — a perfect illustration of what invariants buy.
 
 Next: [Tries](/dsa/tries) — trees whose *paths* are the data, powering
 autocomplete everywhere.
+
+## Practice — climb the ladder
+
+Almost every tree problem is "pick a traversal + decide what each node
+returns to its parent". Say those two choices out loud before coding.
+
+<PracticeLadder
+  topic="Trees & BSTs"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "recursion shape drills",
+      problems: [
+        { name: "Maximum Depth of Binary Tree", lc: "maximum-depth-of-binary-tree", difficulty: "Easy", trains: "The smallest possible tree recursion — base case + combine children." },
+        { name: "Invert Binary Tree", lc: "invert-binary-tree", difficulty: "Easy", trains: "Mutate-and-recurse — the famous one; swap, then trust recursion." },
+        { name: "Same Tree", lc: "same-tree", difficulty: "Easy", trains: "Recursing on TWO trees in lockstep — structural comparison." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "traversal choice + BST ordering",
+      problems: [
+        { name: "Binary Tree Level Order Traversal", lc: "binary-tree-level-order-traversal", difficulty: "Medium", trains: "BFS with a queue, level by level — the non-recursive traversal you must own." },
+        { name: "Validate Binary Search Tree", lc: "validate-binary-search-tree", difficulty: "Medium", trains: "Passing (min, max) bounds down — the trap is checking only children, not ranges." },
+        { name: "Kth Smallest Element in a BST", lc: "kth-smallest-element-in-a-bst", difficulty: "Medium", trains: "In-order traversal IS sorted order — the one fact that defines BSTs." },
+        { name: "Lowest Common Ancestor of a BST", lc: "lowest-common-ancestor-of-a-binary-search-tree", difficulty: "Medium", trains: "Using ordering to walk down in O(h) — no parent pointers needed." },
+        { name: "Diameter of Binary Tree", lc: "diameter-of-binary-tree", difficulty: "Easy", trains: "Return one thing (height), update another (best) — the return-vs-track split." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the senior-loop pair",
+      problems: [
+        { name: "Binary Tree Maximum Path Sum", lc: "binary-tree-maximum-path-sum", difficulty: "Hard", trains: "Diameter's idea with negatives — what a node CONTRIBUTES vs what passes THROUGH it." },
+        { name: "Serialize and Deserialize Binary Tree", lc: "serialize-and-deserialize-binary-tree", difficulty: "Hard", trains: "Preorder + null markers — turning structure into a stream and back." }
+      ]
+    }
+  ]}
+/>

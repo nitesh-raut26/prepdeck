@@ -1,7 +1,7 @@
 ---
 title: "Graphs — Complete Guide: BFS, DFS, Shortest Paths & Advanced Algorithms"
 summary: "Everything about graphs from scratch — representation, BFS, DFS, cycle detection, topological sort, Dijkstra, Bellman-Ford, Floyd-Warshall, Prim, Kruskal, SCC, bridges, articulation points, and every pattern you need to crack any graph interview."
-order: 9
+order: 10
 difficulty: "Core pattern"
 tags: ["graphs", "BFS", "DFS", "Dijkstra", "topological-sort", "MST", "SCC", "shortest-path"]
 ---
@@ -1802,3 +1802,41 @@ Negative cycles: Floyd-Warshall detects them via `dist[i][i] < 0` after the main
 24. A* search on a grid with heuristics
 
 Next: [Union-Find](/dsa/union-find) — the data structure for incremental connectivity, and the backbone of Kruskal's MST.
+
+## Practice — climb the ladder
+
+Three questions before any graph problem: directed or not? weighted or
+not? what counts as a node? Grids are graphs — neighbors are the 4 cells.
+
+<PracticeLadder
+  topic="Graphs — BFS & DFS"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "flood the grid",
+      problems: [
+        { name: "Flood Fill", lc: "flood-fill", difficulty: "Easy", trains: "DFS on a grid in its smallest form — visit, mark, recurse on 4 neighbors." },
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "Connected components — sink each island as you find it; THE graph warm-up." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "BFS for distance, DFS for structure, topo for order",
+      problems: [
+        { name: "Rotting Oranges", lc: "rotting-oranges", difficulty: "Medium", trains: "Multi-source BFS — start the queue with EVERY rotten orange; level = minute." },
+        { name: "01 Matrix", lc: "01-matrix", difficulty: "Medium", trains: "Multi-source BFS again, from the zeros — distance fields radiate outward." },
+        { name: "Clone Graph", lc: "clone-graph", difficulty: "Medium", trains: "Traversal with a visited MAP (old → new) — copying while walking." },
+        { name: "Course Schedule", lc: "course-schedule", difficulty: "Medium", trains: "Cycle detection / topological sort — prerequisites are a directed graph." },
+        { name: "Pacific Atlantic Water Flow", lc: "pacific-atlantic-water-flow", difficulty: "Medium", trains: "Reverse thinking — flow FROM the oceans inward, intersect the reachable sets." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "BFS under constraints",
+      problems: [
+        { name: "Shortest Path in Binary Matrix", lc: "shortest-path-in-binary-matrix", difficulty: "Medium", trains: "BFS = shortest path in unweighted graphs — 8 directions, visited-on-enqueue." },
+        { name: "Word Ladder", lc: "word-ladder", difficulty: "Hard", trains: "Words as nodes, one-letter edits as edges — modeling IS the problem." }
+      ]
+    }
+  ]}
+/>

@@ -1,7 +1,7 @@
 ---
 title: "Tries"
 summary: "Prefix trees — where the path IS the key. The structure behind autocomplete, spell-check and prefix search in O(word length)."
-order: 8
+order: 9
 difficulty: "Foundation"
 tags: ["trie", "strings", "prefix", "fundamentals"]
 ---
@@ -213,3 +213,37 @@ not weakness.
 
 Next: [Union-Find](/dsa/union-find) — the tiny structure that answers "are
 these connected?" almost instantly.
+
+## Practice — climb the ladder
+
+The trie trigger: "prefix", "starts with", "autocomplete", or a dictionary
+queried many times. Build it once; every query rides the shared prefixes.
+
+<PracticeLadder
+  topic="Tries"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "build the structure once by hand",
+      problems: [
+        { name: "Implement Trie (Prefix Tree)", lc: "implement-trie-prefix-tree", difficulty: "Medium", trains: "insert / search / startsWith from scratch — children map + end-of-word flag." },
+        { name: "Longest Common Prefix", lc: "longest-common-prefix", difficulty: "Easy", trains: "Solvable without a trie — then see why a trie makes it trivial." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "tries + traversal",
+      problems: [
+        { name: "Design Add and Search Words", lc: "design-add-and-search-words-data-structure", difficulty: "Medium", trains: "Wildcard search = DFS branching inside the trie — structure meets recursion." },
+        { name: "Replace Words", lc: "replace-words", difficulty: "Medium", trains: "Shortest-root lookup — walking the trie and stopping at the first end flag." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the famous combination",
+      problems: [
+        { name: "Word Search II", lc: "word-search-ii", difficulty: "Hard", trains: "Trie + grid backtracking — prune the board walk against the dictionary; the canonical trie interview." }
+      ]
+    }
+  ]}
+/>
