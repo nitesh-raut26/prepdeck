@@ -10,6 +10,7 @@ import { Callout } from "./callout";
 import { Figure } from "./figure";
 import { Quiz } from "./quiz";
 import { ThinkThrough } from "./think-through";
+import { PracticeLadder } from "./practice-ladder";
 import { Visualizer } from "@/components/viz/visualizer";
 import { CodeBlock, LanguageCoverageChecker } from "./code-block";
 
@@ -20,6 +21,7 @@ const components = {
   Figure,
   Quiz,
   ThinkThrough,
+  PracticeLadder,
   Visualizer,
   // Replace default <pre> with our language-aware CodeBlock
   pre: (props: ComponentProps<"pre">) => <CodeBlock {...props} />,
