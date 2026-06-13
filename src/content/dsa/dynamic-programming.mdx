@@ -1,7 +1,7 @@
 ---
 title: "Dynamic Programming"
 summary: "How to recognize DP, the five-step recipe (state, transition, base, order, answer), memoization vs tabulation, and the classic problem families."
-order: 18
+order: 19
 difficulty: "Core pattern"
 tags: ["DP", "memoization", "recursion"]
 ---
@@ -89,3 +89,41 @@ of O(n·amount)). I derive top-down, then convert to bottom-up when space or dep
 matters.
 
 </QA>
+
+## Practice — climb the ladder
+
+The DP on-ramp: define the state in ENGLISH first ("dp[i] = best answer
+using the first i items"), then the recurrence, then the base cases.
+
+<PracticeLadder
+  topic="Dynamic Programming — Foundations"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "one-dimensional, one decision per step",
+      problems: [
+        { name: "Climbing Stairs", lc: "climbing-stairs", difficulty: "Easy", trains: "Fibonacci in costume — your first state definition and recurrence." },
+        { name: "Min Cost Climbing Stairs", lc: "min-cost-climbing-stairs", difficulty: "Easy", trains: "Same shape plus costs — min() enters the recurrence." },
+        { name: "House Robber", lc: "house-robber", difficulty: "Medium", trains: "Take-or-skip — THE template for non-adjacent choice problems." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "the four state shapes you must recognize",
+      problems: [
+        { name: "Maximum Subarray", lc: "maximum-subarray", difficulty: "Medium", trains: "Kadane — dp[i] = best ENDING here; extend or restart." },
+        { name: "Coin Change", lc: "coin-change", difficulty: "Medium", trains: "Unbounded choices to reach an amount — min-cost reachability." },
+        { name: "Longest Increasing Subsequence", lc: "longest-increasing-subsequence", difficulty: "Medium", trains: "dp[i] anchored at index i, scanning back — O(n²) first, patience-sort later." },
+        { name: "Unique Paths", lc: "unique-paths", difficulty: "Medium", trains: "Grid DP — cell = sum of the two cells that can reach it." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "two sequences = 2D table",
+      problems: [
+        { name: "Longest Common Subsequence", lc: "longest-common-subsequence", difficulty: "Medium", trains: "The 2D template — match ⇒ diagonal+1, else max(left, up)." },
+        { name: "Edit Distance", lc: "edit-distance", difficulty: "Medium", trains: "Same table, three operations — the canonical string-transform DP." }
+      ]
+    }
+  ]}
+/>

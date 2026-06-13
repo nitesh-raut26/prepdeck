@@ -1,7 +1,7 @@
 ---
 title: "DP Patterns in Depth"
 summary: "The six families that cover ~90% of DP interviews — knapsack, LIS, LCS, grid, interval and bitmask — each with its state, recurrence and tell."
-order: 19
+order: 20
 difficulty: "Core pattern"
 tags: ["dynamic-programming", "knapsack", "lis", "lcs", "patterns"]
 ---
@@ -296,3 +296,41 @@ means "irrelevant."
 
 Next: [String Algorithms](/dsa/string-algorithms) — pattern matching
 beyond what the naive scan can do.
+
+## Practice — climb the ladder
+
+Foundations done — these are the named patterns interviews draw from:
+knapsack, partition, decision-with-cooldown, and interval DP.
+
+<PracticeLadder
+  topic="DP Patterns"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "twists on foundations",
+      problems: [
+        { name: "House Robber II", lc: "house-robber-ii", difficulty: "Medium", trains: "Circular constraint — solve the line twice (with/without house 0)." },
+        { name: "Decode Ways", lc: "decode-ways", difficulty: "Medium", trains: "Counting paths through a string — climbing stairs with validity rules." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "knapsack family + sequence cuts",
+      problems: [
+        { name: "Partition Equal Subset Sum", lc: "partition-equal-subset-sum", difficulty: "Medium", trains: "0/1 knapsack as reachability — can a subset hit sum/2?" },
+        { name: "Target Sum", lc: "target-sum", difficulty: "Medium", trains: "Counting knapsack — plus/minus assignment becomes subset-sum counting." },
+        { name: "Word Break", lc: "word-break", difficulty: "Medium", trains: "dp[i] = is the prefix segmentable — cut points scanned with a dictionary." },
+        { name: "Best Time to Buy/Sell Stock with Cooldown", lc: "best-time-to-buy-and-sell-stock-with-cooldown", difficulty: "Medium", trains: "State-machine DP — hold / sold / rest as explicit states." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the hard-tier names",
+      problems: [
+        { name: "Longest Valid Parentheses", lc: "longest-valid-parentheses", difficulty: "Hard", trains: "DP on a structural property — or the stack solution; know both stories." },
+        { name: "Burst Balloons", lc: "burst-balloons", difficulty: "Hard", trains: "Interval DP — think about the LAST balloon, not the first; the famous inversion." },
+        { name: "Regular Expression Matching", lc: "regular-expression-matching", difficulty: "Hard", trains: "2D matching with star cases — the final boss of table DP." }
+      ]
+    }
+  ]}
+/>

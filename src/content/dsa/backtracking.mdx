@@ -1,7 +1,7 @@
 ---
 title: "Backtracking"
 summary: "Try a choice, check it's still legal, go deeper — and when you hit a dead end, undo and try the next option. The pattern behind subsets, permutations and every constraint puzzle."
-order: 16
+order: 17
 difficulty: "Core pattern"
 tags: ["backtracking", "recursion", "combinatorics"]
 ---
@@ -193,3 +193,41 @@ search into one that finishes instantly on the given constraints.
     explain: "Placing an attacked queen and descending wastes work on every arrangement below that point — exponentially many. Pruning at the junction is the difference between 'finishes instantly' and 'finishes never'."
   }
 ]} />
+
+## Practice — climb the ladder
+
+Every backtracking solution is the same skeleton: choose → explore →
+un-choose. The only things that change are the choice list and the pruning.
+
+<PracticeLadder
+  topic="Backtracking"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "enumerate without pruning",
+      problems: [
+        { name: "Subsets", lc: "subsets", difficulty: "Medium", trains: "Include/exclude branching — the decision tree in its purest form." },
+        { name: "Letter Combinations of a Phone Number", lc: "letter-combinations-of-a-phone-number", difficulty: "Medium", trains: "Cartesian-product recursion — one digit per level, combine on the way down." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "dedup, reuse, and board walks",
+      problems: [
+        { name: "Permutations", lc: "permutations", difficulty: "Medium", trains: "Used-set bookkeeping — order matters now; un-choose restores state EXACTLY." },
+        { name: "Combination Sum", lc: "combination-sum", difficulty: "Medium", trains: "Reuse allowed + start-index discipline to avoid duplicate combinations." },
+        { name: "Generate Parentheses", lc: "generate-parentheses", difficulty: "Medium", trains: "Pruning by invariant — never place a close past its open count." },
+        { name: "Word Search", lc: "word-search", difficulty: "Medium", trains: "Grid backtracking — mark the cell, explore 4 ways, UNMARK; the un-choose drill." },
+        { name: "Palindrome Partitioning", lc: "palindrome-partitioning", difficulty: "Medium", trains: "Partition-point recursion — cut positions as choices, validity as pruning." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "constraint propagation at full power",
+      problems: [
+        { name: "N-Queens", lc: "n-queens", difficulty: "Hard", trains: "Column/diagonal sets as O(1) constraint checks — pruning as the main event." },
+        { name: "Sudoku Solver", lc: "sudoku-solver", difficulty: "Hard", trains: "The full search-with-constraints experience — choose the cell, try 9, backtrack." }
+      ]
+    }
+  ]}
+/>
