@@ -195,6 +195,122 @@ export type MatchStep = {
   vars?: [string, string | number][];
 };
 
+/* ── LRU cache (LLD) ─────────────────────────────────────────────────── */
+
+export type LruEntry = { key: number; val: number; tone?: Tone };
+
+export type LruStep = {
+  capacity: number;
+  /** Recency order: most-recently-used (left) → least-recently-used (right). */
+  order: LruEntry[];
+  /** Keys currently present in the hash map (shown sorted, to read as an index). */
+  mapKeys: number[];
+  /** Key the map lookup is touching this step (highlights the chip). */
+  mapActive?: number | null;
+  /** Short label for the operation, e.g. "put(3, 30)". */
+  op?: string;
+  /** Operation outcome chip, e.g. "→ 30", "miss → -1", "evict 2". */
+  result?: string;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── State machines (LLD) ────────────────────────────────────────────── */
+
+export type SmState = {
+  id: string;
+  /** Short label shown in the node (keep ≤ ~7 chars). */
+  label: string;
+  x: number;
+  y: number;
+};
+
+export type SmTransition = { from: string; to: string; event: string };
+
+export type StateMachine = {
+  title: string;
+  initial: string;
+  states: SmState[];
+  transitions: SmTransition[];
+};
+
+export type SmStep = {
+  /** Active state id this frame. */
+  current: string;
+  /** Transition just taken (highlights that edge), or null. */
+  active?: { from: string; to: string; event: string } | null;
+  /** The event being processed this frame. */
+  event?: string | null;
+  /** Was the event handled by a transition from `current`? */
+  accepted?: boolean;
+  /** Events processed so far (most recent last). */
+  log: string[];
+  /** Events still queued. */
+  upcoming: string[];
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Observer / pub-sub fan-out (LLD) ────────────────────────────────── */
+
+export type ObserverNode = {
+  id: string;
+  /** Currently subscribed to the subject? */
+  subscribed: boolean;
+  tone?: Tone;
+};
+
+export type ObserverStep = {
+  /** Last value the subject published (null before the first publish). */
+  subjectValue: string | number | null;
+  /** Fixed pool of observers, in stable display order. */
+  observers: ObserverNode[];
+  /** Observer id currently receiving a notification (highlights its wire). */
+  delivering?: string | null;
+  /** Whether the subject is mid-publish (lights up the subject). */
+  publishing?: boolean;
+  op?: string;
+  /** Observers notified during the current publish. */
+  log: string[];
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Parking lot allocation (LLD) ────────────────────────────────────── */
+
+export type VehicleSize = "M" | "C" | "L"; // motorcycle, car, large
+
+export type ParkingSpotView = {
+  id: number;
+  size: VehicleSize;
+  /** Label of the parked vehicle, or null when free. */
+  occupant: string | null;
+  tone?: Tone;
+};
+
+export type ParkingStep = {
+  spots: ParkingSpotView[];
+  /** Spot index the scan is currently examining. */
+  cursor?: number | null;
+  op?: string;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Splitwise debt simplification (LLD) ─────────────────────────────── */
+
+export type DebtPerson = { id: string; balance: number; tone?: Tone };
+
+export type SplitStep = {
+  people: DebtPerson[];
+  /** Settlement transfers decided so far (debtor → creditor). */
+  settlements: { from: string; to: string; amount: number }[];
+  /** Original raw-debt count, for the "X → Y transactions" payoff. */
+  rawCount: number;
+  note: string;
+  vars?: [string, string | number][];
+};
+
 /* ── Metadata shown in the player header ─────────────────────────────── */
 
 export type Complexity = { time: string; space: string };
