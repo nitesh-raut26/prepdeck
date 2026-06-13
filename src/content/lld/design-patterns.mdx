@@ -70,6 +70,48 @@ class Subject<T> {
 // priceFeed.subscribe(updateChart); priceFeed.subscribe(checkAlerts);
 ```
 
+Watch the fan-out. The subject keeps a subscriber list and, on every `publish`,
+calls the same `update` on each one — it never knows their concrete types or how
+many there are. Subscribe, publish, then `unsubscribe` one and publish again.
+
+<Visualizer algo="observer" />
+
+## State — behavior that changes with the object's mode
+
+When an object behaves differently depending on a `status` field, that logic
+tends to sprawl into the same `switch (status)` copied across every method. The
+**State** pattern gives each mode its own object that knows which events it
+accepts and which state comes next — so an illegal move (pressing *pause* while
+already **Stopped**) is simply *refused*, not a forgotten `if`.
+
+Step through a media player below. Watch how each event is handled by the
+**current** state, and add an illegal event to the list — it gets ignored
+because that state has no transition for it.
+
+<Visualizer algo="state-machine" problem="media-player" />
+
+```ts
+interface PlayerState { play(p: Player): void; stop(p: Player): void; }
+
+class Stopped implements PlayerState {
+  play(p: Player) { p.state = new Playing(); }   // valid move
+  stop(_: Player) {}                             // already stopped — no-op
+}
+class Playing implements PlayerState {
+  play(_: Player) {}                             // already playing
+  stop(p: Player) { p.state = new Stopped(); }
+}
+class Player {
+  state: PlayerState = new Stopped();
+  play() { this.state.play(this); }              // no switch — just delegate
+  stop() { this.state.stop(this); }
+}
+```
+
+The `Player` has zero `if (status === …)` branches: each state encapsulates its
+own transitions. Adding a `Paused` state is one new class, not an edit to five
+methods — that's Open/Closed in action.
+
 <Callout type="warn" title="Don't pattern-match for its own sake">
 Naming a pattern is worthless if it doesn't fit. The signal is recognizing the
 *forces* — "the algorithm varies → Strategy", "many things react to a change →
@@ -106,6 +148,42 @@ need one instance, prefer creating it once and injecting it (DI container) so th
 dependency is explicit and swappable.
 
 </QA>
+
+## Practice — model state & transitions
+
+These are *design* problems, not algorithm puzzles. Each one is really "name the
+states and the events between them" — exactly the State pattern. Write the
+transition table first, then the code falls out.
+
+<PracticeLadder
+  topic="Modeling state explicitly"
+  tiers={[
+    {
+      label: "Warm-up — state as plain fields",
+      note: "One object, a little internal state.",
+      problems: [
+        { name: "Design Parking System", lc: "design-parking-system", difficulty: "Easy", trains: "Per-type counters — the seed of a state object." },
+        { name: "Design HashSet", lc: "design-hashset", difficulty: "Easy", trains: "Encapsulate state behind a small, clear interface." }
+      ]
+    },
+    {
+      label: "Core — explicit transitions",
+      note: "Draw the state diagram before you type.",
+      problems: [
+        { name: "Design Browser History", lc: "design-browser-history", difficulty: "Medium", trains: "visit / back / forward — a state machine with a history pointer." },
+        { name: "Design Circular Deque", lc: "design-circular-deque", difficulty: "Medium", trains: "Fixed-capacity state with full/empty guards on every transition." }
+      ]
+    },
+    {
+      label: "Stretch — lifecycle & expiry",
+      note: "State that changes with time or paired events.",
+      problems: [
+        { name: "Design Authentication Manager", lc: "design-authentication-manager", difficulty: "Medium", trains: "Token lifecycle with TTL — state plus expiry." },
+        { name: "Design Underground System", lc: "design-underground-system", difficulty: "Medium", trains: "Check-in / check-out: paired state, aggregate on the closing transition." }
+      ]
+    }
+  ]}
+/>
 
 <QA q="Decorator vs inheritance for adding behavior?">
 

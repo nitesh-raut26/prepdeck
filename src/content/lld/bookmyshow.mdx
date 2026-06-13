@@ -83,6 +83,13 @@ free a seat** — abandonment self-heals. Expiry via lazy check
 (`isLocked() = state == LOCKED && now < expiresAt`) plus a sweeper; lazy
 checking means correctness never depends on the sweeper being on time.
 
+Drive a single seat through that machine. Run the happy path `lock → pay`, then
+try the abandonment path (`lock`, then `expire` — the TTL returning the seat for
+free), and the illegal `pay` before `lock` — which is refused, because you can't
+pay for a seat you never held:
+
+<Visualizer algo="state-machine" problem="seat-booking" />
+
 Here's the whole two-phase flow with the race resolving correctly — two
 users, one pair of seats, 80 ms apart:
 
@@ -251,3 +258,33 @@ the full story is the [scalability](/hld/scalability) and
 [caching](/hld/caching) chapters.
 
 </QA>
+
+## Practice — level up
+
+BookMyShow is **reserve under contention with a TTL**. Drill the allocation and
+the expiry separately, then together:
+
+<PracticeLadder
+  topic="Locking, TTL & reservations"
+  tiers={[
+    {
+      label: "Warm-up — reserve a specific slot",
+      problems: [
+        { name: "Seat Reservation Manager", lc: "seat-reservation-manager", difficulty: "Medium", trains: "Reserve the next free seat, release on cancel — the allocation core." }
+      ]
+    },
+    {
+      label: "Core — expiry & time-versioned state",
+      problems: [
+        { name: "Design Authentication Manager", lc: "design-authentication-manager", difficulty: "Medium", trains: "Tokens with a TTL — exactly the seat-lock that self-heals on timeout." },
+        { name: "Time Based Key-Value Store", lc: "time-based-key-value-store", difficulty: "Medium", trains: "State versioned by time — reason about lock expiry windows." }
+      ]
+    },
+    {
+      label: "Stretch — paired entry/exit",
+      problems: [
+        { name: "Design Underground System", lc: "design-underground-system", difficulty: "Medium", trains: "Check-in/check-out pairs and charge on completion." }
+      ]
+    }
+  ]}
+/>

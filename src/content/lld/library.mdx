@@ -206,6 +206,36 @@ specific barcode while identical copies circulate freely.
 
 </QA>
 
+## Practice — level up
+
+A library is **inventory + lending**: allocate a copy, return it, track who has
+what for how long. These drills rehearse those moves.
+
+<PracticeLadder
+  topic="Inventory & lending"
+  tiers={[
+    {
+      label: "Warm-up — count what's available",
+      problems: [
+        { name: "Design Parking System", lc: "design-parking-system", difficulty: "Easy", trains: "Per-type counters — available copies of each title." }
+      ]
+    },
+    {
+      label: "Core — allocate & return specific copies",
+      problems: [
+        { name: "Seat Reservation Manager", lc: "seat-reservation-manager", difficulty: "Medium", trains: "Reserve / release a specific numbered slot — a book copy." },
+        { name: "Design Underground System", lc: "design-underground-system", difficulty: "Medium", trains: "Borrow → return pairs, with duration (the loan period)." }
+      ]
+    },
+    {
+      label: "Stretch — state as of a time",
+      problems: [
+        { name: "Time Based Key-Value Store", lc: "time-based-key-value-store", difficulty: "Medium", trains: "Look up a record as of a timestamp — due dates and loan history." }
+      ]
+    }
+  ]}
+/>
+
 <QA q="Follow-up: extend to multiple branches. What changes — and what doesn't?">
 
 The catalog doesn't change: Book stays global (1984 is 1984
