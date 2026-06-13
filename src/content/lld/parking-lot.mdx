@@ -70,6 +70,13 @@ enum plus `spot.canFit(vehicle)` keeps it small and handles "a car can use a
 large spot if no compact is free" without new types.
 </Callout>
 
+Here's that spot-assignment strategy running. A motorcycle fits anywhere; a car
+needs a compact-or-larger spot; a large vehicle needs a large spot. Watch the
+scan reject spots that are taken or too small, then take the first that fits —
+swap the operations to test "two cars, one compact left".
+
+<Visualizer algo="parking-lot" />
+
 ## Think it through like the interview
 
 Before reading further, try to run the method yourself — this widget walks the
@@ -136,3 +143,36 @@ invariant "a spot holds at most one vehicle" must be enforced at the point of
 mutation, not by a check-then-act.
 
 </QA>
+
+## Practice — level up
+
+A parking lot is an **allocation** problem: hand out a limited resource, take it
+back, and enforce "one holder at a time". These drills are the same shape.
+
+<PracticeLadder
+  topic="Resource allocation"
+  tiers={[
+    {
+      label: "Warm-up — count what's free",
+      note: "Allocation with nothing but counters.",
+      problems: [
+        { name: "Design Parking System", lc: "design-parking-system", difficulty: "Easy", trains: "Per-size counters — the simplest spot allocation." }
+      ]
+    },
+    {
+      label: "Core — allocate & release specific slots",
+      note: "Now identity matters: which spot, given back.",
+      problems: [
+        { name: "Seat Reservation Manager", lc: "seat-reservation-manager", difficulty: "Medium", trains: "Reserve / unreserve numbered slots — parking spots by another name." },
+        { name: "Design Circular Queue", lc: "design-circular-queue", difficulty: "Medium", trains: "Fixed capacity with free/occupied bookkeeping and wrap-around." }
+      ]
+    },
+    {
+      label: "Stretch — paired entry/exit + fees",
+      note: "Ticket on the way in, charge on the way out.",
+      problems: [
+        { name: "Design Underground System", lc: "design-underground-system", difficulty: "Medium", trains: "Check-in/check-out pairs and aggregate on exit — the ticket-and-fee half of the lot." }
+      ]
+    }
+  ]}
+/>

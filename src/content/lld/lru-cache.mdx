@@ -24,6 +24,15 @@ You need two things in O(1): **lookup by key** and **"move this to most-recent"
   MAP[HashMap<br/>key → node] --> N2
   HEAD[head/MRU] --> N1[node A] --> N2[node B] --> N3[node C] --> TAIL[tail/LRU]`} />
 
+## See it run
+
+Step through the canonical trace below. Watch how `get` **promotes** a key to the
+front, and how a `put` into a full cache **evicts the tail** (the least-recently-used
+key). The map and the list highlight together — that pairing is the whole trick.
+Edit the capacity or the operations to test your own sequence.
+
+<Visualizer algo="lru-cache" />
+
 ## Think it through like the interview
 
 Don't memorize the structure — derive it. The derivation is reusable; the
@@ -133,6 +142,42 @@ shows you write clean pointer code.
 - **TTL:** store an expiry per node and treat expired as a miss (lazy) + a sweeper.
 - **LFU instead of LRU:** evict least-*frequently*-used — needs frequency
   buckets; more complex, better for skewed access.
+
+## Practice — level up
+
+The whole skill here is *pairing a hash map with a second structure to make every
+operation O(1)*. Climb this ladder and that move becomes automatic — every rung is
+the same idea under a new disguise.
+
+<PracticeLadder
+  topic="O(1) cache design"
+  tiers={[
+    {
+      label: "Warm-up — build the two halves",
+      note: "Implement each structure alone before you combine them.",
+      problems: [
+        { name: "Design HashMap", lc: "design-hashmap", difficulty: "Easy", trains: "Buckets + chaining — the lookup half of the cache." },
+        { name: "Design Linked List", lc: "design-linked-list", difficulty: "Medium", trains: "Pointer splicing with a sentinel — the recency half." }
+      ]
+    },
+    {
+      label: "Core — the cache itself",
+      note: "Map → node, move-to-front, evict the tail.",
+      problems: [
+        { name: "LRU Cache", lc: "lru-cache", difficulty: "Medium", trains: "The canonical map + doubly linked list in O(1)." },
+        { name: "Insert Delete GetRandom O(1)", lc: "insert-delete-getrandom-o1", difficulty: "Medium", trains: "Same trick: map (key → index) paired with an array." }
+      ]
+    },
+    {
+      label: "Stretch — harder eviction policies",
+      note: "Say out loud which structure each new requirement forces.",
+      problems: [
+        { name: "LFU Cache", lc: "lfu-cache", difficulty: "Hard", trains: "Add frequency buckets — a map of maps, evict the least-frequent." },
+        { name: "All O`one Data Structure", lc: "all-oone-data-structure", difficulty: "Hard", trains: "Buckets of equal-count keys in a linked list — increment/decrement in O(1)." }
+      ]
+    }
+  ]}
+/>
 
 <QA q="Why a doubly (not singly) linked list for LRU?">
 

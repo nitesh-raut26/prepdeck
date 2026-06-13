@@ -137,6 +137,13 @@ transactions; the true *minimum* transaction count is NP-hard
 n−1 is fine" line is exactly the [greedy-judgment](/dsa/greedy) graders
 want.
 
+Watch it collapse a five-IOU web into the minimum transfers. First the raw debts
+become net balances; then each step pays the biggest debtor's debt to the biggest
+creditor, zeroing out at least one person per transfer. Edit the debts to try
+your own group.
+
+<Visualizer algo="split-debts" />
+
 ## Think it through like the interview
 
 <ThinkThrough
@@ -230,3 +237,33 @@ both the algorithm and the engineering judgment about when optimal isn't
 worth chasing.
 
 </QA>
+
+## Practice — level up
+
+Splitwise's core is a **graph of balances** plus a **greedy** settlement. Train
+both halves on these:
+
+<PracticeLadder
+  topic="Balances & settlement"
+  tiers={[
+    {
+      label: "Warm-up — net flow on a graph",
+      problems: [
+        { name: "Find the Town Judge", lc: "find-the-town-judge", difficulty: "Easy", trains: "Net in/out degree on a tiny directed graph — the balance idea." }
+      ]
+    },
+    {
+      label: "Core — propagate values across relationships",
+      problems: [
+        { name: "Evaluate Division", lc: "evaluate-division", difficulty: "Medium", trains: "Walk a graph of ratios — the same shape as balances flowing across IOUs." }
+      ]
+    },
+    {
+      label: "Stretch — the literal problem",
+      note: "This IS Splitwise's simplify step.",
+      problems: [
+        { name: "Optimal Account Balancing", lc: "optimal-account-balancing", difficulty: "Hard", trains: "Minimum transfers to settle debts (LeetCode Premium) — greedy ships, optimal is NP-hard." }
+      ]
+    }
+  ]}
+/>
