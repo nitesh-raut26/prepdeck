@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { Brain, Menu, Search } from "lucide-react";
+import { Brain, Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { useProgress } from "@/components/progress-provider";
 
 export function Topbar({
   onMenu,
   onSearch,
   languageSwitcher,
+  collapsed,
+  onToggleCollapsed,
 }: {
   onMenu: () => void;
   onSearch: () => void;
   languageSwitcher?: React.ReactNode;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface-1/80 px-4 backdrop-blur-md lg:px-6">
@@ -23,6 +27,22 @@ export function Topbar({
       >
         <Menu className="size-5" />
       </button>
+
+      {onToggleCollapsed && (
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={`${collapsed ? "Expand" : "Collapse"} sidebar (⌘B)`}
+          className="hidden rounded-lg p-2 text-subtle transition-colors hover:bg-surface-2 hover:text-ink lg:block"
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="size-[18px]" />
+          ) : (
+            <PanelLeftClose className="size-[18px]" />
+          )}
+        </button>
+      )}
 
       <button
         type="button"
