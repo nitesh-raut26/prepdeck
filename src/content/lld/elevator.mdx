@@ -78,7 +78,12 @@ exist in the diagram, which is the whole point of the State pattern:
   STOPPED --> MOVING_DOWN : down-stops remain
   STOPPED --> IDLE : no stops left`} />
 
+Now drive that machine yourself. Step through a call → arrive → doors → idle
+cycle, then add an illegal event (an `arrive` while still **Idle**) and watch it
+get refused — the invariant "can't arrive when you never moved" is enforced by
+the *absence* of a transition, not a scattered `if`.
 
+<Visualizer algo="state-machine" problem="elevator" />
 
 ## The scheduling insight: SCAN, not FIFO
 

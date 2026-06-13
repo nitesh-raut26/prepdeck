@@ -81,6 +81,13 @@ template per channel, and dispatches.
   160 chars, push gets title + body. Content shaping is a *template*
   concern, never an if-chain in the channel.
 
+That **Observer** seam is the decoupling that makes the whole thing extensible —
+the orders service publishes one event and never learns who listens. Step through
+a publish fanning out to subscribers, then `unsubscribe` one (a user opts out) and
+publish again:
+
+<Visualizer algo="observer" />
+
 ## The reliability core (where seniors are graded)
 
 The naive version sends synchronously in the request path. The real

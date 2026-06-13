@@ -103,6 +103,12 @@ a *trigger and an owner*:
 Pin the diagram next to the chat UI in your head: those states *are* the
 clock, the single tick, the double tick, and the blue double tick.
 
+Walk a message through `ack → deliver → open` and watch the ticks advance. Then
+try to `open` (mark read) before it's even delivered — the machine refuses, the
+same way the UI can't show a blue tick for a message the recipient never received:
+
+<Visualizer algo="state-machine" problem="chat-message" />
+
 - **PENDING** — exists only locally: rendered in the UI instantly
   ([optimistic UI](/basics/frontend-and-backend)), sitting in the
   **outbox** (below). One grey clock.

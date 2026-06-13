@@ -90,6 +90,13 @@ Modeling calls to narrate:
   ARRIVING --> CANCELLED : either cancels (fee likely)
   COMPLETED --> [*]`} />
 
+Drive a trimmed version of that machine below — request → match → pickup →
+dropoff. Then try a `cancel` from different states (it's legal from several, but
+*means* something different in each), or an illegal `dropoff` before pickup, which
+the machine simply refuses:
+
+<Visualizer algo="state-machine" problem="uber-trip" />
+
 What makes this machine *interesting* — and the follow-up territory:
 
 - **Transitions have actors and guards:** `start()` is driver-only

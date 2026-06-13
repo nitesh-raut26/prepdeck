@@ -32,6 +32,13 @@ different depending on where you are:
   SelectingAmount --> Dispensing : amount valid
   Dispensing --> Idle : cash taken, card ejected`} />
 
+Run a session below: card → PIN → withdraw → done. Then try the attack the State
+pattern exists to stop — put `withdraw` first, while still **Idle**. There's no
+transition for it, so it's refused; "dispense without auth" isn't *checked for*,
+it has no code path at all.
+
+<Visualizer algo="state-machine" problem="atm" />
+
 The State pattern makes each state a class owning *its* behavior;
 illegal actions become unrepresentable instead of un-checked:
 
