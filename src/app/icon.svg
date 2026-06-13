@@ -1,0 +1,18 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PrepDeck">
+  <defs>
+    <linearGradient id="pd-bg" x1="16" y1="0" x2="16" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c2680c" />
+      <stop offset="1" stop-color="#8a3a08" />
+    </linearGradient>
+  </defs>
+  <!-- warm amber tile matching PrepDeck's sepia theme -->
+  <rect width="32" height="32" rx="7" fill="url(#pd-bg)" />
+  <!-- back card of the deck -->
+  <rect x="7.6" y="9.4" width="12.8" height="15.4" rx="2.4" fill="#e7d9b6" transform="rotate(-10 14 17)" />
+  <!-- front flashcard -->
+  <rect x="11" y="7.6" width="13" height="16" rx="2.4" fill="#faf5e9" />
+  <!-- flashcard heading + lines -->
+  <rect x="13.4" y="11.4" width="8.2" height="2" rx="1" fill="#b45309" />
+  <rect x="13.4" y="15.2" width="8.2" height="1.5" rx="0.75" fill="#cdbf9c" />
+  <rect x="13.4" y="18.1" width="5.4" height="1.5" rx="0.75" fill="#cdbf9c" />
+</svg>
