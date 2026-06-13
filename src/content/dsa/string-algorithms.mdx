@@ -1,7 +1,7 @@
 ---
 title: "String Algorithms"
 summary: "Finding patterns in text fast: rolling hashes and Rabin-Karp, KMP's failure function demystified, and when to just call the library."
-order: 20
+order: 21
 difficulty: "Advanced pattern"
 tags: ["strings", "kmp", "rabin-karp", "hashing", "pattern-matching"]
 ---
@@ -279,3 +279,39 @@ knowing.
 
 That completes the Level 3 pattern arc. On to applying everything:
 the [problem bank](/dsa/problem-bank) and [Blind 75](/dsa/blind-75).
+
+## Practice — climb the ladder
+
+String problems split three ways: scanning (windows/counters), matching
+(KMP/rolling hash), and structure (palindromes). Know which one you are in.
+
+<PracticeLadder
+  topic="String Algorithms"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "scanning and normalizing",
+      problems: [
+        { name: "Find the Index of the First Occurrence", lc: "find-the-index-of-the-first-occurrence-in-a-string", difficulty: "Easy", trains: "Substring search naively first — the baseline KMP will later destroy." },
+        { name: "Repeated Substring Pattern", lc: "repeated-substring-pattern", difficulty: "Easy", trains: "Periodicity reasoning — the (s+s) trick and why it works." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "palindromes + parsing",
+      problems: [
+        { name: "Longest Palindromic Substring", lc: "longest-palindromic-substring", difficulty: "Medium", trains: "Expand-around-center — 2n−1 centers, odd and even handled cleanly." },
+        { name: "String to Integer (atoi)", lc: "string-to-integer-atoi", difficulty: "Medium", trains: "State-machine parsing — whitespace, sign, digits, overflow clamps; edge-case discipline." },
+        { name: "Zigzag Conversion", lc: "zigzag-conversion", difficulty: "Medium", trains: "Index simulation — direction flips as row bookkeeping." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "where KMP and 2D DP earn their keep",
+      problems: [
+        { name: "Shortest Palindrome", lc: "shortest-palindrome", difficulty: "Hard", trains: "KMP failure function applied to s + # + reverse(s) — prefix machinery for real." },
+        { name: "Distinct Subsequences", lc: "distinct-subsequences", difficulty: "Hard", trains: "Counting matches in a 2D table — LCS thinking, counting variant." }
+      ]
+    }
+  ]}
+/>

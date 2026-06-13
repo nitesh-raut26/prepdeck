@@ -1,7 +1,7 @@
 ---
 title: "Heaps & Intervals"
 summary: "Two patterns that show up constantly: a heap for top-K / streaming / merging, and sort-then-sweep for interval problems."
-order: 7
+order: 8
 difficulty: "Core pattern"
 tags: ["heap", "priority-queue", "intervals", "sorting"]
 ---
@@ -100,3 +100,41 @@ max-non-overlapping all reduce to O(n log n) sort + O(n) scan. Choose the sort
 key by the question: by end for greedy max-non-overlapping, by start for merging.
 
 </QA>
+
+## Practice — climb the ladder
+
+Heap trigger words: "k largest", "k closest", "median of a stream".
+Interval trigger: sort by start (merge) or by end (scheduling), then sweep.
+
+<PracticeLadder
+  topic="Heaps & Intervals"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "heap API fluency",
+      problems: [
+        { name: "Kth Largest Element in a Stream", lc: "kth-largest-element-in-a-stream", difficulty: "Easy", trains: "A min-heap of size k — the counterintuitive trick behind every top-k problem." },
+        { name: "Last Stone Weight", lc: "last-stone-weight", difficulty: "Easy", trains: "Repeated extract-max — pure heap mechanics, nothing else in the way." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "top-k + the two interval sorts",
+      problems: [
+        { name: "Kth Largest Element in an Array", lc: "kth-largest-element-in-an-array", difficulty: "Medium", trains: "Heap of size k vs quickselect — know both and say the trade-off." },
+        { name: "K Closest Points to Origin", lc: "k-closest-points-to-origin", difficulty: "Medium", trains: "Top-k with a comparator — same skeleton, custom distance." },
+        { name: "Merge Intervals", lc: "merge-intervals", difficulty: "Medium", trains: "Sort by START, extend the current block — the merge half of interval thinking." },
+        { name: "Non-overlapping Intervals", lc: "non-overlapping-intervals", difficulty: "Medium", trains: "Sort by END, keep what finishes earliest — the greedy scheduling half." },
+        { name: "Task Scheduler", lc: "task-scheduler", difficulty: "Medium", trains: "Greedy by frequency with a heap — capacity math meets extract-max." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "two heaps, opposing directions",
+      problems: [
+        { name: "Find Median from Data Stream", lc: "find-median-from-data-stream", difficulty: "Hard", trains: "Max-heap + min-heap balanced around the middle — the two-heap pattern." },
+        { name: "Minimum Number of Arrows to Burst Balloons", lc: "minimum-number-of-arrows-to-burst-balloons", difficulty: "Medium", trains: "Sort-by-end greedy again — proof you recognize the pattern in costume." }
+      ]
+    }
+  ]}
+/>

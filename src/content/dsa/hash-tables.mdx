@@ -1,7 +1,7 @@
 ---
 title: "Hash Tables"
 summary: "How dicts actually work — hash functions, buckets, collisions, resizing — and why O(1) lookup powers half of all interview solutions."
-order: 5
+order: 6
 difficulty: "Foundation"
 tags: ["hash-table", "dictionary", "hashing", "fundamentals"]
 ---
@@ -213,3 +213,41 @@ a pruning insight, and it's a top-20 interview question
 
 Next: [Trees & BSTs](/dsa/trees-and-bsts) — when data has hierarchy, and
 how sorted order becomes a shape.
+
+## Practice — climb the ladder
+
+The decoder line for this whole rung: "have I seen this before?" /
+"group these by key" / "count in O(1)" — all of it is a hash map.
+
+<PracticeLadder
+  topic="Hash Tables"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "seen-sets and counters",
+      problems: [
+        { name: "Contains Duplicate", lc: "contains-duplicate", difficulty: "Easy", trains: "The seen-set in its purest form — set membership beats sorting here." },
+        { name: "Valid Anagram", lc: "valid-anagram", difficulty: "Easy", trains: "Frequency counting — the counter dict you will write a thousand times." },
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "Now fix your warm-up brute force: value → index map, one pass, check-then-store." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "maps as grouping and bookkeeping engines",
+      problems: [
+        { name: "Group Anagrams", lc: "group-anagrams", difficulty: "Medium", trains: "Canonical-form keys — choosing WHAT to hash is the whole problem." },
+        { name: "Top K Frequent Elements", lc: "top-k-frequent-elements", difficulty: "Medium", trains: "Counter + bucket sort (or heap) — frequency problems end here." },
+        { name: "Longest Consecutive Sequence", lc: "longest-consecutive-sequence", difficulty: "Medium", trains: "Set lookups replacing sorting — only start counting at sequence starts." },
+        { name: "Subarray Sum Equals K", lc: "subarray-sum-equals-k", difficulty: "Medium", trains: "Prefix sums in a map — the array/hash crossover interviewers love." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "design with O(1) contracts",
+      problems: [
+        { name: "Insert Delete GetRandom O(1)", lc: "insert-delete-getrandom-o1", difficulty: "Medium", trains: "Map + array swap-delete — meeting THREE O(1) requirements at once." },
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "Map inside a sliding window — preview of the window rung." }
+      ]
+    }
+  ]}
+/>
