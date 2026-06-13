@@ -37,6 +37,17 @@ import {
   parseIntervals,
 } from "@/lib/viz/interval-algos";
 import { kmpSteps, naiveSearchSteps } from "@/lib/viz/match-algos";
+import { lruSteps, parseLruOps, type LruOp } from "@/lib/viz/lru-algos";
+import {
+  DEFAULT_EVENTS,
+  MACHINES,
+  parseEvents,
+  stateMachineSteps,
+  type MachineId,
+} from "@/lib/viz/state-machine-algos";
+import { observerSteps, parseObserverOps } from "@/lib/viz/observer-algos";
+import { parkingSteps, parseParkingOps } from "@/lib/viz/parking-algos";
+import { parseDebts, splitwiseSteps } from "@/lib/viz/split-algos";
 import {
   bfsSteps,
   DEMO_GRAPH,
@@ -60,6 +71,11 @@ import { TrieCanvas } from "./trie-canvas";
 import { UfCanvas } from "./uf-canvas";
 import { IntervalCanvas } from "./interval-canvas";
 import { MatchCanvas } from "./match-canvas";
+import { LruCanvas } from "./lru-canvas";
+import { StateMachineCanvas } from "./state-machine-canvas";
+import { ObserverCanvas } from "./observer-canvas";
+import { ParkingCanvas } from "./parking-canvas";
+import { SplitCanvas } from "./split-canvas";
 
 export type VisualizerAlgo =
   | "binary-search"
@@ -85,7 +101,12 @@ export type VisualizerAlgo =
   | "string-match"
   | "tree-traversal"
   | "prefix-sum"
-  | "fenwick";
+  | "fenwick"
+  | "lru-cache"
+  | "state-machine"
+  | "observer"
+  | "parking-lot"
+  | "split-debts";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -143,6 +164,18 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <PrefixSumViz />;
     case "fenwick":
       return <FenwickViz />;
+    case "lru-cache":
+      return <LruViz />;
+    case "state-machine": {
+      const id: MachineId = problem && problem in MACHINES ? (problem as MachineId) : "media-player";
+      return <StateMachineViz machine={id} />;
+    }
+    case "observer":
+      return <ObserverViz />;
+    case "parking-lot":
+      return <ParkingViz />;
+    case "split-debts":
+      return <SplitViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -920,6 +953,217 @@ function GraphViz({ kind }: { kind: "bfs" | "dfs" | "dijkstra" }) {
       }
     >
       <GraphCanvas graph={graph} step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── LRU cache (LLD) ──────────────────────────────────────────────────── */
+
+const LRU_DEFAULT =
+  "put(1, 10), put(2, 20), get(1), put(3, 30), get(2), put(4, 40), get(1), get(3), get(4)";
+
+function LruViz() {
+  const cap = useIntInput(2);
+  const [opsText, setOpsText] = useState(LRU_DEFAULT);
+  const [ops, setOps] = useState<LruOp[]>(
+    () => parseLruOps(LRU_DEFAULT).ops ?? [],
+  );
+  const [opsError, setOpsError] = useState<string | null>(null);
+
+  const commitOps = () => {
+    const { ops: parsed, error } = parseLruOps(opsText);
+    setOpsError(error);
+    if (parsed) setOps(parsed);
+  };
+
+  const steps = useMemo(() => lruSteps(cap.value, ops), [cap.value, ops]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="LRU cache — map + doubly linked list"
+      complexity={{ time: "O(1) get/put", space: "O(capacity)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField
+            label="capacity (1–5)"
+            value={cap.text}
+            onChange={cap.setText}
+            onCommit={cap.commit}
+          />
+          <VizField
+            label="operations"
+            wide
+            value={opsText}
+            onChange={setOpsText}
+            onCommit={commitOps}
+            error={opsError}
+          />
+        </>
+      }
+    >
+      <LruCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── State machine (LLD: State pattern, elevator, ATM) ────────────────── */
+
+function StateMachineViz({ machine }: { machine: MachineId }) {
+  const def = MACHINES[machine];
+  const [evText, setEvText] = useState(DEFAULT_EVENTS[machine]);
+  const [events, setEvents] = useState<string[]>(
+    () => parseEvents(DEFAULT_EVENTS[machine]).events ?? [],
+  );
+  const [evError, setEvError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { events: parsed, error } = parseEvents(evText);
+    setEvError(error);
+    if (parsed) setEvents(parsed);
+  };
+
+  const steps = useMemo(() => stateMachineSteps(def, events), [def, events]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title={def.title}
+      complexity={{ time: "O(1) per event", space: "O(states)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="events (try an illegal one)"
+          wide
+          value={evText}
+          onChange={setEvText}
+          onCommit={commit}
+          error={evError}
+        />
+      }
+    >
+      <StateMachineCanvas machine={def} step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Observer / pub-sub (LLD) ─────────────────────────────────────────── */
+
+const OBSERVER_DEFAULT =
+  "sub Chart, sub Alerts, pub 42, sub Logger, pub 99, unsub Chart, pub 7";
+
+function ObserverViz() {
+  const [opsText, setOpsText] = useState(OBSERVER_DEFAULT);
+  const [ops, setOps] = useState(
+    () => parseObserverOps(OBSERVER_DEFAULT).ops ?? [],
+  );
+  const [opsError, setOpsError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { ops: parsed, error } = parseObserverOps(opsText);
+    setOpsError(error);
+    if (parsed) setOps(parsed);
+  };
+
+  const steps = useMemo(() => observerSteps(ops), [ops]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Observer — publish / subscribe fan-out"
+      complexity={{ time: "O(subscribers) per publish", space: "O(subscribers)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="ops (sub / unsub / pub)"
+          wide
+          value={opsText}
+          onChange={setOpsText}
+          onCommit={commit}
+          error={opsError}
+        />
+      }
+    >
+      <ObserverCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Parking lot (LLD) ────────────────────────────────────────────────── */
+
+const PARKING_DEFAULT = "park C, park M, park L, park C, leave C1, park L";
+
+function ParkingViz() {
+  const [opsText, setOpsText] = useState(PARKING_DEFAULT);
+  const [ops, setOps] = useState(() => parseParkingOps(PARKING_DEFAULT).ops ?? []);
+  const [opsError, setOpsError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { ops: parsed, error } = parseParkingOps(opsText);
+    setOpsError(error);
+    if (parsed) setOps(parsed);
+  };
+
+  const steps = useMemo(() => parkingSteps(ops), [ops]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Parking lot — nearest-fit spot assignment"
+      complexity={{ time: "O(spots) per park", space: "O(spots)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="ops (park M/C/L · leave label)"
+          wide
+          value={opsText}
+          onChange={setOpsText}
+          onCommit={commit}
+          error={opsError}
+        />
+      }
+    >
+      <ParkingCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Splitwise debt simplification (LLD) ──────────────────────────────── */
+
+const SPLIT_DEFAULT = "A->B:10, B->C:20, C->D:30, D->A:15, A->C:5";
+
+function SplitViz() {
+  const [text, setText] = useState(SPLIT_DEFAULT);
+  const [debts, setDebts] = useState(() => parseDebts(SPLIT_DEFAULT).debts ?? []);
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { debts: parsed, error: err } = parseDebts(text);
+    setError(err);
+    if (parsed) setDebts(parsed);
+  };
+
+  const steps = useMemo(() => splitwiseSteps(debts), [debts]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Splitwise — minimize settlement transfers"
+      complexity={{ time: "greedy on net balances", space: "O(people)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="debts (A->B:10, …)"
+          wide
+          value={text}
+          onChange={setText}
+          onCommit={commit}
+          error={error}
+        />
+      }
+    >
+      <SplitCanvas step={stepper.step} />
     </VizPlayer>
   );
 }
