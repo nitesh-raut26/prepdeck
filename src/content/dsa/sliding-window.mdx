@@ -1,7 +1,7 @@
 ---
 title: "Sliding Window"
 summary: "Turn an O(n·k) recompute-from-scratch loop into O(n) by maintaining a moving range and updating it incrementally."
-order: 14
+order: 16
 difficulty: "Core pattern"
 tags: ["arrays", "strings", "two-pointers"]
 ---
@@ -88,3 +88,41 @@ satisfying a condition, it's variable: expand `right`, and shrink `left` while
 the condition is violated (longest) or satisfied (shortest).
 
 </QA>
+
+## Practice — climb the ladder
+
+The trigger: "longest/shortest/count of CONTIGUOUS subarray or substring
+satisfying X". Fixed size slides; variable size grows right, shrinks left.
+
+<PracticeLadder
+  topic="Sliding Window"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "fixed-size windows first",
+      problems: [
+        { name: "Maximum Average Subarray I", lc: "maximum-average-subarray-i", difficulty: "Easy", trains: "Fixed window — add the entering element, subtract the leaving one; no recompute." },
+        { name: "Best Time to Buy and Sell Stock", lc: "best-time-to-buy-and-sell-stock", difficulty: "Easy", trains: "Window in disguise — running minimum behind you IS the left edge." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "variable windows with a validity condition",
+      problems: [
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "THE variable window — grow right, shrink left until valid again; set tracks membership." },
+        { name: "Longest Repeating Character Replacement", lc: "longest-repeating-character-replacement", difficulty: "Medium", trains: "Validity = window size − max frequency ≤ k; subtler invariant, same skeleton." },
+        { name: "Permutation in String", lc: "permutation-in-string", difficulty: "Medium", trains: "Fixed window + frequency match — two counters kept in sync as it slides." },
+        { name: "Max Consecutive Ones III", lc: "max-consecutive-ones-iii", difficulty: "Medium", trains: "Budget-based validity (k zeros allowed) — spend entering, refund leaving." },
+        { name: "Fruit Into Baskets", lc: "fruit-into-baskets", difficulty: "Medium", trains: "At most two distinct — the at-most-K family in its friendliest form." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the boss fights",
+      problems: [
+        { name: "Minimum Window Substring", lc: "minimum-window-substring", difficulty: "Hard", trains: "Shrink to the SMALLEST valid window — need/have counters; the canonical hard window." },
+        { name: "Sliding Window Maximum", lc: "sliding-window-maximum", difficulty: "Hard", trains: "Monotonic deque carrying the max — windows + stacks-and-queues combined." }
+      ]
+    }
+  ]}
+/>

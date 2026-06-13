@@ -1,7 +1,7 @@
 ---
 title: "Binary Search (incl. on the answer)"
 summary: "A template that never has off-by-one bugs, plus the SDE2-level skill: binary-searching the answer space for 'minimum X that works' problems."
-order: 15
+order: 14
 difficulty: "Core pattern"
 tags: ["binary-search", "search-space", "monotonic"]
 ---
@@ -115,3 +115,41 @@ maximizing a minimum. Complexity is O(check · log(value range)).
     explain: "Monotonic feasibility creates a sorted false…false|true…true boundary over the answer space — binary-search the boundary, checking each candidate in O(n)."
   }
 ]} />
+
+## Practice — climb the ladder
+
+Binary search needs ONE thing: a monotonic yes/no boundary. The ladder
+moves from searching arrays to searching ANSWER SPACES — the big leap.
+
+<PracticeLadder
+  topic="Binary Search"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "bounds discipline — no off-by-ones, ever",
+      problems: [
+        { name: "Binary Search", lc: "binary-search", difficulty: "Easy", trains: "The template itself — lo/hi/mid until your invariant survives any input." },
+        { name: "Search Insert Position", lc: "search-insert-position", difficulty: "Easy", trains: "Lower bound — WHERE the boundary lands when the target is absent." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "broken invariants and first/last boundaries",
+      problems: [
+        { name: "Find First and Last Position in Sorted Array", lc: "find-first-and-last-position-of-element-in-sorted-array", difficulty: "Medium", trains: "Two boundary searches (leftmost + rightmost) — bias the mid correctly." },
+        { name: "Search in Rotated Sorted Array", lc: "search-in-rotated-sorted-array", difficulty: "Medium", trains: "One half is always sorted — decide which, then discard the other." },
+        { name: "Find Minimum in Rotated Sorted Array", lc: "find-minimum-in-rotated-sorted-array", difficulty: "Medium", trains: "Searching for a PROPERTY (the pivot), not a value." },
+        { name: "Koko Eating Bananas", lc: "koko-eating-bananas", difficulty: "Medium", trains: "Binary search ON THE ANSWER — guess a speed, check feasibility, halve." },
+        { name: "Capacity to Ship Packages Within D Days", lc: "capacity-to-ship-packages-within-d-days", difficulty: "Medium", trains: "Same answer-space pattern — min capacity whose check passes." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "the two famous finals",
+      problems: [
+        { name: "Split Array Largest Sum", lc: "split-array-largest-sum", difficulty: "Hard", trains: "Answer-space search where the check is itself greedy — two patterns stacked." },
+        { name: "Median of Two Sorted Arrays", lc: "median-of-two-sorted-arrays", difficulty: "Hard", trains: "Partition search across two arrays — the hardest classic binary search." }
+      ]
+    }
+  ]}
+/>

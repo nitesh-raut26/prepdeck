@@ -1,7 +1,7 @@
 ---
 title: "Two Pointers"
 summary: "Opposite-end, fast/slow, and partition variants — replace nested loops on sorted/linked data with a single O(n) pass."
-order: 13
+order: 15
 difficulty: "Core pattern"
 tags: ["arrays", "linked-list", "two-pointers"]
 ---
@@ -76,3 +76,40 @@ space versus O(n) for a visited-set approach. To find the cycle's start, reset
 one pointer to the head and advance both at the same speed until they meet again.
 
 </QA>
+
+## Practice — climb the ladder
+
+Two pointers earns its keep on SORTED data or paired ends: each step
+discards possibilities provably, which is where the O(n) comes from.
+
+<PracticeLadder
+  topic="Two Pointers"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "ends moving inward, slow/fast moving forward",
+      problems: [
+        { name: "Valid Palindrome", lc: "valid-palindrome", difficulty: "Easy", trains: "Ends-inward with skip rules — the cleanest convergent-pointer drill." },
+        { name: "Reverse String", lc: "reverse-string", difficulty: "Easy", trains: "Swap-and-converge — in-place mutation with two indices." },
+        { name: "Move Zeroes", lc: "move-zeroes", difficulty: "Easy", trains: "Reader/writer pointers — stable partition in one pass." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "the discard argument, made explicit",
+      problems: [
+        { name: "Container With Most Water", lc: "container-with-most-water", difficulty: "Medium", trains: "Move the SHORTER wall — articulate why that discard is safe; that argument IS the pattern." },
+        { name: "3Sum", lc: "3sum", difficulty: "Medium", trains: "Sort + fix one + two-pointer the rest, with dedup discipline — the interview staple." },
+        { name: "Remove Duplicates from Sorted Array II", lc: "remove-duplicates-from-sorted-array-ii", difficulty: "Medium", trains: "Writer pointer with a look-back condition — in-place with a twist." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "maximum discard sophistication",
+      problems: [
+        { name: "4Sum", lc: "4sum", difficulty: "Medium", trains: "The 3Sum skeleton generalized — nested fixing without drowning in dedup." },
+        { name: "Trapping Rain Water", lc: "trapping-rain-water", difficulty: "Hard", trains: "Two pointers with running maxes from both ends — the famous finale." }
+      ]
+    }
+  ]}
+/>
