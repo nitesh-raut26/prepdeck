@@ -1,7 +1,7 @@
 ---
 title: "Greedy"
 summary: "Take the locally best choice and never look back — when that's provably optimal, when it's a trap, and the interval/jump/exchange classics."
-order: 17
+order: 18
 difficulty: "Core pattern"
 tags: ["greedy", "intervals", "exchange-argument"]
 ---
@@ -214,3 +214,40 @@ flips the technique.
 
 That closes the core Level 3 patterns. Apply them at scale in the
 [problem bank](/dsa/problem-bank) and the [Blind 75](/dsa/blind-75).
+
+## Practice — climb the ladder
+
+Greedy is only correct when a local choice provably never blocks a better
+future. Practice writing that one-sentence proof before coding.
+
+<PracticeLadder
+  topic="Greedy"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "obvious local choices",
+      problems: [
+        { name: "Assign Cookies", lc: "assign-cookies", difficulty: "Easy", trains: "Sort both sides, match smallest-satisfiable — exchange argument in miniature." },
+        { name: "Best Time to Buy and Sell Stock II", lc: "best-time-to-buy-and-sell-stock-ii", difficulty: "Medium", trains: "Take every uphill — decomposing profit into daily deltas." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "reach, fuel, and partitions",
+      problems: [
+        { name: "Jump Game", lc: "jump-game", difficulty: "Medium", trains: "Track farthest-reachable — one pass, one variable, full proof." },
+        { name: "Jump Game II", lc: "jump-game-ii", difficulty: "Medium", trains: "Greedy BFS layers — jump only when the current range is exhausted." },
+        { name: "Gas Station", lc: "gas-station", difficulty: "Medium", trains: "Restart-after-failure argument — why the failed prefix can be skipped wholesale." },
+        { name: "Partition Labels", lc: "partition-labels", difficulty: "Medium", trains: "Last-occurrence map + expanding cut point — greedy meets bookkeeping." },
+        { name: "Non-overlapping Intervals", lc: "non-overlapping-intervals", difficulty: "Medium", trains: "Sort by END — the scheduling proof every greedy interview leans on." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "when greedy needs two passes",
+      problems: [
+        { name: "Candy", lc: "candy", difficulty: "Hard", trains: "Left pass + right pass, take the max — constraints from both directions." }
+      ]
+    }
+  ]}
+/>

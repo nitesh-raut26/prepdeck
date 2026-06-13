@@ -1,7 +1,7 @@
 ---
 title: "Union-Find"
 summary: "Disjoint sets in ~10 lines — union by rank, path compression, and the 'are these connected?' questions it wins instantly."
-order: 10
+order: 11
 difficulty: "Foundation"
 tags: ["union-find", "dsu", "graphs", "fundamentals"]
 ---
@@ -218,3 +218,38 @@ is among the most common real-world DSU disguises; recognizing the phrase
 **That completes the Level 2 data structures.** [Heaps](/dsa/heaps-and-intervals)
 and [graphs](/dsa/graphs-bfs-dfs) round out the structures; then the
 [Level 3 patterns](/dsa/two-pointers) start composing them into solutions.
+
+## Practice — climb the ladder
+
+The trigger: dynamic connectivity — "are these in the same group?" while
+edges keep arriving. If edges are fixed, plain DFS also works; say that.
+
+<PracticeLadder
+  topic="Union-Find"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "the API doing its one job",
+      problems: [
+        { name: "Find if Path Exists in Graph", lc: "find-if-path-exists-in-graph", difficulty: "Easy", trains: "union(u,v) every edge, then one find(a)==find(b) — connectivity in five lines." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "components, cycles, and merging by key",
+      problems: [
+        { name: "Number of Provinces", lc: "number-of-provinces", difficulty: "Medium", trains: "Count components — start with n, every successful union decrements." },
+        { name: "Redundant Connection", lc: "redundant-connection", difficulty: "Medium", trains: "Cycle detection — the first edge whose endpoints are ALREADY connected." },
+        { name: "Accounts Merge", lc: "accounts-merge", difficulty: "Medium", trains: "Union by shared email — non-obvious modeling, the real interview skill." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "union-find in disguise",
+      problems: [
+        { name: "Satisfiability of Equality Equations", lc: "satisfiability-of-equality-equations", difficulty: "Medium", trains: "Union the == constraints, then check every != — constraints as connectivity." },
+        { name: "Most Stones Removed with Same Row or Column", lc: "most-stones-removed-with-same-row-or-column", difficulty: "Medium", trains: "Rows and columns as nodes — answer = stones − components; modeling at full stretch." }
+      ]
+    }
+  ]}
+/>

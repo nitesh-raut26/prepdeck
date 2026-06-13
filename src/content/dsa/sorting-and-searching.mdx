@@ -1,7 +1,7 @@
 ---
 title: "Sorting & Searching"
 summary: "Merge sort, quicksort, heap sort and when to use each — plus the searching ladder from linear scan to binary search, and what interviewers actually test."
-order: 12
+order: 13
 difficulty: "Core pattern"
 tags: ["sorting", "searching", "merge-sort", "quicksort"]
 ---
@@ -221,3 +221,40 @@ sort extends the trick digit by digit.
 
 Next pattern: [Greedy](/dsa/greedy) — when taking the locally best choice
 is provably globally optimal.
+
+## Practice — climb the ladder
+
+Sorting is rarely the ANSWER — it is the move that unlocks two pointers,
+greedy sweeps, and binary search. Practice choosing it deliberately.
+
+<PracticeLadder
+  topic="Sorting & Searching"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "sort mechanics you must own",
+      problems: [
+        { name: "Merge Sorted Array", lc: "merge-sorted-array", difficulty: "Easy", trains: "The merge step of merge sort, isolated — fill from the back." },
+        { name: "Sort Colors", lc: "sort-colors", difficulty: "Medium", trains: "Dutch national flag — three-way partition, the heart of quicksort." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "sorting as a tool, not a button",
+      problems: [
+        { name: "Kth Largest Element in an Array", lc: "kth-largest-element-in-an-array", difficulty: "Medium", trains: "Quickselect — partition without fully sorting; average O(n) and say why." },
+        { name: "Sort List", lc: "sort-list", difficulty: "Medium", trains: "Merge sort on a linked list — the structure picks the algorithm." },
+        { name: "Largest Number", lc: "largest-number", difficulty: "Medium", trains: "Custom comparator (a+b vs b+a) — sorting by a rule you invent." },
+        { name: "Sort Characters by Frequency", lc: "sort-characters-by-frequency", difficulty: "Medium", trains: "Bucket sort by count — when O(n log n) is already beatable." },
+        { name: "H-Index", lc: "h-index", difficulty: "Medium", trains: "Sort then scan for a crossing point — sorted order creating meaning." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "divide-and-conquer counting",
+      problems: [
+        { name: "Reverse Pairs", lc: "reverse-pairs", difficulty: "Hard", trains: "Count during merge — the merge-sort skeleton doing analytics on the side." }
+      ]
+    }
+  ]}
+/>

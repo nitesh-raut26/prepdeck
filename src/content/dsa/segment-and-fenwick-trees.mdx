@@ -1,7 +1,7 @@
 ---
 title: "Segment & Fenwick Trees"
 summary: "Range queries on changing data: why prefix sums break, how segment trees answer any range in O(log n), and the Fenwick tree's beautiful bit trick."
-order: 11
+order: 12
 difficulty: "Advanced structure"
 tags: ["segment-tree", "fenwick-tree", "range-queries", "advanced"]
 ---
@@ -249,3 +249,37 @@ the most common place Fenwick trees appear in real interviews.
 
 That rounds out the data-structure toolkit. Next in the pattern arc:
 [Sorting & Searching](/dsa/sorting-and-searching).
+
+## Practice — climb the ladder
+
+The trigger: range queries MIXED with point updates. Static array? Prefix
+sums win. Updates but only prefix queries? Fenwick. Arbitrary ranges? Segment tree.
+
+<PracticeLadder
+  topic="Segment & Fenwick Trees"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "earn the baseline first",
+      problems: [
+        { name: "Range Sum Query — Immutable", lc: "range-sum-query-immutable", difficulty: "Easy", trains: "Prefix sums — the baseline that makes the fancy trees justify themselves." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "now updates arrive",
+      problems: [
+        { name: "Range Sum Query — Mutable", lc: "range-sum-query-mutable", difficulty: "Medium", trains: "The canonical Fenwick/segment-tree problem — log n update, log n query." },
+        { name: "My Calendar I", lc: "my-calendar-i", difficulty: "Medium", trains: "Interval booking with ordered structure — segment-tree thinking without the tree." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "counting with order",
+      problems: [
+        { name: "Count of Smaller Numbers After Self", lc: "count-of-smaller-numbers-after-self", difficulty: "Hard", trains: "Fenwick over value space (or merge-sort counting) — the classic inversion counter." },
+        { name: "The Skyline Problem", lc: "the-skyline-problem", difficulty: "Hard", trains: "Sweep line + ordered max structure — events in, silhouette out." }
+      ]
+    }
+  ]}
+/>
