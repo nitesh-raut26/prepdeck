@@ -239,3 +239,35 @@ deepest reason to get the object design right first. This question is
 the bridge the whole design exists to teach.
 
 </QA>
+
+## Practice — level up
+
+A notification system is **pub/sub fan-out** with **throttling**: one event
+reaches many subscribers across channels, without spamming or duplicating. These
+drills isolate fan-out and rate control.
+
+<PracticeLadder
+  topic="Fan-out & rate limiting"
+  tiers={[
+    {
+      label: "Warm-up — drop the duplicate",
+      problems: [
+        { name: "Logger Rate Limiter", lc: "logger-rate-limiter", difficulty: "Easy", trains: "Allow a message at most once per window — dedupe before you ever notify." }
+      ]
+    },
+    {
+      label: "Core — one event, many targets",
+      note: "Fan out, then count to throttle.",
+      problems: [
+        { name: "Design Twitter", lc: "design-twitter", difficulty: "Medium", trains: "Push one event to every subscriber — the Observer fan-out at the system's heart." },
+        { name: "Number of Recent Calls", lc: "number-of-recent-calls", difficulty: "Easy", trains: "Count events in a sliding window — the per-user send throttle." }
+      ]
+    },
+    {
+      label: "Stretch — batch a window",
+      problems: [
+        { name: "Design Hit Counter", lc: "design-hit-counter", difficulty: "Medium", trains: "Aggregate events over the last N minutes — collapsing many notifications into one digest." }
+      ]
+    }
+  ]}
+/>

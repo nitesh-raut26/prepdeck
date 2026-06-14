@@ -243,3 +243,37 @@ eliminate ambiguity over a network; you make operations idempotent so
 ambiguity becomes retriable.**
 
 </QA>
+
+## Practice — level up
+
+An ATM is a **finite state machine** wrapped around **money-safe transactions**:
+each action is legal only in the right state, and the debit has to survive a
+network that lies. These drills isolate each half.
+
+<PracticeLadder
+  topic="State machines & transactions"
+  tiers={[
+    {
+      label: "Warm-up — the literal machine",
+      note: "Dispense cash, denomination by denomination.",
+      problems: [
+        { name: "Design an ATM Machine", lc: "design-an-atm-machine", difficulty: "Medium", trains: "Greedy note dispensing over per-denomination inventory — the cash half of the machine." }
+      ]
+    },
+    {
+      label: "Core — guarded transactions",
+      note: "An action runs only when the rules hold.",
+      problems: [
+        { name: "Simple Bank System", lc: "simple-bank-system", difficulty: "Medium", trains: "Withdraw / transfer that validate before they mutate — the rules behind a withdrawal." },
+        { name: "Design Authentication Manager", lc: "design-authentication-manager", difficulty: "Medium", trains: "Token issue / renew / expire — the PIN-auth session as its own lifecycle." }
+      ]
+    },
+    {
+      label: "Stretch — explicit, legal-only states",
+      note: "Model the screens; refuse illegal moves.",
+      problems: [
+        { name: "Design Browser History", lc: "design-browser-history", difficulty: "Medium", trains: "A state object with only-legal forward/back moves — the finite-state discipline of the ATM's screens." }
+      ]
+    }
+  ]}
+/>

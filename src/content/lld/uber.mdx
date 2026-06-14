@@ -271,3 +271,35 @@ driver"), then the mechanism — invariant-first is what the question
 is screening for.
 
 </QA>
+
+## Practice — level up
+
+Ride-hailing is **nearest-match** plus a **trip lifecycle**: find the closest free
+driver, assign exactly one, then run the trip from request to fare. These drills
+rehearse the matching and the hand-off.
+
+<PracticeLadder
+  topic="Matching & trip lifecycle"
+  tiers={[
+    {
+      label: "Warm-up — who's nearest",
+      problems: [
+        { name: "K Closest Points to Origin", lc: "k-closest-points-to-origin", difficulty: "Medium", trains: "Rank candidates by distance — the nearest free drivers to a rider." }
+      ]
+    },
+    {
+      label: "Core — assign one, track the trip",
+      note: "Match a rider to a driver; meter the ride.",
+      problems: [
+        { name: "Campus Bikes", lc: "campus-bikes", difficulty: "Medium", trains: "Assign each worker the closest free bike — nearest-driver matching with no double-booking." },
+        { name: "Design Underground System", lc: "design-underground-system", difficulty: "Medium", trains: "Start → end a trip and compute the fare — the ride's check-in/check-out lifecycle." }
+      ]
+    },
+    {
+      label: "Stretch — dispatch as drivers free up",
+      problems: [
+        { name: "Process Tasks Using Servers", lc: "process-tasks-using-servers", difficulty: "Medium", trains: "Hand the next request to a driver the moment one frees — surge dispatch over time." }
+      ]
+    }
+  ]}
+/>

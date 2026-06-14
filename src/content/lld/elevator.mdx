@@ -234,3 +234,35 @@ serialize. It's the same invariant-at-the-point-of-mutation rule as the
 parking lot's last spot and a balance double-spend.
 
 </QA>
+
+## Practice — level up
+
+An elevator controller is a **scheduler**: given the pending requests and the
+car's position, pick the next stop — then serve a sweep efficiently. These drills
+are that same "choose the next job" decision.
+
+<PracticeLadder
+  topic="Scheduling & dispatch"
+  tiers={[
+    {
+      label: "Warm-up — pick the next job",
+      problems: [
+        { name: "Single-Threaded CPU", lc: "single-threaded-cpu", difficulty: "Medium", trains: "When free, take the best pending task by a policy — exactly 'which floor next'." }
+      ]
+    },
+    {
+      label: "Core — assign over time",
+      note: "Many requests, limited movers, a clock.",
+      problems: [
+        { name: "Process Tasks Using Servers", lc: "process-tasks-using-servers", difficulty: "Medium", trains: "Route each request to a free resource as resources free up — multi-car dispatch." },
+        { name: "Task Scheduler", lc: "task-scheduler", difficulty: "Medium", trains: "Order work under a cooldown constraint — sequencing a sweep of stops, not just choosing one." }
+      ]
+    },
+    {
+      label: "Stretch — concurrent demand on a shared resource",
+      problems: [
+        { name: "Meeting Rooms II", lc: "meeting-rooms-ii", difficulty: "Medium", trains: "Peak simultaneous demand over a timeline — how many cars a request pattern actually needs." }
+      ]
+    }
+  ]}
+/>

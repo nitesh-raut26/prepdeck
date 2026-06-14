@@ -260,3 +260,34 @@ sync engine ← network — strictly one-directional reads, with
 durability at the first hop.**
 
 </QA>
+
+## Practice — level up
+
+A chat system is **ordered history** plus **fan-out delivery**: append a message,
+push it to everyone in the room, and let anyone scroll back in order. These drills
+rehearse each move.
+
+<PracticeLadder
+  topic="Fan-out, ordering & history"
+  tiers={[
+    {
+      label: "Warm-up — ordered, navigable history",
+      problems: [
+        { name: "Design Browser History", lc: "design-browser-history", difficulty: "Medium", trains: "An ordered log you can move through — a single conversation's timeline." }
+      ]
+    },
+    {
+      label: "Core — deliver to many, in time order",
+      problems: [
+        { name: "Design Twitter", lc: "design-twitter", difficulty: "Medium", trains: "Fan a post out to followers' feeds — the same push as delivering to room members." },
+        { name: "Time Based Key-Value Store", lc: "time-based-key-value-store", difficulty: "Medium", trains: "Fetch the value as of a timestamp — message history ordered by time." }
+      ]
+    },
+    {
+      label: "Stretch — exactly-once under retries",
+      problems: [
+        { name: "Logger Rate Limiter", lc: "logger-rate-limiter", difficulty: "Easy", trains: "Suppress a duplicate inside a window — idempotent delivery when the client retries." }
+      ]
+    }
+  ]}
+/>
