@@ -59,6 +59,13 @@ class TokenBucket:
         return False
 ```
 
+Here it is running. The bucket starts full, so an opening burst of 5 passes
+straight through; the 6th request in that burst is refused with a **429**, and
+then the steady drip lets traffic through again. Change R, the capacity B, or the
+arrival times and watch the burst-versus-throttle trade-off play out:
+
+<Visualizer algo="token-bucket" />
+
 ## Distributed rate limiting
 
 With many app servers, an in-memory counter per server multiplies the real
@@ -105,3 +112,63 @@ where concurrent requests both read an under-limit value and both pass. The
 gateway then enforces one true limit regardless of how many app nodes there are.
 
 </QA>
+
+## Design drills
+
+You know the five algorithms — now rehearse the *system* decisions an interviewer
+actually probes.
+
+<DesignDrills
+  topic="Rate limiting"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "A public API sells a 1,000 requests/minute tier that must tolerate short bursts. Pick an algorithm and set its knobs — what are R and B, and what do you return on reject?",
+      covers: [
+        "Token bucket: R ≈ 1000/60 ≈ 16.7 tokens/sec, with B sized to the burst you'll tolerate (say 100).",
+        "R bounds the long-run rate; B bounds the burst — name both knobs explicitly.",
+        "On reject: 429 Too Many Requests + a Retry-After header so well-behaved clients back off.",
+        "Key the limiter per API key / per client, never as one global counter."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Now run it behind 10 gateway nodes. Where does the counter live, and how do you avoid the 'real limit = limit × 10' bug?",
+      covers: [
+        "Move the counter to a shared store (Redis); per-node in-memory counters multiply the limit by N.",
+        "Make the read-modify-write atomic — INCR + EXPIRE, or a Lua script for token-bucket math — the same race as a balance double-spend.",
+        "One key per client+window; let the key's TTL expire the window for you.",
+        "Cost: a network hop per request — mitigate with a small per-node allowance synced asynchronously."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A customer complains they get throttled in bursts right at each minute boundary. Diagnose it and fix it without storing every timestamp.",
+      covers: [
+        "Fixed-window boundary burst: up to 2× the limit across the edge of two adjacent windows.",
+        "Fix it cheaply with a sliding-window counter — weight the previous window's count by how much of it still overlaps now.",
+        "Sliding log is exact but stores every timestamp — too memory-heavy at scale; name the trade-off."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Redis — your shared counter — goes down. What happens to request handling, and what should happen?",
+      covers: [
+        "Decide fail-open vs fail-closed deliberately: dropping all traffic to enforce a limit is usually worse than briefly over-allowing.",
+        "Degrade to a local per-node limit so you still bound the blast radius while the store is gone.",
+        "Wrap the store call in a timeout + circuit breaker; never let limiter latency become request latency.",
+        "Emit metrics/alerts so the degradation is visible, not silent."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "A multi-tenant SaaS needs per-user, per-organization, and global caps enforced at once. How do you layer them?",
+      covers: [
+        "Independent limiters with their own keys (user:123, org:42, global) — a request must pass every one that applies.",
+        "Check the cheapest / most-specific first and short-circuit on the first reject to save round-trips.",
+        "Consider priority lanes so one noisy tenant can't starve others under the global cap.",
+        "Call out the cost: N limiters = N atomic ops per request; fold them into one Lua script if it matters."
+      ]
+    }
+  ]}
+/>
