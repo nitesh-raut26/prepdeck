@@ -8,7 +8,7 @@ import { ROADMAP } from "@/lib/roadmap";
 export const metadata: Metadata = {
   title: "Roadmap",
   description:
-    "The Level 0 → 12 learning path: from absolute beginner to FAANG-ready engineer.",
+    "The Level 0 → 12 learning path: from absolute beginner to offer-ready engineer.",
 };
 
 export default function RoadmapPage() {
@@ -28,7 +28,7 @@ export default function RoadmapPage() {
 
       <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-subtle">
         <Map className="size-3.5 text-brand-400" />
-        Zero → FAANG learning path
+        Zero → Offer learning path
       </div>
       <h1 className="text-3xl font-semibold tracking-tight text-ink">
         The Roadmap
