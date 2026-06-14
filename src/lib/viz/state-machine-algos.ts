@@ -107,6 +107,24 @@ export const MACHINES = {
       { from: "delivered", to: "read", event: "open" },
     ],
   },
+  "book-loan": {
+    title: "Book copy lifecycle",
+    initial: "shelf",
+    states: [
+      { id: "shelf", label: "Shelf", x: 16, y: 16 },
+      { id: "loan", label: "OnLoan", x: 84, y: 16 },
+      { id: "held", label: "Held", x: 84, y: 50 },
+      { id: "lost", label: "Lost", x: 16, y: 50 },
+    ],
+    transitions: [
+      { from: "shelf", to: "loan", event: "checkout" },
+      { from: "loan", to: "shelf", event: "return" },
+      { from: "loan", to: "held", event: "returnToHold" },
+      { from: "held", to: "loan", event: "pickup" },
+      { from: "held", to: "shelf", event: "expire" },
+      { from: "loan", to: "lost", event: "lose" },
+    ],
+  },
 } satisfies Record<string, StateMachine>;
 
 export type MachineId = keyof typeof MACHINES;
@@ -118,6 +136,7 @@ export const DEFAULT_EVENTS: Record<MachineId, string> = {
   "uber-trip": "match, pickup, dropoff",
   "seat-booking": "lock, pay, refund",
   "chat-message": "ack, deliver, open",
+  "book-loan": "checkout, returnToHold, pickup, return",
 };
 
 const MAX_EVENTS = 12;
