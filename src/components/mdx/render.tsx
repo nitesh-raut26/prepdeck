@@ -11,6 +11,7 @@ import { Figure } from "./figure";
 import { Quiz } from "./quiz";
 import { ThinkThrough } from "./think-through";
 import { PracticeLadder } from "./practice-ladder";
+import { DesignDrills } from "./design-drills";
 import { Visualizer } from "@/components/viz/visualizer";
 import { CodeBlock, LanguageCoverageChecker } from "./code-block";
 
@@ -22,6 +23,7 @@ const components = {
   Quiz,
   ThinkThrough,
   PracticeLadder,
+  DesignDrills,
   Visualizer,
   // Replace default <pre> with our language-aware CodeBlock
   pre: (props: ComponentProps<"pre">) => <CodeBlock {...props} />,
