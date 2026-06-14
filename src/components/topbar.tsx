@@ -66,7 +66,7 @@ export function Topbar({
       <ReviewLink />
 
       <span className="ml-auto hidden text-xs text-faint lg:block">
-        SDE2 prep · built from a real portfolio
+        Interview prep · built from a real portfolio
       </span>
     </header>
   );
