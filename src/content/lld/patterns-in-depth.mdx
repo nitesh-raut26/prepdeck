@@ -288,3 +288,34 @@ reinventing it as nested ifs. Patterns-as-vocabulary in action: the
 name compresses a design conversation into one word.
 
 </QA>
+
+## Practice — level up
+
+You learn a pattern by **building its shape**, not memorizing its name. Each drill
+below *is* one of the second-tier patterns in disguise — spot it as you solve.
+
+<PracticeLadder
+  topic="Patterns in practice"
+  tiers={[
+    {
+      label: "Warm-up — Adapter",
+      problems: [
+        { name: "Implement Stack using Queues", lc: "implement-stack-using-queues", difficulty: "Easy", trains: "Expose one interface (stack) backed by another (queue) — Adapter in three methods." }
+      ]
+    },
+    {
+      label: "Core — Composite & Command",
+      note: "Trees of objects; reversible operations.",
+      problems: [
+        { name: "Flatten Nested List Iterator", lc: "flatten-nested-list-iterator", difficulty: "Medium", trains: "Treat leaves and branches uniformly — Composite plus an Iterator." },
+        { name: "Design Browser History", lc: "design-browser-history", difficulty: "Medium", trains: "Reversible forward/back operations over state — the Command / Memento shape." }
+      ]
+    },
+    {
+      label: "Stretch — recursive structure behind a clean API",
+      problems: [
+        { name: "Design Add and Search Words Data Structure", lc: "design-add-and-search-words-data-structure", difficulty: "Medium", trains: "A recursive Composite (trie) hidden behind add / search — structure the caller never sees." }
+      ]
+    }
+  ]}
+/>

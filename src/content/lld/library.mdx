@@ -98,6 +98,13 @@ The supporting decisions worth saying out loud:
   DVDs), then *persists* until paid. Money facts are
   [append-only](/lld/splitwise).
 
+A `BookCopy` is a small state machine — here it is. Walk a normal loan
+(`Shelf → OnLoan → Shelf`), then the reservation path where a return skips the
+shelf and goes straight to a hold (`returnToHold`); then try an illegal move — a
+`checkout` while it's already on loan — and watch the copy simply refuse it.
+
+<Visualizer algo="state-machine" problem="book-loan" />
+
 ## Think it through like the interview
 
 <ThinkThrough

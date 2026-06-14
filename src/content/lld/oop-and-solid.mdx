@@ -126,3 +126,35 @@ independently — more flexible and less fragile. Inheritance is right for a tru
 varying behavior (Strategy, Decorator).
 
 </QA>
+
+## Practice — level up
+
+SOLID becomes muscle memory by **modeling small things cleanly**: one
+responsibility per class, behavior composed rather than inherited, an invariant
+held behind a tidy interface. These "design a structure" drills train exactly that.
+
+<PracticeLadder
+  topic="Modeling clean classes"
+  tiers={[
+    {
+      label: "Warm-up — one class, one invariant",
+      problems: [
+        { name: "Min Stack", lc: "min-stack", difficulty: "Easy", trains: "Hold an extra invariant (the running min) behind push/pop — encapsulation, Single Responsibility." }
+      ]
+    },
+    {
+      label: "Core — an interface that hides its guts",
+      note: "Callers see operations, never the internals.",
+      problems: [
+        { name: "Design HashMap", lc: "design-hashmap", difficulty: "Easy", trains: "A clean put/get/remove contract over hidden buckets — abstraction and information hiding." },
+        { name: "LRU Cache", lc: "lru-cache", difficulty: "Medium", trains: "Compose a map + linked list behind get/put — composition over inheritance, done right." }
+      ]
+    },
+    {
+      label: "Stretch — pick internals the API implies",
+      problems: [
+        { name: "Design Browser History", lc: "design-browser-history", difficulty: "Medium", trains: "Choose internals that keep every operation cheap — Open/Closed against future operations." }
+      ]
+    }
+  ]}
+/>
