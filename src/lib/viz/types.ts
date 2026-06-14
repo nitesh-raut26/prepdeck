@@ -311,6 +311,27 @@ export type SplitStep = {
   vars?: [string, string | number][];
 };
 
+/* ── Token bucket / rate limiting (HLD) ──────────────────────────────── */
+
+export type TokenBucketStep = {
+  /** Bucket size B — the maximum burst a quiet period earns. */
+  capacity: number;
+  /** Refill rate R, tokens per second. */
+  rate: number;
+  /** Tokens available right now (integer, 0..capacity). */
+  tokens: number;
+  /** Simulated clock, in seconds. */
+  time: number;
+  /** What this frame is showing. */
+  phase: "start" | "refill" | "allow" | "reject";
+  /** Label of the request handled this frame, if any (e.g. "r6"). */
+  request?: string | null;
+  /** Rolling outcome strip — most recent last. */
+  log: { label: string; ok: boolean }[];
+  note: string;
+  vars?: [string, string | number][];
+};
+
 /* ── Metadata shown in the player header ─────────────────────────────── */
 
 export type Complexity = { time: string; space: string };
