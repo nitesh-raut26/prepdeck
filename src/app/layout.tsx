@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "PrepDeck — Zero to FAANG Learning Path",
+    default: "PrepDeck — Zero to Offer Learning Path",
     template: "%s · PrepDeck",
   },
   description:

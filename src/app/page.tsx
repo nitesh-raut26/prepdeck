@@ -11,7 +11,7 @@ export default function HomePage() {
       <div className="mb-9">
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-subtle">
           <Sparkles className="size-3.5 text-brand-400" />
-          Zero → FAANG learning path
+          Zero → Offer learning path
         </div>
         <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
           From your first line of code to the offer call.
