@@ -48,6 +48,7 @@ import {
 import { observerSteps, parseObserverOps } from "@/lib/viz/observer-algos";
 import { parkingSteps, parseParkingOps } from "@/lib/viz/parking-algos";
 import { parseDebts, splitwiseSteps } from "@/lib/viz/split-algos";
+import { parseTokenBucket, tokenBucketSteps } from "@/lib/viz/rate-limit-algos";
 import {
   bfsSteps,
   DEMO_GRAPH,
@@ -76,6 +77,7 @@ import { StateMachineCanvas } from "./state-machine-canvas";
 import { ObserverCanvas } from "./observer-canvas";
 import { ParkingCanvas } from "./parking-canvas";
 import { SplitCanvas } from "./split-canvas";
+import { TokenBucketCanvas } from "./token-bucket-canvas";
 
 export type VisualizerAlgo =
   | "binary-search"
@@ -106,7 +108,8 @@ export type VisualizerAlgo =
   | "state-machine"
   | "observer"
   | "parking-lot"
-  | "split-debts";
+  | "split-debts"
+  | "token-bucket";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -176,6 +179,8 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <ParkingViz />;
     case "split-debts":
       return <SplitViz />;
+    case "token-bucket":
+      return <TokenBucketViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -1044,6 +1049,74 @@ function StateMachineViz({ machine }: { machine: MachineId }) {
       }
     >
       <StateMachineCanvas machine={def} step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Token bucket / rate limiting (HLD) ───────────────────────────────── */
+
+const TB_DEFAULT = { rate: "2", capacity: "5", requests: "0 0 0 0 0 0 2 2" };
+
+function TokenBucketViz() {
+  const [rate, setRate] = useState(TB_DEFAULT.rate);
+  const [capacity, setCapacity] = useState(TB_DEFAULT.capacity);
+  const [reqText, setReqText] = useState(TB_DEFAULT.requests);
+  const [input, setInput] = useState(
+    () =>
+      parseTokenBucket(TB_DEFAULT.rate, TB_DEFAULT.capacity, TB_DEFAULT.requests)
+        .input!,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { input: parsed, error: err } = parseTokenBucket(
+      rate,
+      capacity,
+      reqText,
+    );
+    setError(err);
+    if (parsed) setInput(parsed);
+  };
+
+  const steps = useMemo(() => tokenBucketSteps(input), [input]);
+  const stepper = useStepper(steps);
+
+  const fieldErr = (...prefixes: string[]) =>
+    error && prefixes.some((p) => error.startsWith(p)) ? error : null;
+
+  return (
+    <VizPlayer
+      title="Token bucket — burst, then throttle"
+      complexity={{ time: "O(1) per request", space: "O(1)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField
+            label="rate R/s"
+            value={rate}
+            onChange={setRate}
+            onCommit={commit}
+            error={fieldErr("rate")}
+          />
+          <VizField
+            label="capacity B"
+            value={capacity}
+            onChange={setCapacity}
+            onCommit={commit}
+            error={fieldErr("capacity")}
+          />
+          <VizField
+            label="request times (s)"
+            wide
+            value={reqText}
+            onChange={setReqText}
+            onCommit={commit}
+            error={fieldErr("request", "enter", "keep")}
+          />
+        </>
+      }
+    >
+      <TokenBucketCanvas step={stepper.step} />
     </VizPlayer>
   );
 }
