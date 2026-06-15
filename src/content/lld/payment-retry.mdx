@@ -1,0 +1,228 @@
+---
+title: "Design a Payment Retry System"
+summary: "The retry round payments teams love: a retry state machine, idempotency across attempts, exponential backoff with jitter, non-retryable vs transient failures, and a dead-letter queue — with clean OOP boundaries."
+order: 17.5
+difficulty: "Core"
+tags: ["LLD", "payments", "idempotency", "retries", "state-machine"]
+---
+
+## Why this is really a correctness problem
+
+A payment call crosses a network that **lies**: it can succeed while the response
+is lost, fail cleanly, or hang ambiguously. Naive retries then either
+**double-charge** the customer or **lose the payment**. So a "retry system" is
+not a `for` loop with `sleep` — it's a small state machine wrapped around two
+guarantees: *every attempt is idempotent*, and *retries back off without
+stampeding*. Get those two right and the rest is bookkeeping.
+
+**Clarify scope first:** *"One payment, many attempts against a flaky gateway.
+I'll design the per-payment retry lifecycle, idempotency, the backoff policy, and
+where exhausted payments go (DLQ). Out of scope: the ledger and reconciliation,
+though I'll note where they hook in — OK?"*
+
+## The lifecycle is a state machine
+
+Model the attempt explicitly so illegal moves are *unrepresentable*: you can't
+"retry" a `Done` payment, and a non-retryable rejection skips straight to the
+dead-letter state. Walk a transient failure that recovers, then try an illegal
+event and watch the machine refuse it:
+
+<Visualizer algo="state-machine" problem="payment-retry" />
+
+- **Pending → Sending** (`send`): claim the work, attach the idempotency key.
+- **Sending → Done** (`ok`): the gateway confirmed success.
+- **Sending → Backoff** (`fail`): a *transient* error (timeout, 5xx, network) —
+  schedule a retry after a delay.
+- **Backoff → Sending** (`retry`): the delay elapsed; try again with the **same**
+  idempotency key.
+- **Sending → Dead** (`reject`): a *permanent* error (4xx like "card declined") —
+  retrying can never help, so don't.
+- **Backoff → Dead** (`exhaust`): max attempts reached → dead-letter for a human
+  or a separate recovery flow.
+
+## The two hard parts
+
+### 1. Idempotency across retries
+
+Because delivery is **at-least-once** (you retry on ambiguity), the *effect* must
+be **at-most-once**. Every payment carries a unique **idempotency key**, generated
+once and reused on every retry. The gateway's idempotent endpoint either applies
+the charge once or returns the original result — so a retry after an ambiguous
+timeout is safe ([the same Stripe pattern as the ATM](/lld/atm) and
+[REST idempotency](/backend/rest-and-graphql)). Locally you journal the key
+*before* sending, so a crash mid-flight still knows the attempt is in flight.
+
+### 2. Exponential backoff with jitter
+
+Retrying immediately hammers an already-struggling gateway. Back off
+exponentially — `base * 2^attempt` — capped at a ceiling. Then add **jitter**
+(randomness): without it, a thousand payments that failed in the same outage all
+retry at the *exact same instant* and re-create the spike — a
+[thundering herd](/hld/design-whatsapp). Full jitter: `sleep = random(0, min(cap,
+base * 2^attempt))`.
+
+<Callout type="tip" title="Make the policy a Strategy, not an if-ladder">
+Backoff schedule, max attempts, and which errors are retryable all vary by
+gateway and by payment type. Put them behind a `RetryPolicy` interface so a new
+gateway is a new policy class, not edits to the retry engine (Open/Closed).
+</Callout>
+
+## Entities & responsibilities
+
+<Mermaid chart={`classDiagram
+  class PaymentRequest {
+    +id
+    +idempotencyKey
+    +amount
+    +attempt: int
+    +state: PaymentState
+  }
+  class RetryEngine {
+    +submit(req)
+    +onResult(req, outcome)
+  }
+  class RetryPolicy {
+    <<interface>>
+    +nextDelay(attempt) Duration
+    +isRetryable(error) bool
+    +maxAttempts() int
+  }
+  class PaymentGateway {
+    <<interface>>
+    +charge(req, idempotencyKey) Outcome
+  }
+  class IdempotencyStore {
+    +seen(key) Outcome?
+    +record(key, outcome)
+  }
+  class Scheduler {
+    +scheduleAfter(delay, req)
+  }
+  class DeadLetterQueue {
+    +park(req, reason)
+  }
+  RetryEngine --> RetryPolicy : injects
+  RetryEngine --> PaymentGateway : calls
+  RetryEngine --> IdempotencyStore : guards
+  RetryEngine --> Scheduler : defers retries
+  RetryEngine --> DeadLetterQueue : parks exhausted`} />
+
+- **`RetryEngine`** is the orchestrator — it owns *no* policy detail; it asks the
+  injected `RetryPolicy` and drives the state machine.
+- **`RetryPolicy`** (Strategy) decides delay, retryability and the attempt cap.
+- **`PaymentGateway`** (port) is the boundary to the outside world; a
+  `StripeGateway`/`MockGateway` adapter implements it (and tests use the mock).
+- **`IdempotencyStore`** makes retries safe; **`Scheduler`** defers a `Backoff`
+  attempt without blocking a thread; **`DeadLetterQueue`** catches the exhausted.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design a Payment Retry System"
+  difficulty="LLD Core — payments"
+  problem="A payment must be charged against a flaky third-party gateway. Calls can time out ambiguously. Design the retry lifecycle, idempotency, backoff, and where failed payments end up. ~40 minutes."
+  stages={[
+    {
+      label: "Find the real problem",
+      prompt: "Why isn't this just retry in a loop until it works?",
+      reveal: "Because the network is ambiguous: a timed-out charge may have SUCCEEDED. A blind retry double-charges. So the core isn't 'retry' — it's 'make every attempt idempotent so a retry is safe', plus 'don't retry what can't succeed'. Name those two invariants first; they drive the whole design."
+    },
+    {
+      label: "Model the lifecycle",
+      prompt: "What are the states, and which transitions are illegal?",
+      reveal: "Pending → Sending → Done | Backoff | Dead. Backoff → Sending (retry) or Dead (exhausted). Illegal: retrying a Done payment, or retrying a permanent rejection. Modeling it as an explicit state machine makes those illegal moves unrepresentable instead of a tangle of booleans."
+    },
+    {
+      label: "Idempotency",
+      prompt: "A charge times out. You don't know if it landed. What do you send?",
+      reveal: "The SAME idempotency key you generated for attempt 1, journaled before the first send. The gateway's idempotent endpoint applies it once or replays the original outcome. At-least-once delivery + idempotent effect = at-most-once charge. Without the key, retrying-on-ambiguity is a double-charge bug."
+    },
+    {
+      label: "Backoff that doesn't stampede",
+      prompt: "An outage fails 10,000 payments at 12:00:00. They all retry. When?",
+      reveal: "Not all at 12:00:01. Exponential backoff (base·2^attempt, capped) spreads them across time; JITTER (randomize the delay) breaks the synchronized herd that would otherwise re-spike the gateway the instant it recovers. Full jitter = random(0, min(cap, base·2^attempt))."
+    },
+    {
+      label: "Give up well",
+      prompt: "Retries are exhausted. Now what — drop it? Retry forever?",
+      reveal: "Neither. A capped attempt count → dead-letter queue: the payment is parked with its failure reason for a human or a slower recovery flow, never silently dropped and never retried infinitely. Separately, classify errors: 4xx 'card declined' is permanent → straight to Dead, don't waste attempts. Ending on 'no payment is ever lost or double-charged; failures are visible' is the senior signal."
+    }
+  ]}
+/>
+
+<QA q="A charge request times out — you can't tell if the money moved. How do you retry safely?">
+
+Reuse the idempotency key from the first attempt (generated once, journaled
+before sending). The gateway's idempotent endpoint either applies the charge
+exactly once or returns the original result, so the retry can't double-charge.
+The general principle: you can't remove ambiguity over a network, so you make the
+operation idempotent and ambiguity becomes *retriable*. If the local journal
+shows the attempt was in flight when we crashed, we re-drive it by the same key
+on recovery.
+
+</QA>
+
+<QA q="How do you decide whether to retry a failure at all?">
+
+Classify the error. **Transient** (network timeout, connection reset, HTTP 429/5xx)
+→ retry with backoff. **Permanent** (HTTP 4xx like card declined, invalid account)
+→ retrying can never succeed, so transition straight to dead-letter and surface it
+to the caller. Encoding this in `RetryPolicy.isRetryable(error)` keeps the
+classification in one place and out of the engine. Burning all your attempts on a
+declined card is the classic naive-retry bug.
+
+</QA>
+
+<QA q="Why jitter, and what breaks without it?">
+
+Without jitter, every payment that failed during the same outage computes the
+*same* backoff delay and retries at the *same instant* — a synchronized
+thundering herd that re-overloads the gateway the moment it recovers, causing
+another wave of failures. Jitter randomizes each delay so retries spread out.
+It's the same fix as randomizing cache TTLs to avoid an
+[avalanche](/hld/caching).
+
+</QA>
+
+<QA q="Where does this LLD become an HLD problem?">
+
+The classes survive; scale attacks them. The in-process `Scheduler` becomes a
+[durable delayed queue](/hld/messaging-and-queues) (or Kafka with delay topics);
+the `IdempotencyStore` becomes a real [key-value store](/hld/caching) with TTLs;
+the `DeadLetterQueue` becomes an actual DLQ with replay; and "charge a payment"
+generalizes to "deliver any side-effect reliably" — which is exactly the
+[Webhook Delivery System](/hld/design-webhooks) at the HLD tier. The retry +
+idempotency + DLQ seams are identical.
+
+</QA>
+
+## Practice — level up
+
+A payment retry engine is **idempotent at-least-once delivery** wrapped in a
+**state machine**. These drills train the pieces.
+
+<PracticeLadder
+  topic="Idempotency, state & retries"
+  tiers={[
+    {
+      label: "Warm-up — explicit, legal-only states",
+      problems: [
+        { name: "Design an ATM Machine", lc: "design-an-atm-machine", difficulty: "Medium", trains: "A finite machine where actions are legal only in the right state — the retry lifecycle's backbone." }
+      ]
+    },
+    {
+      label: "Core — idempotency & budgets",
+      note: "Dedupe an effect; expire a budget of attempts.",
+      problems: [
+        { name: "Logger Rate Limiter", lc: "logger-rate-limiter", difficulty: "Easy", trains: "Allow an action once per window — the dedupe behind an idempotency key." },
+        { name: "Design Authentication Manager", lc: "design-authentication-manager", difficulty: "Medium", trains: "Issue / renew / expire with a TTL — the attempt budget and backoff clock." }
+      ]
+    },
+    {
+      label: "Stretch — guarded transactions",
+      problems: [
+        { name: "Simple Bank System", lc: "simple-bank-system", difficulty: "Medium", trains: "Money operations that validate before mutating — the invariant a retry must never violate." }
+      ]
+    }
+  ]}
+/>
