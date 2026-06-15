@@ -259,3 +259,53 @@ partition (salt the key) — both shard horizontally, which is the
 answer's reassuring final note.
 
 </QA>
+
+## Design drills
+
+The timeline is the fan-out problem in its purest form. Drill the extremes.
+
+<DesignDrills
+  topic="Timeline (Twitter/X)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Build a user's home timeline. Push (fan-out on write) or pull (fan-out on read)?",
+      covers: [
+        "Push: write each tweet into followers' precomputed timelines — fast reads.",
+        "Pull: gather from followees at read time — avoids huge write fan-out.",
+        "Hybrid: push for normal users, pull for celebrities.",
+        "Timeline cache is rebuildable, so it need not be durable."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A celebrity with 40M followers tweets. Why is it special, and what do you do?",
+      covers: [
+        "Pushing to 40M timelines is a write storm — don't.",
+        "Above a follower threshold, switch that author to pull.",
+        "Cache the celebrity tweet once; the line is shared across all readers.",
+        "Merge celebrity tweets into the timeline at read time."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Likes and retweets storm in on a viral tweet. Keep the counters from melting a partition.",
+      covers: [
+        "Hot-counter aggregation: batch increments, eventual consistency.",
+        "Salt/shard the hottest counter key across partitions.",
+        "Approximate display is acceptable; exact isn't worth the coordination.",
+        "Cache the first page of replies."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Trending and search must reflect a tweet within seconds. How, without slowing the write path?",
+      covers: [
+        "Async indexing pipeline off the write path.",
+        "Windowed aggregation for trending (per time window).",
+        "Near-real-time search index updated within seconds.",
+        "What breaks at 10×: celebrity read fan-out (replicas), counter hot partition (salt) — both shard."
+      ]
+    }
+  ]}
+/>
