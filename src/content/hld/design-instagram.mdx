@@ -254,3 +254,53 @@ plus an id-level blocklist checked at hydration. Knowing *when the
 cheap answer is wrong* is the senior half of the question.
 
 </QA>
+
+## Design drills
+
+The feed is a fan-out decision plus a media path. Defend the calls.
+
+<DesignDrills
+  topic="Feed (Instagram)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Fan-out on write vs fan-out on read for the home feed — when do you use each?",
+      covers: [
+        "Push (fan-out on write): precompute follower feeds — great for normal users.",
+        "Pull (fan-out on read): compute at read time — for celebrities with huge follower counts.",
+        "A hybrid threshold flips between them by follower count.",
+        "The whole celebrity problem is this one threshold decision."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Design the photo upload → serve path.",
+      covers: [
+        "Client uploads to object storage via a signed URL (not through the app server).",
+        "Generate thumbnails/sizes asynchronously.",
+        "Serve via CDN; the feed carries URLs, not bytes.",
+        "Metadata (caption, author, refs) in the DB."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "The precomputed feed cache is enormous. Is it durable — and what if it's lost?",
+      covers: [
+        "It's rebuildable from source (posts + follow graph) → not durable, just a cache.",
+        "Warm it on read; cap list length; tolerate cold-start latency.",
+        "This is data classification: rebuildable vs precious.",
+        "Don't pay durability cost for something you can recompute."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "A post is deleted (or taken down). Eventual disappearance vs synchronous — which, and when does the cheap answer break?",
+      covers: [
+        "Normal delete: lazy skip at hydration (cheap), bounded by list turnover.",
+        "Hydration treats missing/tombstoned posts as skips → never rendered.",
+        "Legal/safety takedown: synchronous hot-cache invalidation + id blocklist.",
+        "Knowing when 'eventually invisible' is unacceptable is the senior half."
+      ]
+    }
+  ]}
+/>
