@@ -264,3 +264,53 @@ since Unix inodes — and saying *that* shows you see the pattern, not
 the product.
 
 </QA>
+
+## Design drills
+
+File storage is metadata/data separation + reliable upload + sync. Drill each.
+
+<DesignDrills
+  topic="File storage (Google Drive)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Why is separating metadata from file bytes the core design decision here?",
+      covers: [
+        "Metadata (perms, structure, versions) → a smart, queryable DB.",
+        "Bytes → dumb object storage with replication + erasure coding.",
+        "Each scales independently; the smart layer mints signed URLs.",
+        "The recurring metadata/data pattern across Netflix, WhatsApp, inodes."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Upload a 5 GB file reliably over a flaky connection.",
+      covers: [
+        "Chunked, resumable upload (multipart); retry only failed chunks.",
+        "Content-address chunks by hash; dedupe identical chunks.",
+        "Integrity check per chunk and on assembly.",
+        "Parallelize chunk uploads."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "The same file is edited on two devices offline, then both sync. Resolve the conflict.",
+      covers: [
+        "Version vectors / a version history to detect divergence.",
+        "Last-write-wins vs preserving a conflict copy — pick per product.",
+        "Delta sync (only changed chunks), not the whole file.",
+        "A client-side cache + a sync cursor to know what changed."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Deduplicate storage across users who upload the same file, without leaking who has what.",
+      covers: [
+        "Content hash + reference counting; store the bytes once.",
+        "Copy-on-write when one user edits.",
+        "Security: don't let dedup reveal that another user holds a file.",
+        "Chunk-level dedup catches partially-identical files."
+      ]
+    }
+  ]}
+/>
