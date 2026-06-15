@@ -226,3 +226,53 @@ latest row. Catalog metadata writes are rarer still (editorial), cached
 aggressively in front of a conventional DB.
 
 </QA>
+
+## Design drills
+
+Streaming is a CDN + an encoding pipeline + a control/data split. Drill each.
+
+<DesignDrills
+  topic="Video streaming (Netflix)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Deliver video to millions of viewers without melting your origin servers. What's the spine?",
+      covers: [
+        "CDN edge caching, with popular titles pre-positioned close to users.",
+        "Adaptive bitrate (HLS/DASH) so the client picks a rendition for its bandwidth.",
+        "Renditions are transcoded ahead of time, not on the fly.",
+        "Origin serves only cache misses / the cold tail."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Design the encoding/transcoding pipeline from a master file to something streamable.",
+      covers: [
+        "Ingest master → transcode to multiple bitrates/resolutions (async, per title).",
+        "Store renditions in object storage; distribute to the CDN.",
+        "Parallelize across a worker fleet; it's batch, off the hot path.",
+        "Package into segments + a manifest for ABR."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Why split the control plane from the data (video) plane, and where's the seam?",
+      covers: [
+        "Control: playback API, auth, metadata, recommendations (smart, low-volume).",
+        "Data: byte delivery via CDN (dumb, massive-volume).",
+        "Signed URLs mint access at the seam; each scales independently.",
+        "The recurring metadata/data pattern — same as Drive, WhatsApp media."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "The progress/resume heartbeat is ~1–2M tiny writes/sec. How do you store it?",
+      covers: [
+        "Write-optimized KV / wide-column (Cassandra-class), partitioned by user.",
+        "Last-write-wins; async, fire-and-forget, batched server-side.",
+        "Strong consistency deliberately NOT bought — a stale resume is invisible.",
+        "TTL/compaction on stale rows; classify it as tolerant-of-loss."
+      ]
+    }
+  ]}
+/>
