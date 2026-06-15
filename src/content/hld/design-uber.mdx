@@ -255,3 +255,53 @@ cache](/hld/design-instagram); recognizing it as one principle across
 designs is what staff-level answers sound like.
 
 </QA>
+
+## Design drills
+
+Ride-hailing is geospatial matching + atomic assignment + data classification.
+
+<DesignDrills
+  topic="Ride-hailing (Uber)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Match a rider to the nearest available driver. What data structure and flow?",
+      covers: [
+        "A geospatial index — geohash / quadtree / S2 cells — keyed by region.",
+        "Query nearby drivers, rank by ETA/distance, offer.",
+        "Then a reservation step to claim exactly one.",
+        "Drivers update location constantly → the index is write-heavy."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Driver locations update every few seconds at huge volume. How do you store and serve them?",
+      covers: [
+        "In-memory, replicated index — replicas for availability, not durability.",
+        "Partition by region; locations are ephemeral, fine to lose on crash.",
+        "High write rate, read by proximity query.",
+        "Don't persist every ping to a durable DB — it buys nothing."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Two requests try to assign the same driver to different trips at once. Guarantee one wins.",
+      covers: [
+        "Atomic conditional update on the driver: OFFERED → ON_TRIP, idempotent by trip id.",
+        "Then mark the trip ASSIGNED; a TTL'd reclaim releases unconfirmed drivers.",
+        "Name the invariant: a driver serves at most one trip at a time.",
+        "Same seat-lock + TTL pattern as ticket booking."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Classify the system's data by its useful lifetime and pay durability accordingly.",
+      covers: [
+        "Precious: trips, payments — durable, ACID, replicated for durability.",
+        "Ephemeral: live driver locations — memory only, replicated for availability.",
+        "Derived: surge heatmaps, analytics — rebuildable, async to cheap storage.",
+        "Pay durability cost only for precious data — the recurring principle."
+      ]
+    }
+  ]}
+/>
