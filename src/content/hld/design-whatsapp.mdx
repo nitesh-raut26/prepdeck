@@ -225,3 +225,53 @@ of thousands of members; beyond that you flip from push to pull
 pushes). Naming that push→pull boundary is the senior close.
 
 </QA>
+
+## Design drills
+
+Messaging is delivery guarantees + fan-out. Defend the hard calls.
+
+<DesignDrills
+  topic="Chat / messaging"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "A message is sent to an offline recipient. Trace how it becomes visible exactly once when they reconnect.",
+      covers: [
+        "Persist to the recipient's server-side inbox immediately.",
+        "Deliver on reconnect; clear the inbox entry only on device ack.",
+        "Dedupe by message id so a redelivery isn't shown twice.",
+        "Sender-side outbox so an offline sender's message isn't lost either."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Design the acknowledgement chain behind the sent / delivered / read ticks.",
+      covers: [
+        "Client→server ack = sent; server→recipient delivery = delivered; recipient open = read.",
+        "Each hop is idempotent and survives retries.",
+        "Store-and-forward: durability at the first hop, not awaiting the far end.",
+        "Receipts are events, fanned back to the sender."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Group fan-out: when does push-per-member stop scaling, and what do you do then?",
+      covers: [
+        "Cost is O(members) server work per message — fine for small groups.",
+        "Hence the member cap; the queue absorbs spikes.",
+        "Beyond tens of thousands, flip from push to pull (channel/feed model).",
+        "Media stays O(1): one blob in object storage, fan-out carries only URLs."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "End-to-end encryption changes the server's role. What can it no longer do, and what still works?",
+      covers: [
+        "Server routes ciphertext — it can't read content.",
+        "No server-side search or content-based features; per-device keys.",
+        "Metadata (who/when) is still visible and must be protected separately.",
+        "Multi-device = fan-out to each device's session with its own keys."
+      ]
+    }
+  ]}
+/>

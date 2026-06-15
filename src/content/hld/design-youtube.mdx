@@ -260,3 +260,53 @@ popularity distribution, not a checkbox** — measure the curve before
 copying Netflix.
 
 </QA>
+
+## Design drills
+
+UGC video adds an upload pipeline and a brutal popularity curve. Drill both.
+
+<DesignDrills
+  topic="UGC video (YouTube)"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Upload → watchable: walk the pipeline for user-generated video.",
+      covers: [
+        "Chunked/resumable upload to object storage.",
+        "Async transcode to multiple renditions + thumbnails.",
+        "Publish metadata; distribute to CDN.",
+        "The watch path reads renditions via ABR, never the raw master."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "View counts at billions-of-events scale — exact or approximate?",
+      covers: [
+        "Hot-counter aggregation: batch increments, eventual consistency.",
+        "Dedupe bot/duplicate views; a few seconds stale is fine for display.",
+        "Salt the hottest partition key to avoid a write hotspot.",
+        "Exactness isn't worth the coordination cost for a view count."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Caching must match the popularity curve (a few viral videos, a giant cold tail). Design it.",
+      covers: [
+        "Edge cache the head; pre-position rising/trending videos.",
+        "Regional origins for the warm middle.",
+        "Cheap archival for the cold tail, pull-through with a first-viewer latency penalty.",
+        "Request collapsing so a tail-spike doesn't stampede origin."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Live streaming vs VOD — what changes in the design?",
+      covers: [
+        "Low-latency segmenting; transcode on the fly, not fully pre-encoded.",
+        "A DVR/rewind window; scale fan-out to concurrent viewers.",
+        "Live chat is its own fan-out problem.",
+        "Origin can't pre-warm what doesn't exist yet."
+      ]
+    }
+  ]}
+/>
