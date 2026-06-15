@@ -62,6 +62,12 @@ sum from scratch. Change `k` and watch the work per slide stay O(1).
 | Time | O(n·k) / O(n²) | **O(n)** |
 | Space | O(1) | O(k) for the window's bookkeeping |
 
+Because the window only ever holds ≤ K+1 distinct keys — not the whole input — a
+sliding window is **already a bounded-memory, one-pass algorithm**, so it streams
+as-is. When the follow-up pushes further ("count *distinct* items, or the top-K,
+over an unbounded stream"), exact state stops fitting and you reach for
+[streaming algorithms & sketches](/dsa/streaming-and-memory).
+
 ## Practice set
 
 - Maximum sum subarray of size K — *fixed window*

@@ -1,0 +1,178 @@
+---
+title: "Streaming & Bounded-Memory Algorithms"
+summary: "The 'now optimize it for a stream with limited memory' follow-up: one-pass algorithms and sketches — top-K with a heap, reservoir sampling, Boyer-Moore majority, Count-Min, Bloom filters, HyperLogLog, running median, and external sort for data bigger than RAM."
+order: 16.5
+difficulty: "Core"
+tags: ["streaming", "bounded-memory", "heap", "sketches", "system-design"]
+---
+
+## The follow-up that trips people
+
+You solve the array problem, then the interviewer adds: *"now the data arrives as
+a stream and you can't store it all — do it in one pass with bounded memory."*
+This is its own toolkit. The **streaming model**: elements arrive one at a time,
+you get **one pass** (or few), and you must answer using memory **sublinear** in
+the input — often `O(k)`, `O(log n)`, or `O(1)`. When exact answers need too much
+memory, you trade a little accuracy for a lot of space with a **sketch**.
+
+The unlock: ask *"what do I actually need to keep?"* For many questions it's far
+less than the whole stream.
+
+## The toolkit
+
+| Question on a stream | Technique | Memory | Exact? |
+|---|---|---|---|
+| K largest / Kth largest so far | **Min-heap of size K** | O(k) | exact |
+| Running median | **Two heaps** (max-heap + min-heap) | O(n)\* | exact |
+| Uniform random sample of k | **Reservoir sampling** | O(k) | exact (uniform) |
+| Majority (> n/2) element | **Boyer–Moore voting** | O(1) | exact |
+| Top frequent items (heavy hitters) | **Misra–Gries / Count-Min Sketch** | O(k) | approximate |
+| "Have I seen x?" | **Bloom filter** | O(bits) | approx (no false negatives) |
+| Count of distinct items | **HyperLogLog** | O(log log n) | approximate |
+| Window stat over the stream | **Ring buffer / monotonic deque** | O(window) | exact |
+| Sort data bigger than RAM | **External merge sort (k-way)** | O(buffer) | exact |
+
+\*Two-heaps keeps everything if you need the true median of all seen; cap it (a
+sliding window or a sketch) when memory is bounded.
+
+### Top-K with a heap — the workhorse
+
+To keep the **K largest** of a stream, hold a **min-heap of size K**. Each new
+element: if the heap has < K, push it; else if it beats the heap's minimum,
+pop-min and push. The root is always the Kth largest, and you never store more
+than K. Same structure answers "Kth largest in a stream" in `O(log k)` per
+element. Watch a heap maintain its invariant as values stream in:
+
+<Visualizer algo="heap" />
+
+### Reservoir sampling — a fair sample without the size
+
+You want `k` uniformly-random elements but don't know the stream length and can't
+buffer it. Keep the first `k`; for the `i`-th element (`i > k`), keep it with
+probability `k/i`, evicting a random current member. Every element ends up with
+probability `k/n` — provably uniform — in `O(k)` memory and one pass. This is how
+you sample logs or events at scale.
+
+### Boyer–Moore — a majority in one variable
+
+If an element appears more than `n/2` times, you can find it with **one counter
+and one candidate**. Same element → `count++`; different → `count--`; count hits
+0 → adopt the current element as candidate. The survivor is the only possible
+majority (verify with a second pass if "majority" isn't guaranteed). `O(1)` memory
+— a beautiful example of "keep almost nothing."
+
+### Sketches — pay accuracy, save memory
+
+When even `O(k)` exact state is too much at true scale, **sketches** answer
+approximately in tiny space:
+
+- **Count-Min Sketch** — a few hash functions into counter arrays; estimates an
+  item's frequency with a bounded over-count. Heavy-hitters/top-K at firehose
+  scale.
+- **Bloom filter** — a bit array + hashes for set membership. "Definitely not
+  seen" or "probably seen" — **no false negatives**, tunable false-positive rate.
+  Front a cache/DB to kill lookups for keys that don't exist
+  ([cache penetration](/hld/caching)).
+- **HyperLogLog** — counts **distinct** items (unique visitors, distinct IPs) in
+  ~1.5 KB with a couple-percent error, versus a hash set that grows without bound.
+
+<Callout type="tip" title="Name the trade-off out loud">
+The senior move isn't reciting a sketch — it's saying *"exact needs O(n) memory I
+don't have, so I'll trade ~1% error for O(log log n) with HyperLogLog,"* and
+knowing when approximate is unacceptable (billing, correctness) versus fine
+(dashboards, monitoring).
+</Callout>
+
+### Data bigger than RAM → external sort
+
+Can't sort 100 GB in 8 GB of RAM? **External merge sort:** read chunks that *do*
+fit, sort each in memory, write sorted runs to disk, then **k-way merge** the runs
+with a min-heap (one element per run in the heap). The same k-way merge powers
+log merging and merging sorted shards — bounded memory, sequential I/O.
+
+## Back to the interview's R1
+
+The literal follow-up — *"longest substring with at most K distinct, but
+streaming"* — is gentler than it sounds: a [sliding window](/dsa/sliding-window)
+is **already** bounded memory (you hold the window + a frequency map of size ≤ K+1,
+not the whole stream), so it streams as-is. The genuinely hard streaming versions
+are the *aggregate* ones — **count distinct** elements over an unbounded stream
+(→ HyperLogLog) or **top-K frequent** items (→ Count-Min + a heap) — where exact
+state is unbounded and a sketch is the only way to fit memory.
+
+<QA q="Find the Kth largest element in a never-ending stream, with limited memory. How?">
+
+Keep a **min-heap of size K**. Push the first K elements; for each later element,
+compare against the heap's minimum (the root) — if it's larger, pop the min and
+push the new one, otherwise discard it. The root is always the Kth largest seen so
+far. Memory is O(k), independent of stream length, and each element costs
+O(log k). This is the streaming form of the top-K pattern, and it's exact — no
+approximation needed because K is small.
+
+</QA>
+
+<QA q="Count the number of distinct users in a 100M-event/day stream. A hash set is too big — what now?">
+
+Use **HyperLogLog**. A hash set of distinct ids grows with cardinality and blows
+memory at this scale. HyperLogLog estimates distinct count from the pattern of
+leading zeros in hashed values, using ~1.5 KB for a ~1–2% error and supporting
+merge (union counts across shards/days). If the question demands an *exact* count,
+say so and reach for a hash set or sorted external dedupe — but for analytics-grade
+"roughly how many uniques," HLL is the standard answer and the memory win is
+enormous.
+
+</QA>
+
+<QA q="What does a Bloom filter buy you, and what's the catch?">
+
+It answers set membership in a tiny bit array with a few hashes: "definitely not
+present" or "probably present" — **no false negatives, tunable false positives**.
+The catch is exactly that false-positive rate (and you can't delete from a basic
+Bloom filter — use a counting variant). The classic use is fronting an expensive
+lookup: check the Bloom filter first, and if it says "not present," skip the
+cache/DB entirely — which is how you defend against
+[cache penetration](/hld/caching) by millions of non-existent keys.
+
+</QA>
+
+<QA q="How do you take a uniform random sample from a stream of unknown length?">
+
+**Reservoir sampling.** Keep the first k elements. For the i-th element (i > k),
+keep it with probability k/i; if kept, evict a uniformly random one of the current
+k. By induction every element seen is in the final reservoir with probability k/n,
+so the sample is uniform — all in O(k) memory and a single pass, without ever
+knowing n in advance.
+
+</QA>
+
+## Practice — level up
+
+Every problem here is "answer a question about a stream without storing it" — the
+exact muscle the follow-up tests.
+
+<PracticeLadder
+  topic="Streaming & bounded memory"
+  tiers={[
+    {
+      label: "Warm-up — keep almost nothing",
+      problems: [
+        { name: "Moving Average from Data Stream", lc: "moving-average-from-data-stream", difficulty: "Easy", trains: "A ring buffer of the last N — bounded window over an unbounded stream." },
+        { name: "Kth Largest Element in a Stream", lc: "kth-largest-element-in-a-stream", difficulty: "Easy", trains: "A size-K min-heap — the streaming top-K workhorse." }
+      ]
+    },
+    {
+      label: "Core — heaps & windows on a stream",
+      problems: [
+        { name: "Find Median from Data Stream", lc: "find-median-from-data-stream", difficulty: "Hard", trains: "Two heaps balanced around the middle — running order statistics." },
+        { name: "Top K Frequent Elements", lc: "top-k-frequent-elements", difficulty: "Medium", trains: "Frequency map + heap — the exact version of heavy-hitters." }
+      ]
+    },
+    {
+      label: "Stretch — windowed counting at scale",
+      problems: [
+        { name: "Number of Recent Calls", lc: "number-of-recent-calls", difficulty: "Easy", trains: "Count events in a sliding time window — bounded state over time." },
+        { name: "Design Hit Counter", lc: "design-hit-counter", difficulty: "Medium", trains: "Aggregate the last N minutes in fixed memory — the sketch mindset, exact form." }
+      ]
+    }
+  ]}
+/>
