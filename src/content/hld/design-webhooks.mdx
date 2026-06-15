@@ -1,0 +1,272 @@
+---
+title: "Design a Webhook Delivery System"
+summary: "Deliver events to merchants' URLs reliably: at-least-once delivery, per-merchant ordering, an append-only event store, retries with a dead-letter queue, Kafka for async fan-out, per-merchant rate limiting, signing, and the observability that proves it works."
+order: 18.5
+tags: ["HLD", "webhooks", "kafka", "delivery-guarantees", "dead-letter-queue"]
+---
+
+## What we're building
+
+When something happens in our platform (a payment succeeds, an order ships), we
+must call **each subscribed merchant's HTTP endpoint** with that event — and keep
+calling until they acknowledge it, without losing events, melting a slow
+merchant, or letting one noisy merchant starve the rest.
+
+**Scope it out loud:**
+
+- **Functional:** register endpoints + event subscriptions; deliver each event;
+  retry failures; expose delivery status; let merchants replay.
+- **Non-functional:** **at-least-once** delivery, durability (never lose an
+  event), per-merchant **ordering** (best-effort), isolation between merchants,
+  and security (signed, verifiable payloads).
+- **Scale (state an estimate):** say 50k events/sec at peak, fan-out 1–3×, p99
+  delivery < a few seconds when merchants are healthy.
+
+## Architecture
+
+<Mermaid chart={`flowchart LR
+  P[Producers<br/>payment, orders…] -->|emit event| OUT[(Outbox / event store<br/>append-only, durable)]
+  OUT -->|CDC / publish| K[("Kafka<br/>partitioned by merchant")]
+  K --> W[Delivery workers<br/>consumer group]
+  W -->|rate-limited POST| M[Merchant endpoints]
+  W -->|transient fail → backoff| RQ[(Retry / delay topic)]
+  RQ --> W
+  W -->|attempts exhausted| DLQ[[Dead-letter queue]]
+  W --> ST[(Delivery status store)]
+  style OUT fill:#E0E7FF,stroke:#4F46E5
+  style DLQ fill:#FFE4E6,stroke:#E11D48
+  style K fill:#E0E7FF,stroke:#4F46E5`} />
+
+The spine: **durably record the event first**, then deliver asynchronously. The
+producer's job ends at the durable write; delivery is a separate, retriable
+concern. That decoupling is what makes "guaranteed" delivery possible.
+
+## Guaranteed delivery & the outbox
+
+The trap is the **dual write**: if a producer writes its DB row *and* publishes to
+Kafka as two steps, a crash between them either loses the event or emits one for a
+rolled-back change. Fix with the **transactional outbox** — write the event to an
+`outbox` table *in the same DB transaction* as the business change, then a relay
+(CDC/poller) publishes it to Kafka. The event is durable the instant the business
+fact is, and the relay is free to retry publishing.
+
+From Kafka onward we get **at-least-once**: a worker only commits its offset after
+the merchant **acknowledges** (2xx). Crash before the ack → the event is
+redelivered. Duplicates are therefore *expected*, which is why every payload
+carries a unique `event_id` and we tell merchants to dedupe on it — the
+[same idempotency contract](/lld/payment-retry) as a payment retry, now across a
+service boundary.
+
+## Ordering
+
+Strict global ordering doesn't scale and merchants rarely need it. **Per-merchant
+(or per-resource) ordering** is the useful guarantee: partition the Kafka topic by
+`merchant_id` (or `merchant_id + resource_id`) so all of one merchant's events
+land on one partition and one consumer processes them in order.
+
+<Callout type="warn" title="Ordering and retries fight each other">
+If event #1 fails and you retry it while #2 succeeds, you've reordered. Options:
+**block the partition** until #1 drains (strong order, head-of-line blocking) or
+**allow out-of-order with sequence numbers** and let merchants reorder (more
+throughput, weaker guarantee). Say the trade-off and pick per requirements — most
+webhook products choose best-effort order + an `event_id`/timestamp.
+</Callout>
+
+## SQL vs NoSQL for the event store
+
+- **The outbox / source of truth → relational.** It rides the business
+  transaction (you need ACID with the order/payment write), and volume is bounded
+  by your own writes. Postgres.
+- **The delivery log / status (every attempt, for every event, for every
+  merchant) → high-write, time-series, queried by `(merchant, time)`.** This is
+  the part that explodes: a wide-column store (Cassandra) or a
+  [partitioned/sharded](/hld/databases-at-scale) table with TTL fits the
+  append-heavy, range-scan pattern. "SQL for the truth, scale-out store for the
+  firehose of attempts" is the mature answer.
+
+## Retries & the dead-letter queue
+
+A merchant endpoint is flaky or down. Per attempt: **exponential backoff + jitter**
+(re-publish to a delay topic, don't busy-loop), a **max attempt cap**, and then
+the **dead-letter queue** — the event is parked with its failure history, never
+silently dropped, and a merchant can **replay** from it once they're healthy. A
+**per-endpoint circuit breaker** stops you wasting workers hammering a merchant
+who's been 500-ing for an hour; trip it, shed to retry, probe periodically.
+
+## Rate limiting per merchant
+
+A small merchant's server must not be flooded, and a backlog for one merchant must
+not consume all workers. Give each merchant a **token bucket** (R req/s, burst B);
+a delivery only proceeds if it takes a token, else it waits in that merchant's
+lane. This is exactly the [rate-limiting](/hld/rate-limiting) primitive, keyed per
+merchant — watch the burst-then-throttle behaviour:
+
+<Visualizer algo="token-bucket" />
+
+## Observability & alerting
+
+You can't run delivery you can't see. Track, per merchant and global:
+
+- **Delivery success rate**, attempt counts, and **p50/p99 delivery latency**.
+- **Queue lag** (events waiting) and **DLQ depth** (the single best health signal
+  — a rising DLQ means something is broken).
+- **Per-merchant dashboards** + **alerts**: page on DLQ growth, a collapsed
+  success rate, or a tripped breaker. Emit structured logs keyed by `event_id` so
+  one delivery is traceable end to end ([observability](/devops/observability)).
+
+## Security
+
+Sign each payload with an **HMAC** over the body using the merchant's secret
+(`X-Signature` header) so they can verify authenticity and reject forgeries;
+include a timestamp to stop replay. Deliver only over HTTPS, with a tight timeout
+so a hanging merchant can't tie up a worker.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Design a Webhook Delivery System"
+  difficulty="HLD — reliable delivery"
+  problem="Deliver platform events to merchants' HTTP endpoints with guaranteed delivery, ordering, retries, and per-merchant isolation. ~45 minutes."
+  stages={[
+    {
+      label: "Pin the guarantees",
+      prompt: "Before any boxes: which delivery and ordering guarantees are you promising?",
+      reveal: "At-least-once delivery (so: dedupe via event_id on the merchant side), durability (never lose an event), and per-merchant best-effort ordering. Exactly-once across a network to a third party is a fiction — be explicit that you give at-least-once + idempotency. Stating guarantees first frames every later decision."
+    },
+    {
+      label: "Make it durable before async",
+      prompt: "A producer's DB commit succeeds but the process dies before publishing. What did you lose?",
+      reveal: "Nothing, if you used the transactional outbox: the event was written in the same transaction as the business change, and a relay publishes it afterward with retries. The dual-write (DB + Kafka as two steps) is the bug; the outbox is the fix. Durable-first is the whole reason delivery can be 'guaranteed'."
+    },
+    {
+      label: "Decouple delivery",
+      prompt: "Why put Kafka between the event and the HTTP call at all?",
+      reveal: "So a slow/down merchant can't back-pressure the producer, retries are just redelivery, and you scale delivery workers independently. Partition by merchant_id for per-merchant ordering and isolation. The producer returns in milliseconds; delivery is an async, retriable concern."
+    },
+    {
+      label: "Fail without losing or flooding",
+      prompt: "A merchant is down for an hour. What happens to their events — and to your workers?",
+      reveal: "Transient failures retry with exponential backoff + jitter via a delay topic; after N attempts → dead-letter queue (parked, replayable, never dropped). A per-endpoint circuit breaker stops workers wasting cycles on a dead merchant. A per-merchant token bucket keeps their backlog from starving everyone else. Name the invariant: 'no event is lost; one bad merchant is isolated.'"
+    },
+    {
+      label: "Prove it works",
+      prompt: "How do you know delivery is healthy at 2am?",
+      reveal: "DLQ depth and per-merchant success rate are the headline metrics; alert on DLQ growth, success-rate cliffs, and queue lag. Trace each delivery by event_id. If you can't see DLQ depth and success rate per merchant, you can't operate it — observability is part of the design, not an afterthought."
+    }
+  ]}
+/>
+
+<QA q="How do you guarantee no event is ever lost between the producer and Kafka?">
+
+Use the transactional outbox: the producer writes the event into an `outbox`
+table inside the *same* database transaction as the business change. A separate
+relay (CDC or a poller) reads the outbox and publishes to Kafka, retrying until
+it succeeds, then marks the row published. This removes the dual-write race — the
+event is durable exactly when the business fact is, and publishing can fail and
+retry without losing anything. From Kafka on, at-least-once + consumer-ack offsets
+carry the guarantee the rest of the way.
+
+</QA>
+
+<QA q="Merchants complain they sometimes get the same webhook twice. Is that a bug?">
+
+No — it's the at-least-once guarantee working. A worker can deliver, the merchant
+processes it, but the worker crashes before committing its offset, so the event
+is redelivered. Exactly-once delivery to a third party isn't achievable, so we
+make duplicates harmless: every payload has a unique `event_id`, and merchants
+must dedupe on it (treat the handler as idempotent). We document this contract —
+it's the same idempotency principle as a payment retry, across a service boundary.
+
+</QA>
+
+<QA q="One merchant's endpoint is slow and failing. How do you stop it from affecting everyone?">
+
+Isolation on three axes. **Partitioning** by merchant means their backlog sits on
+their partition, not a shared queue. A **per-merchant token bucket** caps the rate
+we hit them and bounds the workers they can occupy. A **per-endpoint circuit
+breaker** trips after sustained failures so workers stop wasting attempts and shed
+to retry/DLQ, probing occasionally to reclose. Together: one bad merchant degrades
+only their own delivery, and the DLQ + alerts make it visible.
+
+</QA>
+
+<QA q="Why not just store events in Kafka and skip the database?">
+
+Kafka is the transport and short-to-medium-term log, not your system of record or
+your queryable status store. You still need the outbox (to ride the business
+transaction) and a delivery-status store (to answer "did merchant X get event Y,
+and when?" and to power replay and dashboards). Kafka's retention isn't a
+substitute for a durable, indexed, long-lived record — use each for what it's good
+at: Kafka for decoupled fan-out and ordering, a database for truth and queries.
+
+</QA>
+
+## Design drills
+
+You've seen the architecture — now defend the calls an interviewer will push on.
+
+<DesignDrills
+  topic="Webhook delivery"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Pin the delivery and ordering guarantees you'll promise a merchant, and the contract that makes them livable.",
+      covers: [
+        "At-least-once delivery (exactly-once to a third party is a fiction).",
+        "Therefore: a unique event_id per payload + merchants must dedupe (idempotent handler).",
+        "Per-merchant best-effort ordering via partitioning, not strict global order.",
+        "Durability: the event is never lost once accepted."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "The producer commits its DB change but crashes before publishing the event. Show how you lose nothing.",
+      covers: [
+        "Name the dual-write problem (DB + Kafka as two steps).",
+        "Transactional outbox: write the event in the same transaction as the business change.",
+        "A relay (CDC / poller) publishes from the outbox with retries, then marks it sent.",
+        "From Kafka on: at-least-once + commit offset only after the merchant acks."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A merchant is down for an hour. Walk through what happens to their events and to your workers.",
+      covers: [
+        "Transient failures → exponential backoff + jitter via a delay/retry topic.",
+        "Max attempts → dead-letter queue: parked with history, replayable, never dropped.",
+        "Per-endpoint circuit breaker so workers stop hammering a dead endpoint.",
+        "Per-merchant token bucket + partitioning so their backlog doesn't starve others."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Choose the storage for (a) the outbox/source of truth and (b) the per-attempt delivery log, and justify.",
+      covers: [
+        "Outbox → relational (Postgres): rides the ACID business transaction, bounded volume.",
+        "Delivery log → high-write, time-series by (merchant, time): wide-column (Cassandra) or sharded table + TTL.",
+        "Reason from access pattern and write volume, not fashion.",
+        "Kafka is transport, not the system of record."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "A merchant strictly requires events in order, but retries can reorder them. Resolve it.",
+      covers: [
+        "Single partition per merchant gives in-order consumption.",
+        "On failure, either block the partition until the failed event drains (strong order, head-of-line blocking) …",
+        "… or attach sequence numbers and let the merchant reorder/detect gaps (throughput over strictness).",
+        "State the trade-off explicitly and pick per the merchant's real need."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "It's 2am and deliveries are failing. What metrics and alerts tell you what's wrong?",
+      covers: [
+        "DLQ depth (rising = something broken) and per-merchant success rate are the headline signals.",
+        "Queue lag, attempt counts, p99 delivery latency, breaker state.",
+        "Alert on DLQ growth, success-rate cliffs, and lag thresholds.",
+        "Structured logs keyed by event_id for end-to-end tracing."
+      ]
+    }
+  ]}
+/>
