@@ -110,3 +110,53 @@ settlement at a median price, and run anomaly detection to catch repeat
 front-runners.
 
 </QA>
+
+## Design drills
+
+Real-time pricing is fan-out + atomicity + fairness. Drill all three.
+
+<DesignDrills
+  topic="Real-time pricing"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "How does a price get from a match event to thousands of clients in real time?",
+      covers: [
+        "Event → pricing engine → pub/sub fan-out → WebSocket gateways → clients.",
+        "Push, not poll — clients hold an open connection.",
+        "The gateways are stateless; a shared bus (Redis/Kafka) does the fan-out.",
+        "Backpressure / coalescing so a burst of ticks doesn't overwhelm clients."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A player's price must update correctly under many concurrent trades. How do you avoid a lost update?",
+      covers: [
+        "Atomic conditional update / compare-and-set, or a per-player lock in Redis.",
+        "Serialize mutations per key — the read-modify-write race is the enemy.",
+        "Same invariant-at-the-point-of-mutation rule as a balance decrement.",
+        "Keep the authoritative price strongly consistent; the broadcast can be eventual."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Some users see the match event before your feed does — latency arbitrage. Defend against it.",
+      covers: [
+        "Per-player trade lock with a short TTL during the uncertain window.",
+        "Or delayed execution (fill at the future price) / sealed batch at a median.",
+        "Anomaly detection to catch repeat front-runners.",
+        "One cheap atomic check per trade is the pragmatic first move."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Scale the WebSocket gateway to millions of concurrent connections.",
+      covers: [
+        "Stateless gateways behind a shared pub/sub; shard connections across them.",
+        "Connection affinity only for the socket, not for state.",
+        "Reconnect + resume (cursor) so a dropped socket recovers cleanly.",
+        "Monitor fan-out lag and per-gateway connection counts."
+      ]
+    }
+  ]}
+/>

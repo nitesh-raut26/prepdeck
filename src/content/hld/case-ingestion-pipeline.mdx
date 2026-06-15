@@ -100,3 +100,53 @@ a window without double-counting — the same idempotency principle that protect
 trade or a payment from duplicate processing.
 
 </QA>
+
+## Design drills
+
+Ingestion is where data quality and reliability are won. Drill the seams.
+
+<DesignDrills
+  topic="Ingestion pipeline"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Lay out the stages of an ingestion pipeline from external source to queryable store.",
+      covers: [
+        "Fetch/ingest → validate → transform/enrich → load to serving store.",
+        "A staging area separate from the serving store.",
+        "Provenance tags attached at each step (source, fetch time, transform version).",
+        "A queue between stages so they scale and retry independently."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Make every stage safe to re-run after a crash or replay.",
+      covers: [
+        "Idempotent upsert keyed by (source, entity, fetched_at) — overwrite, don't duplicate.",
+        "At-least-once workers + a dead-letter queue for poison records.",
+        "Checkpoints / watermarks so you resume, not restart.",
+        "Reprocessing a window must not double-count."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A source is rate-limited and occasionally returns malformed data. Handle both without poisoning downstream.",
+      covers: [
+        "Respect Retry-After / backoff; be a polite client.",
+        "Schema-validate on ingest; quarantine bad records instead of failing the batch.",
+        "Classify data quality; tag confidence/provenance.",
+        "Isolate one bad source from the rest of the pipeline."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Backfill two years of history without disrupting live ingestion.",
+      covers: [
+        "A separate backfill lane/queue, throttled, lower priority than live.",
+        "Idempotent loads so replays are safe.",
+        "A cursor/watermark to track progress and resume.",
+        "Prioritize live freshness over backfill completeness."
+      ]
+    }
+  ]}
+/>
