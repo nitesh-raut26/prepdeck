@@ -125,6 +125,25 @@ export const MACHINES = {
       { from: "loan", to: "lost", event: "lose" },
     ],
   },
+  "payment-retry": {
+    title: "Payment retry lifecycle",
+    initial: "pending",
+    states: [
+      { id: "pending", label: "Pending", x: 14, y: 14 },
+      { id: "sending", label: "Sending", x: 84, y: 14 },
+      { id: "backoff", label: "Backoff", x: 84, y: 52 },
+      { id: "dead", label: "Dead", x: 16, y: 52 },
+      { id: "done", label: "Done", x: 50, y: 86 },
+    ],
+    transitions: [
+      { from: "pending", to: "sending", event: "send" },
+      { from: "sending", to: "done", event: "ok" },
+      { from: "sending", to: "backoff", event: "fail" },
+      { from: "backoff", to: "sending", event: "retry" },
+      { from: "backoff", to: "dead", event: "exhaust" },
+      { from: "sending", to: "dead", event: "reject" },
+    ],
+  },
 } satisfies Record<string, StateMachine>;
 
 export type MachineId = keyof typeof MACHINES;
@@ -137,6 +156,7 @@ export const DEFAULT_EVENTS: Record<MachineId, string> = {
   "seat-booking": "lock, pay, refund",
   "chat-message": "ack, deliver, open",
   "book-loan": "checkout, returnToHold, pickup, return",
+  "payment-retry": "send, fail, retry, fail, retry, ok",
 };
 
 const MAX_EVENTS = 12;
