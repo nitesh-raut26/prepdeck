@@ -87,3 +87,53 @@ uses the pub/sub shape for live price broadcast and a queue shape for
 settlement-style work.
 
 </QA>
+
+## Design drills
+
+Queues are where reliability lives or dies. Drill the failure modes.
+
+<DesignDrills
+  topic="Async & messaging"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "When do you put a queue between two services — and when is it the wrong call?",
+      covers: [
+        "Yes: slow or spiky work, retriable side-effects, decoupling producer from consumer, load smoothing.",
+        "No: a synchronous low-latency read the caller must block on.",
+        "The queue buys async + buffering + retries, at the cost of eventual processing.",
+        "Name what the producer can return before the work is done."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Exactly-once delivery is impossible. Design for at-least-once instead.",
+      covers: [
+        "Consumers must be idempotent — dedupe on a message/event id.",
+        "Ack/commit only AFTER successful processing (crash-before-ack → redelivery).",
+        "The duplicate is expected, not a bug — make the handler safe to repeat.",
+        "Same idempotency contract as a payment retry or webhook."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A consumer keeps failing on one poisoned message. What happens to the queue, and how do you contain it?",
+      covers: [
+        "Head-of-line blocking: the bad message stalls everything behind it.",
+        "Retry with backoff, then route to a dead-letter queue after N attempts.",
+        "Alert on DLQ depth; provide replay once the bug is fixed.",
+        "Never silently drop; never retry forever."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Task queue vs log (Kafka): when each, and why does ordering differ?",
+      covers: [
+        "Task queue: workers compete for jobs, ack/delete — good for 'do this once'.",
+        "Log: partitioned, ordered, offset-based, replayable, multiple consumer groups.",
+        "Ordering is per-partition in a log; partition by the key that needs order.",
+        "Retention/replay is a log superpower a plain queue lacks."
+      ]
+    }
+  ]}
+/>
