@@ -51,6 +51,13 @@ trips.
 Most large systems are **eventually consistent** by default and reserve strong
 consistency for the few operations that truly need it.
 
+Replication lag is where this spectrum stops being abstract. A write lands on the
+leader and the followers fall behind; read from a follower that hasn't caught up
+and you've broken **read-your-writes**. Sync the follower and the read goes fresh
+— watch the lag open and close:
+
+<Visualizer algo="replication" />
+
 ## ACID vs BASE
 
 - **ACID** (classic RDBMS): Atomicity, Consistency, Isolation, Durability —
@@ -92,3 +99,53 @@ guarantee needs to be. You scope strong consistency to the operations with hard
 invariants and let the rest be eventually consistent.
 
 </QA>
+
+## Design drills
+
+CAP is a decision tool, not trivia. Practise *choosing* per workload.
+
+<DesignDrills
+  topic="CAP & consistency"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "A network partition splits your replicas. For (a) a bank ledger and (b) a 'who's viewing this' counter, do you choose CP or AP — and what does the user experience?",
+      covers: [
+        "Ledger → CP: refuse the write/read rather than risk a double-spend (briefly unavailable).",
+        "Counter → AP: keep serving, accept a stale/divergent number, reconcile later.",
+        "Justify from the data's invariants, not a blanket rule.",
+        "Name that when the network is healthy you get both — CAP only bites during a partition (PACELC for the else-case latency cost)."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A user updates their profile, then immediately reloads and sees the OLD value. Diagnose and fix without making the whole system strongly consistent.",
+      covers: [
+        "Replication lag → the reload hit a follower that hadn't applied the write (read-your-writes violation).",
+        "Route that user's reads to the leader for a short window after their write …",
+        "… or track the write position (LSN) and only read from a replica caught up to it.",
+        "Scope the fix to that one read path; leave the rest eventually consistent."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Which of these need strong consistency and which are happily eventual: seat booking, like counts, account balance, a paginated feed?",
+      covers: [
+        "Strong: seat booking and account balance — invariants (no double-book / double-spend).",
+        "Eventual: like counts (monotonic-ish, harmless if stale) and the feed (monotonic reads is enough).",
+        "Map each to the spectrum row (strong / read-your-writes / monotonic / eventual).",
+        "The point: consistency is chosen per-operation, not per-system."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Two users decrement the last unit of inventory at the same time on an AP store. What happens, and how do you make it safe?",
+      covers: [
+        "On AP both may read '1 left' and both succeed → oversell (the classic anomaly).",
+        "Make the decrement an atomic conditional update (compare-and-set) or a transaction on a CP store for that operation.",
+        "Or use a reservation + confirm with a TTL (the seat-lock pattern).",
+        "Carve the one strongly-consistent operation out of an otherwise-AP system."
+      ]
+    }
+  ]}
+/>

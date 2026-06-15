@@ -35,6 +35,13 @@ database. Push the cache as close to the user as you can afford to.
 - **Write-through / write-behind:** write to cache and DB together (through) or
   flush async (behind). Behind is fast but can lose writes on crash.
 
+Watch the hit/miss mechanic play out. The cache is cold at first — every request
+is a miss and a slow trip to the store — then it warms up: repeated keys are
+served from memory, and once it's full the least-recently-used key is evicted to
+make room. That climbing hit-rate is what every caching decision is really after:
+
+<Visualizer algo="cache" />
+
 <Callout type="warn" title="The three failure modes to name">
 **Stampede / dogpile** — a hot key expires and 10k requests hit the DB at once.
 Fix: per-key lock or "early recompute" with a probabilistic TTL.
@@ -73,3 +80,63 @@ also makes invalidation the only lever you have — and invalidation is the hard
 part.
 
 </QA>
+
+## Design drills
+
+You can recite cache-aside — now defend the decisions under pressure.
+
+<DesignDrills
+  topic="Caching"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "A product page is read 100k times/min and edited a few times a day. Design its caching — layers, TTL, and invalidation.",
+      covers: [
+        "Cache-aside in Redis with a generous TTL (5–10 min): reads dwarf writes, so coherence is cheap and the hit rate is ~100%.",
+        "Invalidate explicitly on the rare write (delete/overwrite the key in the update path).",
+        "Static assets behind a CDN with content-hashed filenames — no invalidation needed, just stop referencing the old file.",
+        "Add TTL jitter (avoid avalanche) + a per-key lock or early recompute (avoid stampede)."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A hot key expires and 10,000 requests hit the DB in the same second. Name the failure and stop it.",
+      covers: [
+        "This is a cache stampede / dogpile.",
+        "Per-key mutex: only one request recomputes the value; the rest wait or serve stale.",
+        "Probabilistic early recompute — refresh just before expiry so the key rarely fully expires.",
+        "Serve-stale-while-revalidate as a backstop."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Attackers query millions of IDs that don't exist; each one sails past the cache to the DB. Diagnose and fix.",
+      covers: [
+        "Cache penetration — misses for non-existent keys are never cached, so every one hits the DB.",
+        "Cache the negative result with a short TTL.",
+        "Front the lookup with a Bloom filter to reject definitely-absent keys cheaply.",
+        "Validate/normalize inputs so absurd keys die at the edge."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Choose write-through vs write-back vs cache-aside for (a) a user's session and (b) a financial ledger. Justify each.",
+      covers: [
+        "Cache-aside: the resilient default — the cache can fail without losing data.",
+        "Write-through: cache + DB written together; strong consistency, slower writes — fine for a session you must not drop.",
+        "Write-back: fast, batches to the DB, but loses writes on crash — never for a ledger.",
+        "Ledger → durable store of record first; cache only derived reads."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Reads are global but your cache lives in one region. Serve a worldwide audience without stale chaos.",
+      covers: [
+        "Edge/CDN caching for cacheable GETs; regional Redis for application cache.",
+        "Decide per data type: static → long TTL at the edge; user-specific → short TTL or no cache.",
+        "Cross-region invalidation via a purge API, versioned URLs, or pub-sub eviction events.",
+        "Accept bounded staleness explicitly — the TTL is your consistency knob."
+      ]
+    }
+  ]}
+/>
