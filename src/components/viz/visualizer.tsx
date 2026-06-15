@@ -49,6 +49,13 @@ import { observerSteps, parseObserverOps } from "@/lib/viz/observer-algos";
 import { parkingSteps, parseParkingOps } from "@/lib/viz/parking-algos";
 import { parseDebts, splitwiseSteps } from "@/lib/viz/split-algos";
 import { parseTokenBucket, tokenBucketSteps } from "@/lib/viz/rate-limit-algos";
+import { cacheSteps, parseCacheKeys } from "@/lib/viz/cache-algos";
+import { hashRingSteps, parseRingKeys } from "@/lib/viz/hash-ring-algos";
+import { parseReplOps, replicationSteps } from "@/lib/viz/replication-algos";
+import {
+  parseFlowRequests,
+  requestFlowSteps,
+} from "@/lib/viz/request-flow-algos";
 import {
   bfsSteps,
   DEMO_GRAPH,
@@ -78,6 +85,10 @@ import { ObserverCanvas } from "./observer-canvas";
 import { ParkingCanvas } from "./parking-canvas";
 import { SplitCanvas } from "./split-canvas";
 import { TokenBucketCanvas } from "./token-bucket-canvas";
+import { CacheCanvas } from "./cache-canvas";
+import { HashRingCanvas } from "./hash-ring-canvas";
+import { ReplicationCanvas } from "./replication-canvas";
+import { RequestFlowCanvas } from "./request-flow-canvas";
 
 export type VisualizerAlgo =
   | "binary-search"
@@ -109,7 +120,11 @@ export type VisualizerAlgo =
   | "observer"
   | "parking-lot"
   | "split-debts"
-  | "token-bucket";
+  | "token-bucket"
+  | "cache"
+  | "consistent-hashing"
+  | "replication"
+  | "request-flow";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -181,6 +196,14 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <SplitViz />;
     case "token-bucket":
       return <TokenBucketViz />;
+    case "cache":
+      return <CacheViz />;
+    case "consistent-hashing":
+      return <HashRingViz />;
+    case "replication":
+      return <ReplicationViz />;
+    case "request-flow":
+      return <RequestFlowViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -1117,6 +1140,203 @@ function TokenBucketViz() {
       }
     >
       <TokenBucketCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Cache hit/miss + LRU eviction (HLD) ──────────────────────────────── */
+
+const CACHE_DEFAULT = { requests: "A B C B A D A", capacity: "3" };
+
+function CacheViz() {
+  const [reqText, setReqText] = useState(CACHE_DEFAULT.requests);
+  const [capText, setCapText] = useState(CACHE_DEFAULT.capacity);
+  const [reqs, setReqs] = useState<string[]>(
+    () => parseCacheKeys(CACHE_DEFAULT.requests).keys ?? [],
+  );
+  const [cap, setCap] = useState(Number(CACHE_DEFAULT.capacity));
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const c = Number(capText);
+    if (!Number.isInteger(c) || c < 1 || c > 8) {
+      setError("capacity: an integer 1–8");
+      return;
+    }
+    const { keys, error: err } = parseCacheKeys(reqText);
+    setError(err);
+    if (keys) {
+      setReqs(keys);
+      setCap(c);
+    }
+  };
+
+  const steps = useMemo(() => cacheSteps(reqs, cap), [reqs, cap]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Cache — hit, miss & LRU eviction"
+      complexity={{ time: "O(1) per request", space: "O(capacity)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField
+            label="capacity"
+            value={capText}
+            onChange={setCapText}
+            onCommit={commit}
+            error={error && error.startsWith("capacity") ? error : null}
+          />
+          <VizField
+            label="requests (keys)"
+            wide
+            value={reqText}
+            onChange={setReqText}
+            onCommit={commit}
+            error={error && !error.startsWith("capacity") ? error : null}
+          />
+        </>
+      }
+    >
+      <CacheCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Consistent hashing ring (HLD) ────────────────────────────────────── */
+
+const RING_DEFAULT = "user1 cart9 ord42 img7 sess3 u88";
+
+function HashRingViz() {
+  const [keyText, setKeyText] = useState(RING_DEFAULT);
+  const [keys, setKeys] = useState<string[]>(
+    () => parseRingKeys(RING_DEFAULT).keys ?? [],
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { keys: parsed, error: err } = parseRingKeys(keyText);
+    setError(err);
+    if (parsed) setKeys(parsed);
+  };
+
+  const steps = useMemo(() => hashRingSteps(keys), [keys]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Consistent hashing — add a node, move ~1/N keys"
+      complexity={{ time: "O(log N) lookup", space: "O(N + keys)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="keys (hashed onto the ring)"
+          wide
+          value={keyText}
+          onChange={setKeyText}
+          onCommit={commit}
+          error={error}
+        />
+      }
+    >
+      <HashRingCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Leader–follower replication (HLD) ────────────────────────────────── */
+
+const REPL_DEFAULT = "write, write, read1, sync1, read1, sync1, read1";
+
+function ReplicationViz() {
+  const [opsText, setOpsText] = useState(REPL_DEFAULT);
+  const [ops, setOps] = useState(() => parseReplOps(REPL_DEFAULT).ops ?? []);
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { ops: parsed, error: err } = parseReplOps(opsText);
+    setError(err);
+    if (parsed) setOps(parsed);
+  };
+
+  const steps = useMemo(() => replicationSteps(ops), [ops]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Leader–follower replication — lag & read-your-writes"
+      complexity={{ time: "async apply", space: "O(replicas)" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="ops (write / sync1 / read2)"
+          wide
+          value={opsText}
+          onChange={setOpsText}
+          onCommit={commit}
+          error={error}
+        />
+      }
+    >
+      <ReplicationCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Request flow through the tiers (HLD) ─────────────────────────────── */
+
+const FLOW_DEFAULT = "GET /u/7, GET /u/9, GET /u/7";
+
+function RequestFlowViz() {
+  const [reqText, setReqText] = useState(FLOW_DEFAULT);
+  const [requests, setRequests] = useState<string[]>(
+    () => parseFlowRequests(FLOW_DEFAULT).requests ?? [],
+  );
+  const [servers, setServers] = useState("3");
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const n = Number(servers);
+    if (!Number.isInteger(n) || n < 1 || n > 6) {
+      setError("servers: an integer 1–6");
+      return;
+    }
+    const { requests: parsed, error: err } = parseFlowRequests(reqText);
+    setError(err);
+    if (parsed) setRequests(parsed);
+  };
+
+  const n = Math.min(6, Math.max(1, Number(servers) || 3));
+  const steps = useMemo(() => requestFlowSteps(requests, n), [requests, n]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Request flow — LB → stateless app → cache → DB"
+      complexity={{ time: "cache hit ≈ O(1)", space: "—" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField
+            label="app servers"
+            value={servers}
+            onChange={setServers}
+            onCommit={commit}
+            error={error && error.startsWith("servers") ? error : null}
+          />
+          <VizField
+            label="requests (repeat a key → cache hit)"
+            wide
+            value={reqText}
+            onChange={setReqText}
+            onCommit={commit}
+            error={error && !error.startsWith("servers") ? error : null}
+          />
+        </>
+      }
+    >
+      <RequestFlowCanvas step={stepper.step} />
     </VizPlayer>
   );
 }
