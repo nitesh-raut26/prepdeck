@@ -126,3 +126,53 @@ about turning hand-wavy requirements into concrete pressure that your design has
 to withstand.
 
 </QA>
+
+## Design drills
+
+The round itself is a skill. Rehearse the *process*, not just the systems.
+
+<DesignDrills
+  topic="Running the round"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "You're asked to 'design a URL shortener'. What do you say in the first 3 minutes, before drawing a single box?",
+      covers: [
+        "Clarify functional scope (shorten, redirect, custom aliases, analytics?) and pin what's out.",
+        "Ask the numbers: QPS, read:write ratio, data volume, latency target.",
+        "State assumptions out loud and get agreement.",
+        "Sketch the API contract first — it anchors everything after."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Turn '100M URLs, 100:1 read:write, 10k read QPS' into three concrete architectural decisions.",
+      covers: [
+        "Read-heavy ratio → cache in front of the DB + read replicas.",
+        "Storage estimate → does it fit one box, or shard?",
+        "QPS → roughly how many stateless app servers behind the LB.",
+        "Name the bottleneck (DB reads) and the lever (cache) explicitly."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "You've drawn the happy path. What three failure questions should you raise unprompted?",
+      covers: [
+        "What if a component dies? (replication / failover / no SPOF)",
+        "What at 10× load? (the next bottleneck and its scaling lever)",
+        "What during a network partition? (CP vs AP for this data)",
+        "Durability: can we lose data, and is that acceptable here?"
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "The interviewer says 'now make it global / multi-region.' What changes in your design?",
+      covers: [
+        "Geo-route users to the nearest region; CDN for static.",
+        "Cross-region replication and its lag; conflict resolution.",
+        "Consistency model per data type (some pinned, most eventual).",
+        "Data residency / compliance constraints."
+      ]
+    }
+  ]}
+/>
