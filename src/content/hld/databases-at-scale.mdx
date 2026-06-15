@@ -53,6 +53,12 @@ Partition data across nodes by a **shard key**:
 keys between adjacent points on the ring (≈ 1/N of keys), not the whole dataset —
 and **virtual nodes** smooth out skew.
 
+Here's why it beats `hash(key) % N`. Each key walks clockwise to the next node;
+when you add a node, only the keys in its new arc move — watch the "keys moved"
+counter when **N4** appears, versus the near-total remap that `% N` would force:
+
+<Visualizer algo="consistent-hashing" />
+
 <Callout type="warn" title="Choosing the shard key is the whole game">
 A bad key creates hotspots (one shard gets all the traffic) and cross-shard
 queries/joins (slow, hard to make transactional). Pick a key with high
@@ -96,3 +102,60 @@ window after a write, pin reads that must be fresh to the leader, or track the
 write position and only read from a replica that has caught up to it.
 
 </QA>
+
+## Design drills
+
+You can name the strategies — now make the calls a scaling system forces on you.
+
+<DesignDrills
+  topic="Databases at scale"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Reads are crushing your single Postgres box, but writes are fine. What's the first move — and what new problem does it create?",
+      covers: [
+        "Add read replicas (leader-follower); route reads to followers, writes to the leader.",
+        "New problem: replication lag → stale follower reads (a read-your-writes bug).",
+        "Mitigate: send a user's own reads to the leader briefly after their write, or pin must-be-fresh reads to the leader."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Writes now exceed one leader. Pick a shard key for an orders table and defend it against hotspots and cross-shard queries.",
+      covers: [
+        "Avoid sequential keys (timestamp / auto-increment id) — they hotspot one shard.",
+        "Pick a high-cardinality, evenly-accessed key; co-locate by the dimension most queries filter on (e.g. customer_id) so most queries hit one shard.",
+        "Name the cost: cross-shard queries and joins are slow and hard to make transactional."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "You sharded with hash(key) % N. Now you must add a node. What breaks, and what should you have used?",
+      covers: [
+        "% N remaps almost every key when N changes → you move the entire dataset.",
+        "Consistent hashing: keys + nodes on a ring; adding a node remaps only its arc (~1/N of keys).",
+        "Virtual nodes per physical node to smooth out skew."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "The leader dies. Walk through failover and the consistency risks.",
+      covers: [
+        "Promote an up-to-date follower to leader; redirect writes to it.",
+        "Risk: async-un-replicated writes on the dead leader are lost — a data-loss window; sync replication trades latency for safety.",
+        "Split-brain: fence the old leader and elect exactly one new leader via a coordinator/consensus.",
+        "Clients must discover the new leader (service discovery / a proxy)."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Pick SQL or NoSQL for (a) accounts + balances, (b) a 10M-row/day event firehose, (c) a product catalog with flexible attributes — and justify each.",
+      covers: [
+        "Accounts/balances → relational: ACID, constraints and transactions kill whole bug classes.",
+        "Event firehose → wide-column (Cassandra) or a log/stream: massive write throughput, time-ordered access.",
+        "Flexible catalog → a document store (Mongo) or Postgres JSONB if you want relational guarantees too.",
+        "Default to 'SQL until a specific pressure justifies otherwise' — and name the pressure."
+      ]
+    }
+  ]}
+/>

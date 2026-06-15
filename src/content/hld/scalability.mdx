@@ -33,6 +33,12 @@ Now any server can serve any request; you add/remove servers freely, and a crash
 loses no session. This is exactly why StockVision puts JWT/session data in
 cookies + Redis rather than server memory — it can run behind N identical nodes.
 
+Trace a request down the tier ladder: the load balancer round-robins to a
+*stateless* app server, which checks the cache first and only falls through to the
+database on a miss. Repeat a key and watch it serve from the warm cache instead:
+
+<Visualizer algo="request-flow" />
+
 ## Load balancers
 
 - **L4 (transport):** routes by IP/port; fast, protocol-agnostic, no payload
@@ -85,3 +91,54 @@ legacy in-memory state. The durable answer is to externalize session state
 (Redis) or go stateless with tokens, so stickiness isn't needed.
 
 </QA>
+
+## Design drills
+
+Scaling is a ladder you climb under pressure. Practise naming the next rung and
+its cost.
+
+<DesignDrills
+  topic="Scaling & load balancing"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "One app server is at 80% CPU. What's the cheapest next move, and when does it stop working?",
+      covers: [
+        "Vertical scale-up first: a bigger box, no app changes.",
+        "It hits a hard ceiling and stays a single point of failure.",
+        "Then go stateless + horizontal: N boxes behind a load balancer.",
+        "State the precondition: statelessness (session in Redis / JWT, not memory)."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Reads are the bottleneck at 50k QPS with a 100:1 read:write ratio. Walk the read-scaling ladder in order.",
+      covers: [
+        "Cache hot reads (Redis) — the biggest, cheapest win for a read-heavy load.",
+        "Add read replicas for read throughput + availability.",
+        "CDN for static/cacheable responses at the edge.",
+        "Each step has a catch: cache invalidation, replication lag — name them."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "The load balancer is now a single point of failure. How do you make the entry tier itself highly available?",
+      covers: [
+        "Active-passive or active-active LB pair with a floating IP / DNS failover.",
+        "Health checks so dead app nodes are pulled out automatically.",
+        "Or a managed LB that's redundant by design.",
+        "L4 vs L7 trade-off: raw throughput vs application-aware routing."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Writes now exceed what one primary can handle. What changes, and what do you lose?",
+      covers: [
+        "Shard by the access pattern's natural boundary (user / tenant).",
+        "Cross-shard joins and multi-entity ACID die → denormalize / sagas.",
+        "Hotspot risk from a bad shard key; consistent hashing to resize cheaply.",
+        "Do it as late as possible — sharding is the costly rung."
+      ]
+    }
+  ]}
+/>

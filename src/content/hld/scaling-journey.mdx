@@ -274,3 +274,53 @@ isolation boundary (user, tenant, venue/show), as late as possible,
 and say both halves out loud.
 
 </QA>
+
+## Design drills
+
+Each rung of the journey is a decision with a cost. Practise naming both.
+
+<DesignDrills
+  topic="Scaling the ladder"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "At 1k users everything is one box. What's the first thing that breaks as you grow, and the first lever you pull?",
+      covers: [
+        "Usually the DB (reads) or the single box's CPU/RAM.",
+        "First lever: scale up, then go stateless + add a load balancer.",
+        "Externalize session state so any server serves any request.",
+        "Don't shard yet — it's the last rung, not the first."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Reads dominate at scale. Lay out the read-scaling ladder and the catch on each rung.",
+      covers: [
+        "Cache (Redis) → catch: invalidation correctness.",
+        "Read replicas → catch: replication lag / read-your-writes.",
+        "CDN for static/edge-cacheable → catch: purge / versioning.",
+        "Order matters: cache before replicas before sharding."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Writes now exceed one primary. You must shard. What dies the moment you do?",
+      covers: [
+        "Cross-shard joins/aggregates → scatter-gather or an analytics pipeline.",
+        "Cross-entity ACID → sagas with compensations.",
+        "Operational simplicity → N primaries to monitor/back up/fail over.",
+        "The shard key becomes destiny — a bad one means hotspots + a migration."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Which decisions should you defer as long as possible on this journey, and why?",
+      covers: [
+        "Sharding — only under measured write/storage pressure.",
+        "Microservices — start as a modular monolith; split on real seams.",
+        "Multi-region — only when latency/availability needs justify the cost.",
+        "Every premature step adds operational complexity you pay for forever."
+      ]
+    }
+  ]}
+/>
