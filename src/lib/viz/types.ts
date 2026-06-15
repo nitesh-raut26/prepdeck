@@ -332,6 +332,82 @@ export type TokenBucketStep = {
   vars?: [string, string | number][];
 };
 
+/* ── Cache hit/miss + eviction (HLD) ─────────────────────────────────── */
+
+export type CacheCell = { key: string; tone?: Tone };
+
+export type CacheStep = {
+  capacity: number;
+  /** Cache entries, most-recently-used (left) → least-recently-used (right). */
+  cache: CacheCell[];
+  /** Key requested this frame. */
+  request?: string | null;
+  phase: "start" | "hit" | "miss" | "evict";
+  hits: number;
+  misses: number;
+  /** Key evicted this frame (LRU victim), for the note. */
+  evicted?: string | null;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Consistent-hashing ring (HLD) ───────────────────────────────────── */
+
+export type RingNode = { id: string; angle: number; tone?: Tone };
+export type RingKey = {
+  id: string;
+  angle: number;
+  /** Node id this key currently belongs to (next node clockwise). */
+  owner: string;
+  tone?: Tone;
+};
+
+export type HashRingStep = {
+  nodes: RingNode[];
+  keys: RingKey[];
+  /** Key id being routed/highlighted this frame (draws its arc to the owner). */
+  active?: string | null;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Leader–follower replication (HLD) ───────────────────────────────── */
+
+export type ReplicaNode = {
+  id: string;
+  role: "leader" | "follower";
+  /** Last write version this node has applied. */
+  version: number;
+  tone?: Tone;
+};
+
+export type ReplicationStep = {
+  nodes: ReplicaNode[];
+  phase: "start" | "write" | "replicate" | "read-fresh" | "read-stale";
+  /** Node id acted on this frame. */
+  active?: string | null;
+  /** Read result shown this frame, if any. */
+  readValue?: string | null;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Request flow through the tiers (HLD) ────────────────────────────── */
+
+export type RequestFlowStep = {
+  /** How many app servers sit behind the load balancer. */
+  serverCount: number;
+  /** Index of the app server handling this request (round-robin), or null. */
+  activeServer: number | null;
+  /** Which tier is lit this frame. */
+  stage: "client" | "lb" | "app" | "cache" | "db" | "respond";
+  cacheOutcome?: "hit" | "miss" | null;
+  /** Label of the request in flight, e.g. "GET /u/7". */
+  request: string;
+  note: string;
+  vars?: [string, string | number][];
+};
+
 /* ── Metadata shown in the player header ─────────────────────────────── */
 
 export type Complexity = { time: string; space: string };
