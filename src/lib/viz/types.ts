@@ -459,6 +459,42 @@ export type IsolationStep = {
   vars?: [string, string | number][];
 };
 
+/* ── Self-attention (AI/ML — Transformers) ───────────────────────────── */
+
+export type AttentionStep = {
+  tokens: string[];
+  /** Index of the query token whose attention we're computing. */
+  query: number;
+  phase: "start" | "scores" | "softmax" | "output";
+  /** Scaled dot-product scores per token (shown in the "scores" phase). */
+  scores?: number[];
+  /** Softmax attention weights, summing to 1 (shown after). */
+  weights?: number[];
+  /** Index of the token the query attends to most. */
+  dominant?: number | null;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Model / data drift (AI/ML — MLOps) ──────────────────────────────── */
+
+export type DriftStep = {
+  /** Histogram bin labels for the monitored feature. */
+  bins: string[];
+  /** Reference (training-time) distribution, as proportions. */
+  reference: number[];
+  /** Live distribution in the current window, as proportions. */
+  current: number[];
+  /** Time window index (0 = just shipped). */
+  window: number;
+  /** Population Stability Index between reference and current. */
+  score: number;
+  threshold: number;
+  status: "healthy" | "warning" | "alert";
+  note: string;
+  vars?: [string, string | number][];
+};
+
 /* ── Metadata shown in the player header ─────────────────────────────── */
 
 export type Complexity = { time: string; space: string };
