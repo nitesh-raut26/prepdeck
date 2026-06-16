@@ -408,6 +408,57 @@ export type RequestFlowStep = {
   vars?: [string, string | number][];
 };
 
+/* ── B+tree index lookup (Databases) ─────────────────────────────────── */
+
+export type BTreeNodeView = {
+  id: string;
+  keys: number[];
+  isLeaf: boolean;
+  x: number;
+  y: number;
+  /** Next leaf in the linked list (for range scans), or null. */
+  next?: string | null;
+  tone?: Tone;
+};
+
+export type BTreeStep = {
+  nodes: BTreeNodeView[];
+  /** Parent→child edges to draw (constant across steps). */
+  edges: [string, string][];
+  /** The search target shown in the header — a key or "a-b" range. */
+  target: string;
+  /** Node currently being examined. */
+  active?: string | null;
+  /** Keys matched so far (equality hit, or the range collection). */
+  matched: number[];
+  /** Node visits so far — contrasted with a full scan of every row. */
+  comparisons: number;
+  /** Total keys in the table, for the "vs full scan" payoff. */
+  totalKeys: number;
+  note: string;
+  vars?: [string, string | number][];
+};
+
+/* ── Transaction isolation (Databases) ───────────────────────────────── */
+
+export type TxnOp = { txn: "T1" | "T2"; label: string; tone?: Tone };
+
+export type IsolationStep = {
+  scenario: string;
+  /** Isolation level label, e.g. "Read Committed". */
+  level: string;
+  /** Interleaved op timeline for both transactions. */
+  ops: TxnOp[];
+  /** Index of the op being executed (-1 before start). */
+  activeIndex: number;
+  /** Value T1 observes at its critical read, if shown this frame. */
+  t1Sees?: string | null;
+  /** Whether the anomaly occurred at this level. */
+  verdict?: "anomaly" | "prevented" | null;
+  note: string;
+  vars?: [string, string | number][];
+};
+
 /* ── Metadata shown in the player header ─────────────────────────────── */
 
 export type Complexity = { time: string; space: string };
