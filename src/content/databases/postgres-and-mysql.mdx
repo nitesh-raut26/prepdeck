@@ -325,6 +325,37 @@ PostgreSQL has better standards compliance, richer types (arrays, JSONB, enums),
 
 </QA>
 
+## Practice ladder
+
+The advanced SQL these engines are known for — window functions, ranking and
+multi-join analytics. Climb in order.
+
+<PracticeLadder
+  topic="Advanced SQL — windows & CTEs"
+  tiers={[
+    {
+      label: "Warm-up — your first window",
+      problems: [
+        { name: "Rank Scores", lc: "rank-scores", difficulty: "Medium", trains: "DENSE_RANK() OVER (ORDER BY …) — ranking without gaps." }
+      ]
+    },
+    {
+      label: "Core — partitioned windows",
+      problems: [
+        { name: "Department Top Three Salaries", lc: "department-top-three-salaries", difficulty: "Hard", trains: "DENSE_RANK() OVER (PARTITION BY dept) — top-N per group." },
+        { name: "Consecutive Numbers", lc: "consecutive-numbers", difficulty: "Medium", trains: "Compare a row to its neighbours (LAG / window or self-join)." }
+      ]
+    },
+    {
+      label: "Stretch — multi-join analytics",
+      problems: [
+        { name: "Trips and Users", lc: "trips-and-users", difficulty: "Hard", trains: "Joins + conditional aggregation + filtering banned rows." },
+        { name: "Human Traffic of Stadium", lc: "human-traffic-of-stadium", difficulty: "Hard", trains: "Runs of consecutive rows — windows over an ordered sequence." }
+      ]
+    }
+  ]}
+/>
+
 ## Practice
 
 1. **Transactions**: Write a money transfer stored procedure that atomically debits one account and credits another, with proper error handling and rollback.
