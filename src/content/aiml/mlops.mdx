@@ -1,0 +1,162 @@
+---
+title: "MLOps & Model Deployment"
+summary: "The half of ML that isn't modeling: serving (batch vs online), the deploy pipeline and model registry, shipping safely (shadow/canary/rollback), monitoring data & concept drift, training-serving skew, and retraining triggers."
+order: 12
+difficulty: "Advanced"
+tags: ["mlops", "deployment", "monitoring", "drift", "serving", "model-registry"]
+---
+
+## The half of ML that isn't modeling
+
+Training a good model is maybe 10% of the work. The other 90% is **getting it to
+users and keeping it healthy**: serving it at low latency, versioning it,
+shipping new versions without breaking anything, and noticing when the world
+shifts out from under it. A model is the only kind of software that **silently
+gets worse after you ship it** — not because the code changed, but because reality
+did. MLOps is the discipline that handles that.
+
+## Serving: how the model reaches users
+
+- **Batch / offline** — score a whole table on a schedule (nightly churn scores,
+  recommendations). Simple, high-throughput, latency doesn't matter.
+- **Online / real-time** — the model sits behind an API and answers per request
+  (fraud check at checkout). Latency is a hard requirement; you cache, batch
+  requests, and right-size hardware (GPU vs CPU).
+- **Streaming** — score events as they arrive off a queue.
+
+In every case the model is a **versioned artifact** (weights + preprocessing)
+behind an interface — treat it like a deployable, not a notebook.
+
+## The deployment pipeline
+
+<Mermaid chart={`flowchart LR
+  D[(Training data)] --> TR[Train]
+  TR --> EV{Eval gate}
+  EV -->|fails| TR
+  EV -->|passes| REG[(Model registry<br/>versioned artifacts)]
+  REG --> DEP[Deploy: shadow → canary]
+  DEP --> PROD[Serving]
+  PROD --> MON[Monitor: latency, metrics, DRIFT]
+  MON -->|drift / decay| TR
+  style EV fill:#E0E7FF,stroke:#4F46E5
+  style REG fill:#DCFCE7,stroke:#16A34A
+  style MON fill:#FEF3C7,stroke:#D97706`} />
+
+The **model registry** versions every model with its data, code and metrics, so
+any deploy is reproducible and any bad release is one rollback away. Reproducibility
+in ML means pinning **data + code + model**, not just code.
+
+## Shipping safely
+
+- **Shadow** — run the new model alongside the old on real traffic but don't serve
+  its output; compare predictions offline. Zero user risk.
+- **Canary / A/B** — route a small % of traffic to the new model, watch the metrics,
+  ramp up if healthy.
+- **Rollback** — because the model is a versioned artifact, reverting is instant.
+
+## Monitoring & drift
+
+You can watch latency and error rate like any service — but the model-specific
+risk is **drift**: the live data drifting away from what the model trained on.
+
+- **Data drift** — the input distribution shifts (a feature's range moves). Detect
+  it *without labels* by comparing live vs training distributions, e.g. with the
+  **Population Stability Index (PSI)**.
+- **Concept drift** — the relationship between inputs and the target changes
+  (fraud patterns evolve), so accuracy decays even if inputs look the same.
+- The catch: **labels are delayed** (you learn the true outcome days later), so
+  input-distribution monitoring is your early-warning system.
+
+Here's PSI in action: a monitored feature quietly drifts right window by window;
+the score climbs through the warning band and trips the **retrain** threshold —
+the signal to act, long before you'd have ground-truth labels:
+
+<Visualizer algo="drift" />
+
+## Training-serving skew
+
+The most common production ML bug: a feature is computed **one way in training and
+a different way in serving** (different code paths, time zones, a fix applied to
+one pipeline but not the other). The model then sees inputs at serving time it
+never really trained on, and accuracy quietly tanks. The fix is a **feature store**
+(or shared feature code) so the exact same transformation runs in both places.
+
+## Retraining
+
+Decide what triggers a refresh:
+
+- **Scheduled** — retrain nightly/weekly (simple, may retrain when unnecessary).
+- **Drift-triggered** — retrain when PSI / a monitor crosses a threshold (efficient,
+  needs solid monitoring).
+- **Performance-triggered** — retrain when measured accuracy drops (best, but needs
+  timely labels).
+
+## Common Interview Questions
+
+<QA q="How do you deploy a new model version without risking production?">
+
+Treat the model as a versioned artifact in a registry, then roll out gradually.
+Start with a shadow deployment — run the new model on real traffic but don't serve
+its predictions, just log and compare them to the current model offline. If it
+looks good, canary it to a small percentage of traffic (or A/B test it), watch
+latency and the quality metrics, and ramp up only if they hold. Because every
+version is in the registry with its data/code/metrics, rollback is instant if
+something regresses. The principle is the same as any safe deploy — progressive
+exposure plus fast rollback — applied to a model.
+
+</QA>
+
+<QA q="What is model drift and how do you detect it without immediate labels?">
+
+Drift is the live data diverging from the training data, degrading the model over
+time. Two kinds: data drift (the input distribution shifts) and concept drift (the
+input→output relationship changes). The problem is that true labels usually arrive
+late, so you can't just watch accuracy. So you monitor the inputs directly:
+compare the live feature distribution to the training distribution with a metric
+like PSI (or KS test) per feature, and alert when it crosses a threshold (PSI ≥
+0.25 is a common "significant drift" line). That's an early warning that fires
+before you have labels; when it trips, you investigate and retrain.
+
+</QA>
+
+<QA q="What is training-serving skew and how do you prevent it?">
+
+It's when a feature is computed differently during training than during serving —
+e.g. training uses a batch SQL aggregation but the serving path recomputes it in
+application code with a subtle difference, or a bug fix lands in one pipeline but
+not the other. The model then receives inputs at inference that don't match its
+training distribution, and accuracy silently drops. Prevent it by computing
+features once through shared code or a feature store that serves the identical
+transformation to both training and serving, and by monitoring feature
+distributions in production against training as a tripwire.
+
+</QA>
+
+<QA q="Batch vs online inference — how do you choose?">
+
+Batch when predictions can be precomputed on a schedule and latency is irrelevant
+— churn scores, daily recommendations, enrichment jobs; it's simple and
+high-throughput. Online when you need a fresh prediction per request within tight
+latency — fraud at checkout, real-time ranking; it costs more (always-on,
+right-sized, often cached and request-batched). Some systems do both: precompute
+heavy candidates in batch, then a light online model re-ranks. Choose on whether
+the input is known ahead of time and how fresh the answer must be.
+
+</QA>
+
+## Practice
+
+1. **Drift monitor**: given a reference histogram and a live histogram for a
+   feature, compute the PSI and classify it (healthy < 0.1, warning < 0.25, alert
+   ≥ 0.25).
+2. **Rollout plan**: write the shadow → canary → full rollout steps for a new fraud
+   model, naming the metric you'd watch and the rollback trigger at each stage.
+3. **Skew hunt**: take a feature defined in a training query and re-implement it in
+   serving code — list three ways they could silently diverge.
+4. **Retraining policy**: for a recommendation model whose labels (clicks) arrive
+   within minutes vs a credit model whose labels (defaults) take months, design a
+   different retraining trigger for each and justify it.
+
+This completes Level 11 — AI & Machine Learning, end to end: from the math through
+modeling, transformers, LLMs, RAG, agents, evaluation, and operating it all in
+production.
