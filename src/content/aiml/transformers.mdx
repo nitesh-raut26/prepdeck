@@ -1,0 +1,183 @@
+---
+title: "Transformers & Attention"
+summary: "Why attention replaced RNNs, how self-attention works (Q/K/V, scaled dot-product, softmax), multi-head attention, positional encoding, the transformer block, and the O(n²) cost behind context-window limits."
+order: 5
+difficulty: "Advanced"
+tags: ["transformers", "attention", "self-attention", "nlp", "deep-learning", "positional-encoding"]
+---
+
+## The problem attention solved
+
+Before transformers, sequence models were **RNNs / LSTMs**: they read tokens one
+at a time, carrying a hidden state forward. Two problems killed them at scale:
+
+- **They can't parallelize.** Token *t* needs the hidden state from token *t−1*,
+  so training is inherently sequential — you can't use a GPU's thousands of cores
+  on one sequence at once.
+- **Long-range memory decays.** Information from token 1 has to survive being
+  squeezed through hundreds of state updates to influence token 500. It fades
+  (the [vanishing-gradient](/aiml/neural-networks) problem, stretched over time).
+
+The 2017 paper *"Attention Is All You Need"* threw out recurrence entirely. The
+idea: let **every token look directly at every other token in a single step** —
+no chain to walk, fully parallel, and any two tokens are one hop apart.
+
+## Self-attention: Query, Key, Value
+
+Each token is projected (by learned weight matrices) into three vectors:
+
+- **Query (Q)** — *what am I looking for?*
+- **Key (K)** — *what do I offer?*
+- **Value (V)** — *what will I contribute if attended to?*
+
+A token attends to others by matching its **Query** against everyone's **Keys**,
+then pulling a weighted blend of their **Values**:
+
+```text
+attention(Q, K, V) = softmax( Q · Kᵀ / √d ) · V
+```
+
+Step it through below. The pronoun **"it"** has a Query that matches **"animal"**'s
+Key, so after softmax it pulls mostly *animal*'s Value — that's how a pronoun
+quietly resolves to its noun. Switch the query token to see what each one looks at:
+
+<Visualizer algo="attention" />
+
+Three things worth saying in an interview:
+
+- **The dot product is a similarity score** — Q · K is large when a token is
+  "relevant to me".
+- **The √d scaling** keeps those dot products from growing with dimension; without
+  it the softmax saturates and gradients vanish.
+- **Softmax makes it a weighted average** — the weights sum to 1, so the output is
+  a convex blend of Values. Nothing is recurrent; it's all matrix multiplies,
+  which is exactly why a GPU loves it.
+
+## Multi-head attention
+
+One attention computation can only capture one kind of relationship. So
+transformers run **several heads in parallel**, each with its own Q/K/V
+projections, then concatenate and project the results. One head might track
+subject→verb agreement, another coreference, another nearby word order. It's an
+**ensemble of relationships** learned at once — cheap, because the heads run
+simultaneously.
+
+## Positional encoding
+
+Attention treats its input as a **set, not a sequence** — `softmax(QKᵀ/√d)V` is
+the same no matter how you shuffle the tokens. But "dog bites man" ≠ "man bites
+dog". So before the first layer we **add a positional encoding** to each token's
+embedding — a sinusoidal pattern (or a learned vector) that encodes *where* the
+token sits. Now position is part of the signal the model can attend to.
+
+## The transformer block
+
+A transformer stacks N identical blocks; each block is attention + a
+feed-forward network, each wrapped in a **residual connection + layer norm**
+(the residuals are what let you stack dozens of layers without the gradient dying):
+
+<Mermaid chart={`flowchart TB
+  IN["Token embeddings + positional encoding"] --> MHA["Multi-Head Self-Attention"]
+  MHA --> AN1["Add &amp; Norm (residual)"]
+  IN -.residual.-> AN1
+  AN1 --> FFN["Feed-Forward Network"]
+  FFN --> AN2["Add &amp; Norm (residual)"]
+  AN1 -.residual.-> AN2
+  AN2 --> OUT["to next block ( × N )"]
+  style MHA fill:#E0E7FF,stroke:#4F46E5
+  style FFN fill:#DCFCE7,stroke:#16A34A`} />
+
+Two flavors:
+
+- **Encoder** (e.g. BERT): each token attends to **all** tokens (bidirectional) —
+  great for understanding/classification.
+- **Decoder** (e.g. GPT): **causal / masked** self-attention — a token may only
+  attend to tokens *before* it, never the future. That mask is exactly what lets
+  a model generate left-to-right, one token at a time. Modern [LLMs](/aiml/llms)
+  are decoder stacks.
+
+## Why transformers won
+
+- **Parallelizable** — every token is processed at once, so training scales to
+  internet-sized data and billions of parameters.
+- **Long-range by construction** — any two tokens are one attention hop apart, no
+  decaying state.
+- **One architecture, every modality** — text, code, images (ViT), audio. It's the
+  backbone of essentially every modern foundation model.
+
+## The catch: O(n²)
+
+Attention compares **every token to every token**, so cost grows with the square
+of the sequence length: **O(n²·d) time and O(n²) memory**. Double the context,
+quadruple the work. This is the real reason [context windows](/aiml/llms) are
+finite and long-context is expensive. Mitigations interviewers love to hear:
+
+- **FlashAttention** — an IO-aware exact implementation that avoids materializing
+  the full n×n matrix in slow memory (a huge practical speedup, same math).
+- **Sparse / sliding-window attention** — each token attends to a local window
+  (or a few global tokens) instead of all n, trading some reach for linear-ish cost.
+- **KV cache** — at inference, cache past Keys/Values so generating token *t* doesn't
+  recompute attention over the whole prefix.
+
+## Common Interview Questions
+
+<QA q="Explain self-attention and the role of Q, K, and V.">
+
+Each token is projected into a Query, Key, and Value vector. To update a token's
+representation, you score its Query against every token's Key with a dot product
+(scaled by 1/√d), softmax those scores into weights that sum to 1, and take the
+weighted sum of all the Value vectors. Intuitively: the Query is "what I'm looking
+for", the Key is "what I offer", the Value is "what I contribute" — so a token
+pulls information from whichever tokens are most relevant to it. It's fully
+parallel (just matrix multiplies) and connects any two tokens in one step, which
+is what makes it beat RNNs.
+
+</QA>
+
+<QA q="Why do transformers need positional encoding?">
+
+Self-attention is permutation-invariant — it sees its input as a bag of tokens,
+so without position information "dog bites man" and "man bites dog" would produce
+identical outputs. Positional encodings (sinusoidal or learned) are added to the
+token embeddings before the first layer so each token's representation includes
+where it sits in the sequence. Then attention can learn order-dependent patterns.
+
+</QA>
+
+<QA q="Why multi-head attention instead of one big attention?">
+
+A single attention head can only learn one relationship pattern at a time. Multiple
+heads, each with their own Q/K/V projections, let the model attend to different
+kinds of relationships simultaneously — one head might capture syntactic
+dependencies, another coreference, another local word order — and the results are
+concatenated and projected back. Because the heads run in parallel and each works
+in a smaller subspace, it adds capacity without much extra cost.
+
+</QA>
+
+<QA q="Why is attention O(n²), and how do production systems cope with it?">
+
+Every token attends to every other token, so you compute an n×n score matrix —
+O(n²·d) time and O(n²) memory in the sequence length n. That quadratic cost is why
+context windows are bounded and why doubling context roughly quadruples cost.
+Mitigations: FlashAttention (IO-aware exact attention that never materializes the
+full matrix in HBM), sparse/sliding-window attention (attend to a local window
+plus a few global tokens for near-linear cost), and a KV cache at inference so each
+new token reuses past Keys/Values instead of recomputing them.
+
+</QA>
+
+## Practice
+
+1. **Attention by hand**: given three tokens with 2-D Q/K/V vectors, compute the
+   attention output for one query token — scores, softmax, weighted sum. Check
+   the weights sum to 1.
+2. **Causal mask**: write the mask matrix for a 4-token decoder so each token only
+   attends to itself and earlier tokens. Why is it an upper-triangular −∞?
+3. **Implement scaled dot-product attention** in NumPy or PyTorch
+   (`softmax(Q @ K.T / sqrt(d)) @ V`) and verify against `torch.nn.functional.scaled_dot_product_attention`.
+4. **Cost estimate**: a model has a 128k-token context. Relative to a 4k context,
+   how much more attention compute and memory does one layer need? (Answer with the
+   n² factor.)
+
+Next: [Large Language Models](/aiml/llms) — decoder-only transformers, scaled up.
