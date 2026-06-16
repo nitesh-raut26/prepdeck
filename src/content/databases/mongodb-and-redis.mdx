@@ -426,6 +426,67 @@ Redis is fast because: (1) everything lives in RAM — no disk I/O for reads/wri
 
 </QA>
 
+## Design drills
+
+NoSQL is modeling around the access pattern, not normal forms. Whiteboard each
+before revealing the checklist.
+
+<DesignDrills
+  topic="NoSQL data modeling"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Model a blog (users, posts, comments) in MongoDB. Embed or reference each relationship?",
+      covers: [
+        "Embed bounded data read together (a post's few recent comments).",
+        "Reference unbounded / shared / independently-queried data (the author user).",
+        "Avoid unbounded arrays — comments that grow forever → separate collection + paginate.",
+        "Model around how the app reads, not around normalization."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Pick the Redis structure for: a leaderboard, per-IP rate limiting, a session cache, a work queue.",
+      covers: [
+        "Leaderboard → sorted set (ZADD / ZRANGE / ZRANK) — scores + rank for free.",
+        "Rate limit → INCR + EXPIRE, or a sorted-set sliding window.",
+        "Session → string/hash + TTL.",
+        "Queue → list (LPUSH / BRPOP) or a Stream for consumer groups."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "When do you reach for MongoDB over Postgres — honestly?",
+      covers: [
+        "Flexible / evolving schema, or document-shaped data read as a unit.",
+        "High write throughput on denormalized documents.",
+        "NOT for heavy multi-entity transactions, joins, or hard invariants.",
+        "Default is 'relational until a specific reason appears.'"
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Redis is in-memory. How do you handle persistence and running out of memory?",
+      covers: [
+        "RDB snapshots vs AOF (append-only log) — the durability/perf trade-off.",
+        "maxmemory + an eviction policy (allkeys-lru/lfu, volatile-ttl).",
+        "Decide: cache (evictable) vs source of truth (must persist + replicate).",
+        "Replication + failover for availability."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Design a cache-aside layer with Redis in front of Postgres, with stampede protection.",
+      covers: [
+        "Read: check Redis → on miss, read DB and SET with a TTL.",
+        "Write: update the DB, then invalidate or overwrite the key.",
+        "Stampede: a per-key lock or early/probabilistic recompute on a hot key.",
+        "Jitter the TTLs so keys don't all expire at once (avalanche)."
+      ]
+    }
+  ]}
+/>
+
 ## Practice
 
 1. **MongoDB**: Model a social media app — users, posts, comments, likes. Decide what to embed vs reference. Write aggregation to find the top 10 most-liked posts from the last 7 days.
