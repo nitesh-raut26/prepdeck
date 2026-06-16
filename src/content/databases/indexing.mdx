@@ -32,6 +32,13 @@ Almost every index is a **B-Tree** (Balanced Tree). It keeps data sorted and bal
          [10, 20] [30, 40] [60, 70] [80, 90]
 ```
 
+Here's that exact tree answering a query. Search a single key and watch it descend
+root → internal → leaf in **3 node hops** instead of scanning all 8 rows — then try
+a **range** like `30-70` and watch it land on the first leaf and follow the linked
+leaves (the B+tree trick that makes `BETWEEN` and `ORDER BY` cheap):
+
+<Visualizer algo="btree" />
+
 Properties:
 - **O(log n)** search, insert, delete
 - Supports **range queries** (`BETWEEN`, `>`, `<`, `>=`, `<=`)
@@ -285,6 +292,67 @@ When the query matches a large fraction of the table (typically >10-30%). The qu
 The systematic approach: (1) Identify all WHERE equality predicates → leading index columns. (2) Identify WHERE range predicates → next index columns. (3) Identify ORDER BY columns → append at end for sort elimination. (4) Check if covering the query's SELECT columns eliminates table access. (5) Check cardinality — indexing a boolean with 50/50 split rarely helps. (6) Check if a partial index would reduce size (only index the commonly queried subset).
 
 </QA>
+
+## Design drills
+
+Indexing is judgment under a query pattern. Whiteboard each before revealing the
+checklist.
+
+<DesignDrills
+  topic="Index design"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Design the optimal index for: SELECT * FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC.",
+      covers: [
+        "Equality columns first: (user_id, status) — they narrow the most.",
+        "Then the sort column: created_at DESC — for sort elimination.",
+        "Final: (user_id, status, created_at DESC) serves filter + ORDER BY with zero sort.",
+        "If the SELECT list is narrow, INCLUDE those columns to make it covering."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "A query is suddenly slow in production. Walk your systematic diagnosis with EXPLAIN ANALYZE.",
+      covers: [
+        "Run EXPLAIN (ANALYZE, BUFFERS); look for a Seq Scan on a large table.",
+        "Compare estimated vs actual rows — a big mismatch means stale stats → ANALYZE.",
+        "Check Buffers: lots of 'read' (disk) vs 'hit' (memory) = working set doesn't fit.",
+        "Add the index the predicate/sort implies, then re-measure."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Why do WHERE LOWER(email) = ? and WHERE YEAR(created_at) = 2024 ignore the index — and how do you fix each?",
+      covers: [
+        "A function on the indexed column destroys the b-tree's sort order → full scan.",
+        "Fix LOWER(email) with a functional index on LOWER(email).",
+        "Fix YEAR(...) with a range: created_at >= '2024-01-01' AND < '2025-01-01'.",
+        "Same trap: a leading wildcard LIKE '%x' can't use the index either."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Given a composite index on (a, b, c), which of these use it: WHERE b = ?; WHERE a = ? AND c = ?; WHERE a = ? ORDER BY b?",
+      covers: [
+        "WHERE b alone → NO (leftmost-prefix rule skips a).",
+        "WHERE a AND c → uses (a) only; the gap at b blocks using c.",
+        "WHERE a ORDER BY b → YES: prefix on a, sort served by b.",
+        "A range on an earlier column stops the index being used for later columns."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "When is a full table scan the RIGHT plan, and why won't adding indexes help?",
+      covers: [
+        "When the query matches a large fraction of rows (~>10–30%).",
+        "Sequential I/O is far cheaper than that many random index lookups.",
+        "Small tables (a few pages) are always faster scanned.",
+        "The planner chooses seq scan deliberately here — don't fight it."
+      ]
+    }
+  ]}
+/>
 
 ## Practice
 
