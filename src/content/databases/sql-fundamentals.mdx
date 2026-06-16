@@ -392,6 +392,39 @@ Window functions perform calculations over a set of rows related to the current 
 
 </QA>
 
+## Practice ladder
+
+SQL is a muscle you build on real queries. These are LeetCode's classic SQL
+problems — climb in order; each rung assumes the one above.
+
+<PracticeLadder
+  topic="SQL queries"
+  tiers={[
+    {
+      label: "Warm-up — single tables & joins",
+      problems: [
+        { name: "Combine Two Tables", lc: "combine-two-tables", difficulty: "Easy", trains: "LEFT JOIN basics — keep rows with no match." },
+        { name: "Customers Who Never Order", lc: "customers-who-never-order", difficulty: "Easy", trains: "Anti-join — rows in A with no match in B (NOT IN / LEFT JOIN … IS NULL)." }
+      ]
+    },
+    {
+      label: "Core — grouping & self-joins",
+      problems: [
+        { name: "Duplicate Emails", lc: "duplicate-emails", difficulty: "Easy", trains: "GROUP BY + HAVING COUNT(*) > 1." },
+        { name: "Employees Earning More Than Their Managers", lc: "employees-earning-more-than-their-managers", difficulty: "Easy", trains: "Self-join a table to itself on a foreign key." },
+        { name: "Rising Temperature", lc: "rising-temperature", difficulty: "Easy", trains: "Self-join on consecutive dates — compare a row to its neighbour." }
+      ]
+    },
+    {
+      label: "Stretch — subqueries & per-group tops",
+      problems: [
+        { name: "Second Highest Salary", lc: "second-highest-salary", difficulty: "Medium", trains: "Subquery / LIMIT-OFFSET and the NULL-when-absent edge case." },
+        { name: "Department Highest Salary", lc: "department-highest-salary", difficulty: "Medium", trains: "Max-per-group via join or window — the gateway to ranking." }
+      ]
+    }
+  ]}
+/>
+
 ## Practice
 
 1. **Joins**: Find all users who have never written a post.
