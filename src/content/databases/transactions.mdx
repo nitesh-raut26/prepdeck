@@ -108,6 +108,13 @@ Transaction B writes: balance + 30 = 130  ← A's update is lost!
 
 Prevented by: proper locking or optimistic concurrency control.
 
+Pick an anomaly and an isolation level and watch two transactions interleave —
+the critical read lights green when the level prevents it, rose when it slips
+through. Run **Non-repeatable** at Read Committed (it slips through), then raise it
+to Repeatable Read and watch it vanish:
+
+<Visualizer algo="isolation" />
+
 ---
 
 ## Isolation Levels in Practice
@@ -350,6 +357,67 @@ PostgreSQL detects deadlocks by periodically checking for cycles in the lock dep
 The N+1 problem occurs when code fetches a list of N items, then issues N additional queries (one per item). Example: fetch 100 users, then for each user do a `SELECT * FROM posts WHERE author_id = ?`. That's 101 queries instead of 2. Fix: use a JOIN (fetch users + posts together), or use IN clause (`WHERE author_id IN (1,2,3,...)`), or use an ORM's eager loading feature. This is a critical interview topic because it's the most common database performance mistake in production systems.
 
 </QA>
+
+## Design drills
+
+Concurrency is where databases get hard. Whiteboard each before revealing the
+checklist.
+
+<DesignDrills
+  topic="Transactions & concurrency"
+  drills={[
+    {
+      level: "Warm-up",
+      prompt: "Two users withdraw from the same account at the same time. Show the lost-update bug, then the one-line fix.",
+      covers: [
+        "Both read balance, both compute, both write → one update is silently lost.",
+        "Fix in one statement: UPDATE ... SET balance = balance - x WHERE id = ? AND balance >= x.",
+        "Or SELECT ... FOR UPDATE to serialize, or an optimistic version check + retry.",
+        "The race is a read-modify-write — close it at the point of mutation."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Name the lowest isolation level that prevents each: dirty read, non-repeatable read, phantom.",
+      covers: [
+        "Dirty read → Read Committed.",
+        "Non-repeatable read → Repeatable Read.",
+        "Phantom → Serializable (SQL standard; PostgreSQL's RR also stops phantoms via MVCC).",
+        "Higher level = safer but less concurrency / more retries."
+      ]
+    },
+    {
+      level: "Core",
+      prompt: "Pessimistic (SELECT FOR UPDATE) vs optimistic (version column) locking — when do you choose each?",
+      covers: [
+        "Pessimistic: high contention, expensive-to-retry work, long critical sections.",
+        "Optimistic: low contention, cheap retries, read-heavy workloads.",
+        "Optimistic needs retry-on-conflict (WHERE version = ? → rowcount 0 means retry).",
+        "Pessimistic risks deadlocks and blocking; keep the transaction short."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "Two transactions deadlock. What does the database do, and how do you prevent it?",
+      covers: [
+        "The DB detects the lock cycle, aborts a victim with a deadlock error → the app retries.",
+        "Prevent with consistent lock ordering (always lock by ascending id).",
+        "Keep transactions short; acquire all needed locks upfront.",
+        "Retry with jittered backoff — deadlocks are expected, not exceptional."
+      ]
+    },
+    {
+      level: "Stretch",
+      prompt: "A multi-step operation spans two services, so you can't wrap it in one DB transaction. Now what?",
+      covers: [
+        "A saga: a sequence of local transactions with compensating actions to undo.",
+        "Idempotency keys so a retried step doesn't double-apply.",
+        "A transactional outbox to publish events reliably with each local commit.",
+        "Accept eventual consistency — distributed ACID across services isn't free."
+      ]
+    }
+  ]}
+/>
 
 ## Practice
 
