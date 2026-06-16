@@ -64,6 +64,8 @@ import {
   type IsoLevel,
   type IsoScenario,
 } from "@/lib/viz/isolation-algos";
+import { ATTN_TOKENS, attentionSteps } from "@/lib/viz/attention-algos";
+import { driftSteps } from "@/lib/viz/drift-algos";
 import {
   bfsSteps,
   DEMO_GRAPH,
@@ -99,6 +101,8 @@ import { ReplicationCanvas } from "./replication-canvas";
 import { RequestFlowCanvas } from "./request-flow-canvas";
 import { BTreeCanvas } from "./btree-canvas";
 import { IsolationCanvas } from "./isolation-canvas";
+import { AttentionCanvas } from "./attention-canvas";
+import { DriftCanvas } from "./drift-canvas";
 
 export type VisualizerAlgo =
   | "binary-search"
@@ -136,7 +140,9 @@ export type VisualizerAlgo =
   | "replication"
   | "request-flow"
   | "btree"
-  | "isolation";
+  | "isolation"
+  | "attention"
+  | "drift";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -220,6 +226,10 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <BTreeViz />;
     case "isolation":
       return <IsolationViz />;
+    case "attention":
+      return <AttentionViz />;
+    case "drift":
+      return <DriftViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -1430,6 +1440,51 @@ function IsolationViz() {
       }
     >
       <IsolationCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Self-attention (AI/ML — Transformers) ────────────────────────────── */
+
+function AttentionViz() {
+  const [query, setQuery] = useState("3"); // "it" — the coreference example
+  const q = Number(query);
+
+  const steps = useMemo(() => attentionSteps(q), [q]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Self-attention — what each token looks at"
+      complexity={{ time: "O(n²·d)", space: "O(n²)" }}
+      stepper={stepper}
+      inputs={
+        <PillSelect
+          label="query token"
+          options={ATTN_TOKENS.map((t, i) => ({ id: String(i), label: t }))}
+          value={query}
+          onChange={setQuery}
+        />
+      }
+    >
+      <AttentionCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Model / data drift (AI/ML — MLOps) ───────────────────────────────── */
+
+function DriftViz() {
+  const steps = useMemo(() => driftSteps(), []);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Model drift — PSI crosses the retrain line"
+      complexity={{ time: "per-window", space: "O(bins)" }}
+      stepper={stepper}
+    >
+      <DriftCanvas step={stepper.step} />
     </VizPlayer>
   );
 }
