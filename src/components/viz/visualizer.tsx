@@ -56,6 +56,14 @@ import {
   parseFlowRequests,
   requestFlowSteps,
 } from "@/lib/viz/request-flow-algos";
+import { btreeSteps, parseBTreeQuery } from "@/lib/viz/btree-algos";
+import {
+  ISO_LEVELS,
+  ISO_SCENARIOS,
+  isolationSteps,
+  type IsoLevel,
+  type IsoScenario,
+} from "@/lib/viz/isolation-algos";
 import {
   bfsSteps,
   DEMO_GRAPH,
@@ -89,6 +97,8 @@ import { CacheCanvas } from "./cache-canvas";
 import { HashRingCanvas } from "./hash-ring-canvas";
 import { ReplicationCanvas } from "./replication-canvas";
 import { RequestFlowCanvas } from "./request-flow-canvas";
+import { BTreeCanvas } from "./btree-canvas";
+import { IsolationCanvas } from "./isolation-canvas";
 
 export type VisualizerAlgo =
   | "binary-search"
@@ -124,7 +134,9 @@ export type VisualizerAlgo =
   | "cache"
   | "consistent-hashing"
   | "replication"
-  | "request-flow";
+  | "request-flow"
+  | "btree"
+  | "isolation";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -204,6 +216,10 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <ReplicationViz />;
     case "request-flow":
       return <RequestFlowViz />;
+    case "btree":
+      return <BTreeViz />;
+    case "isolation":
+      return <IsolationViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -1337,6 +1353,83 @@ function RequestFlowViz() {
       }
     >
       <RequestFlowCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── B+tree index lookup (Databases) ──────────────────────────────────── */
+
+const BTREE_DEFAULT = "70";
+
+function BTreeViz() {
+  const [text, setText] = useState(BTREE_DEFAULT);
+  const [query, setQuery] = useState(
+    () => parseBTreeQuery(BTREE_DEFAULT).query!,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const { query: q, error: e } = parseBTreeQuery(text);
+    setError(e);
+    if (q) setQuery(q);
+  };
+
+  const steps = useMemo(() => btreeSteps(query), [query]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="B+tree index — find a key in O(log n), not O(n)"
+      complexity={{ time: "O(log n) search", space: "O(n) index" }}
+      stepper={stepper}
+      inputs={
+        <VizField
+          label="key or range (e.g. 70 or 30-70)"
+          wide
+          value={text}
+          onChange={setText}
+          onCommit={commit}
+          error={error}
+        />
+      }
+    >
+      <BTreeCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Transaction isolation (Databases) ────────────────────────────────── */
+
+function IsolationViz() {
+  const [scenario, setScenario] = useState<IsoScenario>("nonrepeatable");
+  const [level, setLevel] = useState<IsoLevel>("read-committed");
+
+  const steps = useMemo(() => isolationSteps(scenario, level), [scenario, level]);
+  const stepper = useStepper(steps);
+
+  return (
+    <VizPlayer
+      title="Transaction isolation — anomalies vs levels"
+      complexity={{ time: "—", space: "—" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <PillSelect
+            label="anomaly"
+            options={[...ISO_SCENARIOS]}
+            value={scenario}
+            onChange={setScenario}
+          />
+          <PillSelect
+            label="isolation level"
+            options={[...ISO_LEVELS]}
+            value={level}
+            onChange={setLevel}
+          />
+        </>
+      }
+    >
+      <IsolationCanvas step={stepper.step} />
     </VizPlayer>
   );
 }
