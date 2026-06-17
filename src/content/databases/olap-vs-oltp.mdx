@@ -1,0 +1,121 @@
+---
+title: "OLAP vs OLTP & Data Warehousing"
+summary: "Why analytics and transactions need different databases: row vs columnar storage, normalized vs star schema, the warehouse/lake/lakehouse stack, ETL vs ELT, and why you never run reports on your production primary."
+order: 6
+difficulty: "Advanced"
+tags: ["databases", "olap", "oltp", "data-warehouse", "columnar"]
+---
+
+## Two workloads pulling in opposite directions
+
+- **OLTP** (Online *Transaction* Processing) — your app's database. Many tiny, concurrent
+  reads/writes touching a few rows: "fetch order 42", "insert a payment". Optimized for
+  point lookups, low latency, and correctness.
+- **OLAP** (Online *Analytical* Processing) — the analytics/reporting database. A few huge
+  queries scanning billions of rows to aggregate: "revenue by region by month for 3
+  years". Optimized for scan throughput, not single-row latency.
+
+They want **opposite physical layouts**, which is why they live in different systems.
+
+<Callout type="info" title="The one-line interview answer">
+OLTP = **row-store, normalized, indexed, many small transactions**.
+OLAP = **column-store, denormalized (star schema), few massive scans/aggregations**.
+Don't run heavy analytics on your OLTP primary — replicate/ETL into a warehouse.
+</Callout>
+
+## Row store vs column store — the core idea
+
+A row store keeps each row's columns together on disk — great when you need the whole row
+(`SELECT * WHERE id = 42`). A column store keeps each **column** together:
+
+```text
+Row store:    [id,name,amount,region][id,name,amount,region]...   ← read a whole order fast
+Column store: [id,id,id...][amount,amount,amount...][region...]   ← read one column fast
+```
+
+For `SELECT SUM(amount) WHERE region = 'EU'`, the column store reads **only** the `amount`
+and `region` columns — not the 40 columns you don't need — and those columns compress
+beautifully (runs of similar values) and vectorize. That's why analytics queries are
+orders of magnitude faster on columnar engines.
+
+## The modern data stack
+
+- **Data warehouse** (Snowflake, BigQuery, Redshift): columnar, SQL, built for OLAP at
+  scale. Structured, modeled data.
+- **Data lake** (S3 + Parquet/ORC): cheap object storage of raw/semi-structured files in
+  columnar formats. Schema-on-read.
+- **Lakehouse** (Databricks/Delta, Iceberg): a table layer over the lake giving warehouse
+  features (ACID, schema) on cheap storage — converging the two.
+
+## ETL vs ELT
+
+- **ETL** (Extract → **Transform** → Load): clean/reshape before loading. Older, used when
+  compute was scarce.
+- **ELT** (Extract → Load → **Transform**): dump raw data into the warehouse, transform
+  *in* it with SQL (e.g. dbt). Dominant now because warehouse compute is cheap and elastic.
+
+## Star schema
+
+Warehouses model data as a central **fact table** (the events — one row per sale, with
+foreign keys and numeric *measures*) surrounded by **dimension tables** (the descriptive
+context — date, product, customer, store):
+
+```sql
+-- Fact: one row per sale; FKs to dimensions + measures
+SELECT d.month, p.category, SUM(f.amount) AS revenue
+FROM   fact_sales        f
+JOIN   dim_date     d ON d.date_id    = f.date_id
+JOIN   dim_product  p ON p.product_id = f.product_id
+WHERE  d.year = 2025
+GROUP  BY d.month, p.category;
+```
+
+Denormalizing into a star means analytics queries join a few wide dimensions instead of
+navigating a deeply normalized OLTP schema — fewer joins, faster scans. (A *snowflake
+schema* further normalizes the dimensions; usually not worth it.)
+
+## Getting data from OLTP to OLAP
+
+Never point dashboards at your production primary — a full-table analytical scan will
+starve the transactional workload. Instead replicate the data out:
+
+- **Batch ETL/ELT** on a schedule (nightly loads), or
+- **CDC** (change-data-capture) streaming the OLTP write-ahead log into the warehouse for
+  near-real-time analytics.
+
+**HTAP** systems try to serve both workloads in one engine, but the default and safest
+answer in an interview is: separate the stores, and pipe OLTP → warehouse.
+
+<QA q="Why are columnar databases so much faster for analytics than row stores?">
+
+Analytical queries touch a few columns across enormous numbers of rows (e.g.
+`SUM(amount)` over billions of orders). A **column store** keeps each column contiguous, so
+it reads only the columns the query needs — skipping the dozens it doesn't — whereas a row
+store must read whole rows. Columnar data also **compresses** far better (adjacent values
+in a column are similar) and is **vectorized** (CPU processes batches of one column at
+once). A row store wins the opposite case — fetching entire individual rows by key — which
+is exactly the OLTP pattern.
+
+</QA>
+
+<QA q="Why not just run analytics queries on your production (OLTP) database?">
+
+Because a big analytical scan or aggregation competes for the same CPU, memory, buffer
+pool, and locks your latency-sensitive transactions need — one heavy report can degrade or
+stall the app. The schemas also conflict: OLTP is normalized and row-stored for point
+access, analytics wants denormalized columnar storage. The standard solution is to
+**replicate OLTP data into a warehouse** (batch ETL/ELT or CDC) and run analytics there, so
+the two workloads never contend.
+
+</QA>
+
+<QA q="What is a star schema and why do warehouses use it?">
+
+A star schema centers on a **fact table** — one row per business event (a sale), holding
+foreign keys plus numeric measures — surrounded by **dimension tables** that describe the
+context (date, product, customer). Queries join the fact to a few wide, denormalized
+dimensions and aggregate the measures. Warehouses favor it because denormalization means
+fewer joins and big sequential column scans (fast on columnar engines), versus an OLTP
+schema where heavy normalization would force many joins per analytical query.
+
+</QA>
