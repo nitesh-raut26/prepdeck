@@ -1,0 +1,157 @@
+---
+title: "Concurrency Coding Problems"
+summary: "The multithreading round that isn't really DSA: locks, semaphores and condition variables, then the classics — producer-consumer, readers-writers, dining philosophers — plus the deadlock conditions and how to avoid them."
+order: 26
+difficulty: "Advanced pattern"
+tags: ["concurrency", "threads", "synchronization", "deadlock"]
+---
+
+## A different kind of coding round
+
+Some companies (**Google, Microsoft, Nvidia, Bloomberg**, and most **HFT** firms) run a
+**concurrency coding** round: not "find the subarray" but "make these threads cooperate
+correctly." It tests whether you reach for the right primitive and reason about
+interleavings — see also the [concurrency fundamentals](/fundamentals/concurrency).
+
+## The primitives
+
+| Primitive | Guarantees | Use for |
+|---|---|---|
+| **Mutex / lock** | one thread in the critical section | protect shared mutable state |
+| **Semaphore** | at most N permits | bound a resource pool / signal counts |
+| **Condition variable** | wait until a predicate holds, then wake | "block until the buffer isn't full/empty" |
+| **Atomic** | lock-free read-modify-write | counters, flags, CAS loops |
+
+The recurring shape: a lock for **mutual exclusion**, plus a condition variable to **wait
+for a state** instead of busy-spinning.
+
+## Producer–consumer (bounded buffer)
+
+The canonical problem and the template for most of the others: producers add to a fixed
+buffer, consumers remove, and each blocks when it can't proceed.
+
+```python
+import threading
+from collections import deque
+
+class BoundedBuffer:
+    def __init__(self, capacity):
+        self.buf = deque()
+        self.cap = capacity
+        self.lock = threading.Lock()
+        self.not_full = threading.Condition(self.lock)
+        self.not_empty = threading.Condition(self.lock)
+
+    def put(self, item):
+        with self.not_full:
+            while len(self.buf) == self.cap:   # while, not if — guard against spurious wakeups
+                self.not_full.wait()
+            self.buf.append(item)
+            self.not_empty.notify()            # wake one waiting consumer
+
+    def get(self):
+        with self.not_empty:
+            while not self.buf:
+                self.not_empty.wait()
+            item = self.buf.popleft()
+            self.not_full.notify()
+            return item
+```
+
+<Callout type="warn" title="Always wait in a while loop, never an if">
+After `wait()` returns, the condition you waited for may already be false again (another
+thread raced in, or a spurious wakeup). Re-check the predicate in a `while` loop before
+proceeding. `if` here is one of the most common — and hardest to reproduce — concurrency
+bugs.
+</Callout>
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Print in Order / Foo-Bar"
+  difficulty="Medium — LeetCode 1114 / 1115"
+  problem="Three methods first(), second(), third() are called on separate threads in arbitrary order. Guarantee they execute in the order first → second → third."
+  stages={[
+    {
+      label: "Name the hazard",
+      prompt: "What goes wrong if I do nothing?",
+      reveal: "The OS can schedule the threads in any order, so 'second' might run before 'first'. You need to BLOCK second until first signals it's done, and third until second does — a happens-before chain enforced with synchronization, not luck."
+    },
+    {
+      label: "Pick the primitive",
+      prompt: "Which tool expresses 'wait until X has happened'?",
+      reveal: "A semaphore initialized to 0 is perfect: second() acquires a permit that first() only releases after it runs; third() acquires one that second() releases. Acquire blocks until the permit exists, encoding 'wait for the previous step'. Condition variables or events work too."
+    },
+    {
+      label: "Wire the chain",
+      prompt: "How do the permits flow?",
+      reveal: "Two gates, both starting locked. first() does its work, then opens gate A. second() waits on gate A, works, opens gate B. third() waits on gate B, then works. Each thread blocks until its predecessor explicitly releases it.",
+      code: "import threading\nclass Foo:\n    def __init__(self):\n        self.a = threading.Semaphore(0)\n        self.b = threading.Semaphore(0)\n    def first(self, p):  p(); self.a.release()\n    def second(self, p): self.a.acquire(); p(); self.b.release()\n    def third(self, p):  self.b.acquire(); p()"
+    }
+  ]}
+/>
+
+## Deadlock — the four conditions
+
+A deadlock needs **all four** (Coffman conditions): **mutual exclusion**, **hold-and-wait**,
+**no preemption**, and **circular wait**. Break any one and deadlock can't happen. The
+practical fix interviewers want: impose a **global lock ordering** (always acquire locks in
+the same order) to break circular wait — the standard answer to **dining philosophers**
+(each philosopher grabs the lower-numbered fork first).
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Concurrency"
+  tiers={[
+    {
+      label: "Warm-up — ordering & signaling",
+      note: "semaphores and condition variables",
+      problems: [
+        { name: "Print in Order", lc: "print-in-order", difficulty: "Easy", trains: "Two gates (semaphores) to force a happens-before chain." },
+        { name: "Print FooBar Alternately", lc: "print-foobar-alternately", difficulty: "Medium", trains: "Two threads ping-ponging via two semaphores." },
+        { name: "Building H2O", lc: "building-h2o", difficulty: "Medium", trains: "Barrier-style grouping: 2 H + 1 O before release." }
+      ]
+    },
+    {
+      label: "Core — the classics",
+      note: "the named problems every interviewer knows",
+      problems: [
+        { name: "Print Zero Even Odd", lc: "print-zero-even-odd", difficulty: "Medium", trains: "Three-way coordination with condition variables." },
+        { name: "Fizz Buzz Multithreaded", lc: "fizz-buzz-multithreaded", difficulty: "Medium", trains: "Four threads gated on a shared counter's state." },
+        { name: "The Dining Philosophers", lc: "the-dining-philosophers", difficulty: "Medium", trains: "Break circular wait via lock ordering — the deadlock lesson." }
+      ]
+    },
+    {
+      label: "Stretch — shared structures",
+      note: "build a concurrent component",
+      problems: [
+        { name: "Web Crawler Multithreaded", lc: "web-crawler-multithreaded", difficulty: "Medium", trains: "Thread pool + concurrent visited-set — a tiny crawler." },
+        { name: "Design Bounded Blocking Queue", lc: "design-bounded-blocking-queue", difficulty: "Medium", trains: "The producer-consumer buffer as a reusable class." }
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why must you re-check the condition in a while loop after wait(), not an if?">
+
+Because `wait()` returning does **not** guarantee the predicate you waited for is still
+true. Another thread can be scheduled between the `notify()` and your reacquiring the lock
+and change the state back (e.g. a different consumer empties the buffer first), and some
+platforms allow **spurious wakeups**. A `while` loop re-tests the predicate and goes back to
+waiting if it's false; an `if` proceeds on a stale assumption and corrupts state — a classic,
+intermittent, hard-to-debug failure.
+
+</QA>
+
+<QA q="What causes deadlock and how do you prevent it?">
+
+Deadlock requires all four **Coffman conditions** simultaneously: mutual exclusion,
+hold-and-wait, no preemption, and circular wait. Remove any one and it's impossible. The
+most practical prevention is breaking **circular wait** by enforcing a **global lock
+ordering** — every thread acquires locks in the same defined order, so no cycle of
+"A waits for B waits for A" can form. That's exactly the dining-philosophers fix (pick up
+the lower-numbered fork first). Other tactics: acquire all locks at once (no hold-and-wait),
+or use timeouts/try-lock to allow back-off.
+
+</QA>
