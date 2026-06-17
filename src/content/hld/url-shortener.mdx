@@ -1,0 +1,211 @@
+---
+title: "Design a URL Shortener (TinyURL)"
+summary: "The canonical warm-up system design: base-62 over a unique ID, a 100:1 read-heavy cache path, the 301-vs-302 redirect trade-off, and how to mint codes with zero collisions across many servers — interviewed everywhere from SDE-1 screens to Staff loops."
+order: 8
+tags: ["system-design", "case-study", "hashing", "cache", "scalability"]
+---
+
+## Prompt
+
+> Design a service that turns a long URL into a short one (e.g. `tiny.cc/3xZ9a`),
+> redirects visitors to the original, and supports **custom aliases**, **expiry**, and
+> **click analytics**. Reads dwarf writes (~100:1); the system holds **billions** of
+> links and redirects must feel instant.
+
+<Callout type="info" title="Why this one, and at what level">
+It's the most common **warm-up** because it's small enough to finish yet has one real
+decision (how to mint codes) and one real constraint (read-heavy at scale). **SDE-1:**
+a correct API, schema, and the base-62 idea. **SDE-2:** capacity math, the cache path,
+301-vs-302, and sharding. **SDE-3 / Staff:** collision-free distributed ID generation,
+the hot-key problem, an analytics pipeline, and abuse/expiry — with trade-offs named.
+Asked at **Amazon, Google, Microsoft, Uber, Stripe, Atlassian** and most startups.
+</Callout>
+
+## 1. Requirements
+
+**Functional:** create a short code for a long URL; redirect a short code to its long
+URL; optional **custom alias**; optional **expiry**; **click analytics**.
+**Non-functional:** redirects under ~10 ms p99 (read-optimized); very high availability
+(a dead redirect breaks every link ever shared); codes **not trivially guessable**;
+durable — links must not be lost.
+
+## 2. Capacity estimate (say the numbers out loud)
+
+- **Writes:** ~100M new links/month ≈ **40 writes/s** (peak ~10×).
+- **Reads:** 100:1 ⇒ **~4,000 reads/s** (peak ~40k/s) — *this* is the system to optimize.
+- **5-year horizon:** ~6B links. Code length in base-62 (`[0-9a-zA-Z]`): `62⁶ ≈ 57B`,
+  `62⁷ ≈ 3.5T` — so **7 characters** is comfortable headroom.
+- **Storage:** 6B × ~500 bytes (URL + metadata) ≈ **3 TB** — fits a sharded store; the
+  hot set fits in memory. (See [system-design-numbers](/cheatsheets/system-design-numbers).)
+
+## 3. API & data model
+
+```text
+POST /urls        { longUrl, customAlias?, ttlDays? }  -> { shortCode }
+GET  /{shortCode}                                       -> 301/302 redirect
+GET  /urls/{shortCode}/stats                            -> { clicks, ... }
+```
+
+```text
+links( short_code PK, long_url, created_at, expires_at, owner_id )
+```
+
+A key-value store fits the access pattern perfectly: the only hot query is
+`short_code -> long_url`. Postgres works early; the natural scale-out is a sharded KV
+(DynamoDB / Cassandra) keyed on `short_code`.
+
+## 4. The core decision — minting the short code
+
+Everything interesting is here. Three approaches:
+
+| Approach | Idea | Problem |
+|---|---|---|
+| **Hash + truncate** | `base62(md5(longUrl))[:7]` | Collisions → must check-and-retry on every write; same URL maps to same code (sometimes unwanted) |
+| **Random 7 chars** | pick from 62⁷ | Collisions rare but possible → still a read-before-write check |
+| **Counter + base-62** ✅ | take a **unique 64-bit ID**, base-62 encode it | **Zero collisions by construction**; only catch is sequential IDs are guessable |
+
+The winner is **encode a unique ID**. Base-62 is just a base change — the same trick as
+writing a number in hex, with 62 digits:
+
+```ts
+const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+function base62(id: number): string {
+  let s = "";
+  while (id > 0) { s = ALPHABET[id % 62] + s; id = Math.floor(id / 62); }
+  return s || "0";
+}
+```
+
+The real interview pivot: **where does a globally-unique ID come from without a single
+counter becoming the bottleneck or a single point of failure?** Hand each app server a
+**pre-allocated range** of IDs (e.g. a ticket server leases blocks of 1,000), or use a
+**Snowflake-style ID** (timestamp + machine id + sequence). That sub-problem is big
+enough to get its own page — see [distributed-unique-id](/hld/distributed-unique-id).
+To kill guessability, encode a Snowflake ID or XOR the counter with a fixed secret so
+codes don't run `…3x9`, `…3xA`, `…3xB`.
+
+## 5. The read path — where all the traffic is
+
+Reads are 100× writes, so the redirect path must be cache-first:
+
+<Mermaid chart={`flowchart LR
+  C[Client] --> LB[Load balancer]
+  LB --> APP[Stateless app]
+  APP --> CACHE[(Redis cache)]
+  APP --> DB[(Sharded KV store)]
+  W[Create link] --> IDGEN[ID service / Snowflake]
+  IDGEN --> DB`} />
+
+- **Cache-aside (Redis):** on redirect, look up the code in Redis; on a miss, read the
+  DB and populate the cache. The working set of "links people actually click" is tiny
+  versus the 6B total, so hit rates are high. (See [caching](/hld/caching).)
+- **301 vs 302 — the classic trade-off.** A **301 (permanent)** is cached by browsers and
+  proxies, so repeat visits never reach you — fastest, but you **lose click analytics**.
+  A **302 (temporary)** sends every visit back to your server, so you can **count clicks**
+  and change the destination, at the cost of more traffic. *If analytics matter, use 302.*
+
+<Visualizer algo="request-flow" />
+
+## 6. Scaling the store
+
+- **Shard by `short_code`** (hash partitioning). Lookups are single-key, so they route
+  to exactly one shard — no scatter-gather.
+- **Consistent hashing** so adding a shard moves only ~1/N of the keys instead of
+  reshuffling everything. Step through why below. (See [databases-at-scale](/hld/databases-at-scale).)
+
+<Visualizer algo="consistent-hashing" />
+
+- **Replication** for availability — read replicas absorb the read fan-out; the cache
+  shields the primary.
+
+## 7. Deep dives (the follow-ups)
+
+- **Custom aliases:** write to the same table with a uniqueness constraint; reject on
+  conflict. Keep them in a separate namespace so they can't collide with generated codes.
+- **Analytics at scale:** don't write to the DB on every click. Emit a click **event**
+  to a queue/stream (Kafka), aggregate asynchronously, and store counts separately — the
+  same pattern as [ad-click-aggregator](/hld/ad-click-aggregator). This keeps the redirect
+  path at one cache read.
+- **Expiry:** store `expires_at`; treat expired codes as 404 (lazy) and sweep them with a
+  background job. TTL the cache entry to match.
+- **Abuse & safety:** rate-limit creation per user/IP (see [rate-limiting](/hld/rate-limiting));
+  scan submitted URLs against a malware/phishing blocklist before issuing a code.
+- **The hot key:** one viral link can hammer a single cache shard. Mitigate with local
+  in-app caching of ultra-hot codes and/or replicating that key across cache nodes.
+
+## Design drills
+
+<DesignDrills
+  topic="URL Shortener"
+  drills={[
+    {
+      prompt: "Generate globally-unique short codes across 50 app servers with no central counter as a bottleneck.",
+      level: "Core",
+      covers: [
+        "ID-range leasing: each server leases blocks (e.g. 1,000 ids) from a ticket service, refills before exhaustion.",
+        "Or Snowflake: timestamp + machineId + per-ms sequence — no coordination on the hot path.",
+        "Base-62 encode the id; note sequential ids are guessable and how to obscure them."
+      ]
+    },
+    {
+      prompt: "Explain 301 vs 302 and pick one for a product that bills on click counts.",
+      level: "Warm-up",
+      covers: [
+        "301 is cached by browsers/proxies → fastest, but you never see repeat clicks.",
+        "302 routes every hit through you → analytics + mutable destination, more load.",
+        "Billing on clicks ⇒ 302 (you must observe each redirect)."
+      ]
+    },
+    {
+      prompt: "A single link goes viral — 50k req/s to one short code. Keep redirects fast.",
+      level: "Stretch",
+      covers: [
+        "Hot-key replication across cache nodes, or pin the entry in per-app local cache.",
+        "CDN / edge caching of the 301/302 response for that code.",
+        "Decouple analytics so the counter write never throttles the redirect."
+      ]
+    },
+    {
+      prompt: "Design the click-analytics pipeline without slowing the redirect.",
+      level: "Stretch",
+      covers: [
+        "Fire-and-forget click event to Kafka on the redirect path; never block on it.",
+        "Stream aggregation (windowed counts) into a separate analytics store.",
+        "Approximate counts (HyperLogLog for uniques) when exactness isn't required."
+      ]
+    }
+  ]}
+/>
+
+<QA q="301 vs 302 redirect — which do you use for a URL shortener and why?">
+
+A **301 (permanent)** is cached by browsers and proxies, so after the first visit the
+client jumps straight to the long URL without touching your servers — lowest latency and
+load, but you **can't count clicks** or change the destination. A **302 (temporary)**
+makes every visit hit your service, enabling **analytics** and a mutable target at the
+cost of extra traffic. If the product needs click tracking (most do), choose **302**;
+if it's a pure redirect with no analytics, 301 is cheaper.
+
+</QA>
+
+<QA q="How do you generate short codes with no collisions across many servers?">
+
+Don't hash-and-hope — **encode a unique ID in base-62**, which is collision-free by
+construction. Get the unique ID without a central bottleneck via **range leasing** (each
+app server leases blocks of IDs from a ticket service and refills before running out) or
+a **Snowflake-style** scheme (timestamp + machine id + sequence) that needs no
+coordination on the hot path. Because raw counters produce guessable sequential codes,
+encode a Snowflake id or obfuscate the counter so adjacent links don't reveal each other.
+
+</QA>
+
+<QA q="Where does this system actually need to scale, and how?">
+
+It's ~100:1 read-heavy, so the **redirect path** is the target: serve it from a
+**cache-aside Redis** layer (the clickable working set is tiny vs. total links), behind a
+CDN for the hottest codes. The store is **sharded by short_code** with **consistent
+hashing** so growth moves only ~1/N of keys, plus **read replicas** for availability.
+Writes are modest (~tens/s) and only need a collision-free ID source. The failure mode to
+call out is the **hot key** — one viral link concentrating load on a single shard.
+
+</QA>
