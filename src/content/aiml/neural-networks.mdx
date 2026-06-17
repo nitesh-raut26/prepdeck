@@ -315,6 +315,76 @@ Why CNNs work for images:
 
 ---
 
+## Recurrent Neural Networks (RNNs)
+
+RNNs are specialized for sequential data — text, time-series, audio, where the order of elements matters. Unlike feedforward networks (ANNs) that process each input independently, RNNs pass a **hidden state** from one step to the next, acting as a memory:
+
+```
+Unrolled RNN:
+x₁ ──→ [ RNN Cell ] ──→ h₁
+             ↓ (passes hidden state)
+x₂ ──→ [ RNN Cell ] ──→ h₂
+             ↓
+x₃ ──→ [ RNN Cell ] ──→ h₃
+```
+
+```python
+import torch
+import torch.nn as nn
+
+class SimpleRNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        # Recurrent layer
+        self.rnn = nn.RNN(input_size, hidden_size, batch_first=True)
+        # Fully connected output layer
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        # x shape: (batch, seq_len, input_size)
+        # out shape: (batch, seq_len, hidden_size)
+        # h_n shape: (1, batch, hidden_size) - final hidden state
+        out, h_n = self.rnn(x)
+        
+        # Classify based on the final token's hidden state
+        return self.fc(out[:, -1, :])
+```
+
+### The Vanishing Gradient Problem in RNNs
+Standard RNNs struggle with long sequences. During backpropagation, gradients are multiplied back through every time step (Backpropagation Through Time). If the sequence is long, multiplying by weights repeatedly causes gradients to either **vanish** to zero (losing long-term context) or **explode** to infinity.
+
+### The Fix: LSTMs & GRUs
+To solve this, specialized architectures introduce **gates** to control how information is stored, updated, and forgotten:
+
+- **LSTM (Long Short-Term Memory)**: Uses a dedicated **Cell State** ($c_t$) as an internal highway, protected by three gates:
+  1. **Forget Gate**: Decides what to throw away from the past.
+  2. **Input Gate**: Decides what new information to write.
+  3. **Output Gate**: Decides what to output as the next hidden state.
+- **GRU (Gated Recurrent Unit)**: A simpler, faster version combining cell and hidden states into one, using only two gates (Reset and Update).
+
+```python
+# In PyTorch, swap nn.RNN for nn.LSTM or nn.GRU:
+self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+
+def forward(self, x):
+    # LSTMs return both final hidden state (h_n) and cell state (c_n)
+    out, (h_n, c_n) = self.lstm(x)
+    return self.fc(h_n[-1])
+```
+
+---
+
+## Model Architectures Compared
+
+| Architecture | Key Concept | Input Type | Best For |
+|---|---|---|---|
+| **ANN / MLP** | Fully-connected layers | Fixed-size vectors | Tabular data, simple classification |
+| **CNN** | Convolutional filters, weight sharing | Grid-like data (2D/3D) | Images, video, audio spectrograms |
+| **RNN / LSTM** | Recurrent hidden state loop | Sequential data (1D) | Time-series, text, translation, audio |
+
+---
+
 ## Hyperparameters
 
 Key settings to tune:
@@ -365,10 +435,19 @@ Overfitting is when the network memorizes training data (achieves very low train
 
 </QA>
 
+<QA q="Compare ANNs, CNNs, and RNNs. When would you use each?">
+
+- **ANNs (MLPs)** are fully connected feedforward networks. They process fixed-size inputs where spatial/temporal order doesn't matter. Use them for tabular data or simple classification tasks.
+- **CNNs (Convolutional Neural Networks)** use shared-weight filters sliding over inputs. They are optimized for grid-like, spatial data where features are translation-invariant (e.g. edge detection in images). Use them for computer vision, audio spectrogram analysis, or grid layouts.
+- **RNNs (Recurrent Neural Networks)** pass a hidden state sequentially from one step to the next to capture temporal relationships. Use them for sequential, variable-length inputs like text translation, speech recognition, and time-series forecasting. LSTMs and GRUs are chosen over standard RNNs to prevent vanishing gradients over long sequences.
+
+</QA>
+
 ## Practice
 
 1. **Beginner**: Train a neural network on the MNIST dataset (handwritten digits) in PyTorch. Achieve >98% test accuracy using a two-layer MLP.
 2. **CNN**: Build a CNN for CIFAR-10 (10-class image classification). Use batch normalization and data augmentation. Target: >80% test accuracy.
-3. **Hyperparameter tuning**: Starting from a baseline MNIST model, experiment with: learning rate (1e-2, 1e-3, 1e-4), batch size (32, 256), dropout rates (0, 0.3, 0.5). Plot training curves and explain the results.
+3. **RNN**: Build a simple LSTM model in PyTorch to classify the sentiment of movie reviews (binary classification) or predict the next number in a sequence. Use an embedding layer and experiment with hidden sizes.
+4. **Hyperparameter tuning**: Starting from a baseline MNIST model, experiment with: learning rate (1e-2, 1e-3, 1e-4), batch size (32, 256), dropout rates (0, 0.3, 0.5). Plot training curves and explain the results.
 
 Next: [LLMs](/aiml/llms) — the transformer revolution and large language models.
