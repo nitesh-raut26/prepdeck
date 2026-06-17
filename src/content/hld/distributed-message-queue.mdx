@@ -1,0 +1,129 @@
+---
+title: "Design a Distributed Message Queue (Kafka-style)"
+summary: "The log-based queue interview: topics split into partitions for parallelism, an append-only offset log, consumer groups, replication with ISR, and where ordering and exactly-once actually hold."
+order: 14
+tags: ["system-design", "kafka", "messaging", "case-study"]
+---
+
+## Prompt
+
+> Design a durable, scalable message queue (think Kafka / Kinesis): producers publish,
+> consumers read, messages survive broker crashes, throughput scales horizontally, and
+> consumers can replay. What are the ordering and delivery guarantees?
+
+<Callout type="info" title="Why this one, and at what level">
+It ties together replication, partitioning, and delivery semantics — and underpins
+[background jobs](/backend/background-jobs), [event aggregation](/hld/ad-click-aggregator),
+and [Kafka the tool](/backend/kafka). **SDE-1:** producer/consumer + durability. **SDE-2:**
+partitions, consumer groups, and ordering. **SDE-3 / Staff:** replication/ISR, delivery
+semantics, and exactly-once. Asked at **Confluent, Amazon, Uber, LinkedIn, Stripe**.
+</Callout>
+
+## 1. The core abstraction — an append-only log
+
+A topic is an **append-only log** split into **partitions**. Each message gets a
+monotonically increasing **offset** within its partition. Consumers track their own offset
+and read forward; nothing is deleted on read (unlike SQS) — messages persist for a
+**retention** period, which is what makes **replay** possible.
+
+```text
+topic "clicks", partition 0:  [m0][m1][m2][m3][m4...]   ← producers append at the tail
+                                              ▲
+                          consumer A offset ──┘  (reads forward, commits its offset)
+```
+
+## 2. Partitions = parallelism + ordering
+
+The partition is the unit of both scale and order:
+
+- **Parallelism:** N partitions ⇒ up to N consumers in a group read in parallel. To scale
+  throughput, add partitions.
+- **Ordering — only *within* a partition.** There is **no global order** across partitions.
+  To keep related messages ordered (all events for one user), **key** them so they hash to
+  the same partition. This is the most common ordering gotcha.
+
+## 3. Consumer groups
+
+A **consumer group** splits a topic's partitions across its members — each partition is
+consumed by **exactly one** consumer in the group, so work is divided without duplication.
+Add consumers to scale (up to the partition count); if one dies, its partitions **rebalance**
+to the others. Different groups read the same topic **independently** (each at its own
+offset) — that's how one stream fans out to many subscribers.
+
+## 4. Replication & durability
+
+Each partition is replicated to several brokers: one **leader** handles reads/writes, the
+**followers** replicate it. The set of replicas caught up to the leader is the **ISR**
+(in-sync replicas). A write is acknowledged once enough replicas have it
+(`acks=all` ⇒ all ISR), so the data survives a broker loss; if the leader dies, an ISR
+member is promoted. The `acks` setting is the **durability vs latency** dial.
+
+## 5. Delivery semantics
+
+- **At-most-once:** commit offset before processing — fast, can lose messages.
+- **At-least-once (default):** process, then commit — a crash in between causes
+  **redelivery**, so consumers must be **idempotent** (see [background jobs](/backend/background-jobs)).
+- **Exactly-once:** achievable within the system via an **idempotent producer** (dedupes
+  retries) + **transactional** writes (atomic produce + offset commit). End-to-end, it
+  still relies on idempotent side effects.
+
+Brokers are typically **pull-based** (consumers fetch at their own pace), which gives
+natural **backpressure** — a slow consumer just falls behind (rising **consumer lag**)
+instead of being overwhelmed.
+
+## Design drills
+
+<DesignDrills
+  topic="Distributed Message Queue"
+  drills={[
+    {
+      prompt: "Guarantee all events for a given user are processed in order, while still scaling throughput.",
+      level: "Core",
+      covers: [
+        "Order holds only within a partition — key by userId so a user's events share one partition.",
+        "Scale via more partitions; a single user stays ordered on its partition.",
+        "Trade-off: a hot key concentrates one user's load on one partition."
+      ]
+    },
+    {
+      prompt: "A broker holding a partition leader crashes. Don't lose acknowledged messages.",
+      level: "Stretch",
+      covers: [
+        "Replicate each partition; acks=all so a write is only acked once all ISR have it.",
+        "Promote an in-sync replica to leader on failure.",
+        "Tune acks/ISR for the durability-vs-latency point you need."
+      ]
+    },
+    {
+      prompt: "Achieve effectively exactly-once processing despite at-least-once delivery.",
+      level: "Stretch",
+      covers: [
+        "Idempotent producer (sequence numbers dedupe retries).",
+        "Transactional produce + offset commit so reprocessing can't double-count.",
+        "Idempotent consumer side effects as the end-to-end backstop."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Where does message ordering hold in a Kafka-style queue, and how do you use it?">
+
+Ordering is guaranteed **only within a single partition**, by offset — there is no global
+order across partitions. To keep a related sequence ordered (say, all events for one
+account), you **key** those messages so they hash to the same partition; everything on that
+partition is delivered in append order. The trade-off is that ordering ties those messages
+to one partition, so a very hot key can't be parallelized further and may need application-
+level handling.
+
+</QA>
+
+<QA q="What delivery guarantees can the queue provide, and what does each require?">
+
+**At-most-once** (commit offset before processing) risks loss; **at-least-once** (process
+then commit) is the default and can **redeliver** on a crash, so consumers must be
+**idempotent**; **exactly-once** is achievable inside the system with an **idempotent
+producer** plus **transactional** produce-and-commit, but end-to-end correctness still
+leans on idempotent side effects. The practical answer most teams ship is at-least-once +
+idempotency, which is effectively exactly-once from the outside.
+
+</QA>
