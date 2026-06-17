@@ -1,0 +1,164 @@
+---
+title: "Advanced Graphs — Shortest Paths, MST & Flow"
+summary: "Past BFS/DFS: Dijkstra vs Bellman-Ford vs Floyd-Warshall, Kruskal/Prim for MST, and a working mental model for max-flow/min-cut — with a decision table for picking the right one under pressure."
+order: 23
+difficulty: "Advanced pattern"
+tags: ["graphs", "shortest-path", "mst", "max-flow"]
+---
+
+## Past traversal
+
+[BFS/DFS](/dsa/graphs-bfs-dfs) answer reachability and unweighted shortest paths. Weighted
+graphs need heavier machinery — and interviews at **Google, Amazon, Uber** (maps/routing)
+lean on it. The skill isn't memorizing five algorithms; it's the **decision table**:
+
+| Need | Use | Cost | Constraint |
+|---|---|---|---|
+| Shortest path, **non-negative** weights | **Dijkstra** | O((V+E) log V) | no negative edges |
+| Shortest path, **negative** edges / detect negative cycle | **Bellman-Ford** | O(V·E) | — |
+| **All-pairs** shortest paths | **Floyd-Warshall** | O(V³) | small V |
+| Shortest path on a **DAG** | topological sort + relax | O(V+E) | acyclic |
+| **Min spanning tree** | **Kruskal** (+ [union-find](/dsa/union-find)) / **Prim** | O(E log E) | undirected, weighted |
+| **Max flow / min cut**, bipartite matching | **Edmonds-Karp / Dinic** | poly | flow network |
+
+## Dijkstra — the workhorse
+
+Greedy: always expand the closest unsettled node, using a **min-heap** of `(dist, node)`.
+Correct only because non-negative weights mean once you pop a node, its distance is final.
+
+```python
+import heapq
+def dijkstra(graph, src):           # graph: {u: [(v, w), ...]}
+    dist = {src: 0}
+    pq = [(0, src)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d > dist.get(u, float('inf')): continue   # stale entry
+        for v, w in graph[u]:
+            nd = d + w
+            if nd < dist.get(v, float('inf')):
+                dist[v] = nd
+                heapq.heappush(pq, (nd, v))
+    return dist
+```
+
+<Visualizer algo="dijkstra" />
+
+## Bellman-Ford — when edges go negative
+
+Relax **all** edges `V−1` times; one more relaxation that still improves means a
+**negative cycle**. Slower than Dijkstra but handles negatives and detects cycles:
+
+```python
+def bellman_ford(edges, V, src):     # edges: [(u, v, w), ...]
+    dist = [float('inf')] * V
+    dist[src] = 0
+    for _ in range(V - 1):
+        for u, v, w in edges:
+            if dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+    for u, v, w in edges:            # a further improvement ⇒ negative cycle
+        if dist[u] + w < dist[v]:
+            raise ValueError("negative cycle")
+    return dist
+```
+
+## MST & flow in one breath
+
+- **MST (Kruskal):** sort edges, add the cheapest that doesn't form a cycle (cycle check
+  via [union-find](/dsa/union-find)). Prim grows a tree with a heap, like Dijkstra.
+- **Max-flow / min-cut:** push flow along augmenting paths until none remain; the
+  max-flow equals the **min-cut** (max-flow min-cut theorem). Most interview "flow"
+  problems are really **bipartite matching** — model as a flow network with a source → left
+  → right → sink. Know the framing even if you rarely code Dinic from scratch.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Cheapest Flights Within K Stops"
+  difficulty="Medium — LeetCode 787 (Amazon, Uber)"
+  problem="Find the cheapest price from src to dst using at most K stops, in a weighted directed graph of flights."
+  stages={[
+    {
+      label: "Why plain Dijkstra is wrong",
+      prompt: "Dijkstra finds the cheapest path — so what does the 'at most K stops' constraint break?",
+      reveal: "Dijkstra settles a node by cheapest cost and never revisits it. But the cheapest way to reach a node might use too many stops, while a pricier path with fewer stops could still extend to the destination within the budget. The 'final once popped' invariant fails when a second dimension (stops) matters."
+    },
+    {
+      label: "Add the stop dimension",
+      prompt: "How do I make the search respect a hop budget?",
+      reveal: "Bellman-Ford fits perfectly: relax all edges exactly K+1 times. After i rounds, dist holds the cheapest cost using ≤ i edges. Cap at K+1 rounds and you've bounded the stops naturally — O(K·E). (A Dijkstra variant works too if you carry (cost, node, stopsUsed) in the heap.)"
+    },
+    {
+      label: "The snapshot subtlety",
+      prompt: "In the Bellman-Ford rounds, why update from a snapshot of last round's distances?",
+      reveal: "If you relax using values already updated THIS round, a single round could chain multiple hops and overcount stops. Copy last round's dist, relax into a fresh array, then swap — so each round adds at most one edge. Stating this is the senior detail interviewers wait for.",
+      code: "def find_cheapest(n, flights, src, dst, K):\n    INF = float('inf'); dist = [INF]*n; dist[src] = 0\n    for _ in range(K + 1):\n        prev = dist[:]              # snapshot: each round = one more hop\n        for u, v, w in flights:\n            if prev[u] + w < dist[v]:\n                dist[v] = prev[u] + w\n    return -1 if dist[dst] == INF else dist[dst]"
+    }
+  ]}
+/>
+
+<Callout type="warn" title="Pick the algorithm from the constraints">
+Negative edges? Dijkstra is out — use Bellman-Ford. Need *all* pairs and V is small?
+Floyd-Warshall's three nested loops. Extra constraint like 'K stops'? Bellman-Ford rounds
+or a state-augmented Dijkstra. Saying *why* you rejected the others is the signal — the
+decision table above is the actual interview content.
+</Callout>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Advanced Graphs"
+  tiers={[
+    {
+      label: "Warm-up — shortest paths",
+      note: "Dijkstra and its variants",
+      problems: [
+        { name: "Network Delay Time", lc: "network-delay-time", difficulty: "Medium", trains: "Vanilla Dijkstra from a source — single-source shortest path." },
+        { name: "Path With Minimum Effort", lc: "path-with-minimum-effort", difficulty: "Medium", trains: "Dijkstra where 'distance' is the max edge on the path." },
+        { name: "Cheapest Flights Within K Stops", lc: "cheapest-flights-within-k-stops", difficulty: "Medium", trains: "Bellman-Ford rounds for the bounded-hop twist." }
+      ]
+    },
+    {
+      label: "Core — MST & ordering",
+      note: "union-find and topological reasoning",
+      problems: [
+        { name: "Min Cost to Connect All Points", lc: "min-cost-to-connect-all-points", difficulty: "Medium", trains: "MST (Kruskal/Prim) on a complete graph of Manhattan distances." },
+        { name: "Course Schedule II", lc: "course-schedule-ii", difficulty: "Medium", trains: "Topological sort — order a DAG, detect cycles." },
+        { name: "Swim in Rising Water", lc: "swim-in-rising-water", difficulty: "Hard", trains: "Dijkstra/union-find on a grid — minimize the max cell." }
+      ]
+    },
+    {
+      label: "Stretch — harder modeling",
+      note: "see the graph hiding in the prompt",
+      problems: [
+        { name: "Bus Routes", lc: "bus-routes", difficulty: "Hard", trains: "BFS on a graph of routes, not stops — the modeling is the puzzle." },
+        { name: "Find the City...", lc: "find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance", difficulty: "Medium", trains: "All-pairs via Floyd-Warshall, then count." },
+        { name: "Reconstruct Itinerary", lc: "reconstruct-itinerary", difficulty: "Hard", trains: "Eulerian path (Hierholzer's) — every edge once." }
+      ]
+    }
+  ]}
+/>
+
+<QA q="When do you use Dijkstra vs Bellman-Ford vs Floyd-Warshall?">
+
+**Dijkstra** for single-source shortest paths with **non-negative** weights — greedy with a
+heap, O((V+E) log V); it's the default. **Bellman-Ford** when edges can be **negative** or
+you must **detect a negative cycle**, or when an extra constraint like "at most K hops"
+maps onto its round structure — O(V·E). **Floyd-Warshall** when you need **all-pairs**
+shortest paths and V is small — three nested loops, O(V³). The constraint in the prompt
+(negative edges? all pairs? hop limit?) picks the algorithm.
+
+</QA>
+
+<QA q="What is the relationship between max-flow and min-cut, and where does it show up?">
+
+The **max-flow min-cut theorem**: the maximum flow from source to sink equals the capacity
+of the minimum cut separating them. Practically, many interview problems that don't look
+like flow — especially **bipartite matching** (assign workers to tasks, courses to slots) —
+are modeled as a flow network (source → left set → right set → sink, unit capacities) and
+solved with Edmonds-Karp/Dinic. You rarely code the full algorithm in an interview, but
+recognizing "this is a matching/flow problem" and explaining the source-sink modeling is
+the win.
+
+</QA>
