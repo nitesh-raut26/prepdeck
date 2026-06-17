@@ -1,0 +1,113 @@
+---
+title: "Background Jobs & Async Workers"
+summary: "Move slow work off the request path: job queues, at-least-once delivery and idempotent consumers, retries with backoff + jitter, dead-letter queues, the transactional outbox, and why exactly-once is mostly a myth."
+order: 12
+difficulty: "Level 7"
+tags: ["backend", "queues", "async", "reliability"]
+---
+
+## Why async work exists
+
+Some work is too slow or too unreliable to do inside an HTTP request: sending email,
+transcoding video, generating a report, calling a flaky third party. Block the request on
+it and you tie up a connection, hit timeouts, and lose the work if the call fails. The fix
+is to **enqueue a job** and return immediately; a pool of **workers** processes the queue
+out-of-band.
+
+```text
+request ──▶ API enqueues job ──▶ [ queue ] ──▶ worker pool ──▶ side effect
+            (returns 202)         (Redis/SQS/         (retry, ack)
+                                   RabbitMQ/Kafka)
+```
+
+<Callout type="info" title="Where this lands by level">
+**SDE-1:** push work to a queue and process it in a worker. **SDE-2:** at-least-once
+delivery, idempotency, retries/backoff, and a DLQ. **SDE-3:** the transactional outbox,
+ordering guarantees, and the exactly-once discussion. Core at every backend-heavy shop —
+**Amazon, Uber, Stripe, DoorDash** — and a frequent follow-up to any HLD write path.
+</Callout>
+
+## The delivery guarantee you actually get
+
+Almost every queue gives **at-least-once** delivery: a message can be delivered **more
+than once** (a worker crashes after doing the work but before ack'ing; the broker
+redelivers). So the rule that governs everything else:
+
+> **Make consumers idempotent.** Processing the same message twice must equal processing it once.
+
+```ts
+async function handle(job: { id: string; userId: string; amountCents: number }) {
+  // Idempotency key = job.id. If we've seen it, no-op.
+  const fresh = await store.markProcessedIfNew(job.id);
+  if (!fresh) return;                 // duplicate delivery → safe no-op
+
+  await chargeCard(job.userId, job.amountCents);
+}
+```
+
+## Retries, backoff, and the dead-letter queue
+
+- **Retry transient failures** (network blips, 503s) — but with **exponential backoff +
+  jitter**, or a thundering retry herd hammers the failing dependency in lockstep.
+- **Cap the attempts.** After N failures, move the message to a **dead-letter queue
+  (DLQ)** instead of retrying forever. The DLQ is your "broken jobs" inbox — alert on it.
+- **Visibility timeout:** while a worker holds a message it's hidden from others; if the
+  worker dies, it reappears for redelivery. Size it longer than the job's worst-case
+  runtime, or you get duplicate concurrent processing.
+
+## The transactional outbox
+
+The classic bug: you write to the DB **and** enqueue a job as two separate operations —
+the process crashes between them, and now your data and your queue disagree (charge
+recorded, receipt email never queued — or vice versa).
+
+The **outbox pattern** fixes it: in the **same DB transaction** as your business write,
+insert a row into an `outbox` table. A separate relay (or CDC on the table) reads
+committed outbox rows and publishes them to the queue. The DB transaction makes the write
+and the "intent to publish" atomic; the relay makes publishing at-least-once.
+
+## Exactly-once is (mostly) a myth
+
+You can't truly guarantee a side effect happens exactly once across crashes — networks
+drop acks. What you *can* build is **at-least-once delivery + idempotent processing**,
+which is *effectively* exactly-once from the outside. If someone says "exactly-once," ask
+where the idempotency key lives.
+
+## Scheduling
+
+- **Cron / scheduled jobs:** time-triggered (nightly reports). Beware running the same
+  cron on N app servers — use a leader lock (see [distributed-locks](/backend/distributed-locks)).
+- **Delayed jobs:** "run this in 1 hour" — delayed queues or a scheduled-time field the
+  workers poll. (For the streaming flavor, see [messaging-and-queues](/hld/messaging-and-queues).)
+
+<QA q="Your queue guarantees at-least-once delivery. How do you avoid double-charging a customer?">
+
+Make the consumer **idempotent** with an idempotency key — here the job/message id. Before
+performing the side effect, atomically record "I've handled key K" (e.g. an insert with a
+unique constraint, or a `markProcessedIfNew` on a store); if it's already recorded, no-op.
+That way a redelivered message — which at-least-once *will* produce — charges the card only
+once. The key insight is that the broker can't promise once-only delivery, so correctness
+has to live in the consumer.
+
+</QA>
+
+<QA q="Why use a transactional outbox instead of just writing to the DB and then publishing?">
+
+Because the DB write and the publish are two separate systems, and a crash between them
+leaves them inconsistent (data saved, event lost, or the reverse). The outbox makes the
+business write and an `outbox` row part of the **same DB transaction**, so they commit or
+roll back together. A relay/CDC process then publishes committed outbox rows to the queue
+at-least-once. You've converted an unsafe dual-write into one atomic DB write plus reliable
+downstream delivery.
+
+</QA>
+
+<QA q="When do messages go to a dead-letter queue, and what do you do with it?">
+
+A message moves to the **DLQ** after it exhausts its retry budget (poison message: a bug,
+malformed payload, or a dependency that's down past your retry window). The DLQ stops a bad
+message from blocking the queue or retrying forever. Operationally you **alert** on DLQ
+depth, inspect the failures, fix the cause or the data, and then **replay** them back onto
+the main queue. An empty DLQ is healthy; a growing one is an incident.
+
+</QA>
