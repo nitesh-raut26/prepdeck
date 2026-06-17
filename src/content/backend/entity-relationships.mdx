@@ -1,0 +1,273 @@
+---
+title: "Entity Relationships & the ORM"
+summary: "How data relates — one-to-one, one-to-many / many-to-one, and many-to-many — mapped from tables (foreign keys, join tables) to ORM entities, plus the gotchas that bite in production: owning vs inverse side, lazy vs eager loading, the N+1 query, cascades, and creating linked entities inside one transaction."
+order: 5
+difficulty: "Level 8"
+tags: ["backend", "orm", "data-modeling", "relationships", "transactions"]
+---
+
+## Why this is the heart of backend work
+
+Real applications are about **related data**: a user *has* posts, an order *has* line
+items, a student *enrolls in* many courses. The backend's job is to model those
+relationships so the **database enforces them** and your code can read and write them
+safely. This page goes: the four relationship shapes → how each maps to tables (foreign
+keys, join tables) → how you declare them in an ORM → and the loading and transaction
+gotchas that cause most real bugs. It builds on SQL [joins](/databases/sql-fundamentals)
+and [ACID transactions](/databases/transactions).
+
+<Callout type="info" title="Where this lands by level">
+**SDE-1:** name the four cardinalities and know where the foreign key goes.
+**SDE-2:** declare them in an ORM, and avoid the N+1 query. **SDE-3:** reason about the
+owning vs inverse side, cascade behavior, and keeping a graph of new entities consistent
+inside one transaction. This shows up in **every backend take-home** and most product-company
+loops — usually as "model these entities and write the endpoint that creates them."
+</Callout>
+
+## The four relationship shapes
+
+| Relationship | Real example | Where the link lives |
+|---|---|---|
+| **One-to-One (1:1)** | User ↔ Profile | a foreign key on *either* side, marked `UNIQUE` |
+| **One-to-Many (1:N)** | User → Posts | foreign key on the **many** side (`posts.user_id`) |
+| **Many-to-One (N:1)** | Posts → User | *the same relationship*, seen from the many side |
+| **Many-to-Many (N:M)** | Students ↔ Courses | a separate **join (junction) table** |
+
+Three insights make all of this click:
+
+1. **1:N and N:1 are one relationship seen from two ends.** A post has one author (N:1); an
+   author has many posts (1:N). A *single* foreign key — `posts.author_id` — expresses both.
+   Naming them separately just states which side you're looking from.
+2. **The foreign key always lives on the "many" side.** Many posts point to one user, so
+   `user_id` lives on `posts`. You never store a list of post IDs on the user row — a column
+   can't hold "many."
+3. **Many-to-many needs a third table.** A student has many courses *and* a course has many
+   students, so no single FK works. You introduce a **junction table**
+   `enrollment(student_id, course_id)` — which turns one N:M into two 1:N relationships.
+
+<Mermaid chart={`erDiagram
+  USER ||--o| PROFILE : has
+  USER ||--o{ POST : writes
+  STUDENT }o--o{ COURSE : enrolls`} />
+
+## At the table level (the universal truth)
+
+Before any ORM, this is just SQL — every framework compiles down to this:
+
+```sql
+-- One-to-One: a profile row points to exactly one user (UNIQUE makes it 1:1, not 1:N)
+CREATE TABLE profiles (
+  id       BIGINT PRIMARY KEY,
+  user_id  BIGINT NOT NULL UNIQUE REFERENCES users(id),
+  bio      TEXT
+);
+
+-- One-to-Many / Many-to-One: the FK lives on the MANY side (posts)
+CREATE TABLE posts (
+  id         BIGINT PRIMARY KEY,
+  author_id  BIGINT NOT NULL REFERENCES users(id),   -- many posts → one user
+  title      TEXT
+);
+
+-- Many-to-Many: a junction table, with the pair as the primary key
+CREATE TABLE enrollment (
+  student_id BIGINT REFERENCES students(id),
+  course_id  BIGINT REFERENCES courses(id),
+  PRIMARY KEY (student_id, course_id)
+);
+```
+
+The `REFERENCES` clause is the **foreign key** — the database now *guarantees* you can't
+insert a post for a user who doesn't exist (referential integrity), and `ON DELETE` decides
+what happens to children when a parent is removed (`CASCADE` deletes them, `RESTRICT`
+blocks it, `SET NULL` orphans them).
+
+## Declaring it in the ORM
+
+An **ORM** (Object-Relational Mapper) maps a class (an *entity*) to a table and a field to a
+column, so you work with objects instead of writing SQL by hand. Here are the same three
+shapes in the three stacks this track covers.
+
+**Spring Boot / JPA (Java):**
+
+```java
+@Entity
+class User {
+  @Id @GeneratedValue Long id;
+
+  @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+  Profile profile;                       // 1:1
+
+  @OneToMany(mappedBy = "author")        // 1:N — inverse side, no FK column here
+  List<Post> posts = new ArrayList<>();
+
+  @ManyToMany
+  @JoinTable(name = "enrollment",
+    joinColumns = @JoinColumn(name = "student_id"),
+    inverseJoinColumns = @JoinColumn(name = "course_id"))
+  Set<Course> courses = new HashSet<>(); // N:M
+}
+
+@Entity
+class Post {
+  @Id @GeneratedValue Long id;
+  @ManyToOne @JoinColumn(name = "author_id")   // N:1 — OWNING side, holds the FK
+  User author;
+}
+```
+
+**FastAPI / SQLAlchemy (Python):**
+
+```python
+class User(Base):
+    __tablename__ = "users"
+    id = Column(BigInteger, primary_key=True)
+    posts = relationship("Post", back_populates="author")          # 1:N
+    courses = relationship("Course", secondary="enrollment",       # N:M via junction
+                           back_populates="students")
+
+class Post(Base):
+    __tablename__ = "posts"
+    id = Column(BigInteger, primary_key=True)
+    author_id = Column(ForeignKey("users.id"))                     # the FK column (N:1)
+    author = relationship("User", back_populates="posts")
+```
+
+**Node / Prisma (schema):**
+
+```prisma
+model User {
+  id      Int      @id @default(autoincrement())
+  posts   Post[]                       // 1:N
+  courses Course[] @relation("Enrollment")   // N:M (Prisma manages the join table)
+}
+model Post {
+  id       Int  @id @default(autoincrement())
+  author   User @relation(fields: [authorId], references: [id])
+  authorId Int                          // the FK (N:1)
+}
+```
+
+<Callout type="warn" title="Owning side vs inverse side — the bug that wastes an afternoon">
+In a bidirectional relationship, exactly one side **owns** the foreign key — the side with
+`@JoinColumn` / `@ManyToOne` (JPA) or the FK field (Prisma/SQLAlchemy). Only changes to the
+**owning** side are persisted. Adding a post to `user.posts` (the inverse side) and saving
+the user does **nothing** unless you also set `post.author = user`. Always set the owning
+side; helper methods like `user.addPost(p)` that set *both* directions prevent the classic
+"I saved it but the FK is null" bug.
+</Callout>
+
+## The loading gotcha: lazy vs eager, and N+1
+
+When you load a `User`, should its `posts` come too?
+
+- **Lazy** (the default for collections): fetch `posts` only when you first access them.
+- **Eager**: fetch them in the same query as the user.
+
+Lazy loading causes the single most common ORM performance bug — the **N+1 query problem**:
+
+```text
+1 query :  SELECT * FROM users LIMIT 100;          -- load 100 users
+N queries: for each user → SELECT * FROM posts WHERE author_id = ?;   -- 100 more!
+           = 101 queries to show 100 users and their posts
+```
+
+The fix is to fetch the relationship in **one** query — a `JOIN FETCH` (JPA), `selectinload`
+/ `joinedload` (SQLAlchemy), or `include` (Prisma) — turning 101 queries into 1 or 2. Don't
+"fix" it by making everything eager: that over-fetches on the pages that *don't* need the
+children. Name "N+1" out loud in an interview and reach for an explicit fetch — it's a
+senior signal.
+
+## Creating linked entities inside one transaction
+
+This is where relationships meet **transactions**. When you create a parent and its children
+together — an `Order` with its `OrderItem`s — three things must hold:
+
+1. **Atomicity:** all rows commit together or none do. If item 3 fails a constraint, the
+   order and items 1–2 must **roll back** too — otherwise you've saved a half-order. Wrap the
+   whole operation in one transaction (`@Transactional`, a SQLAlchemy session `commit`, or
+   Prisma's `$transaction`). (See [ACID](/databases/transactions).)
+2. **Insert order:** the parent must exist before a child's foreign key can point at it. The
+   ORM's **unit of work** orders the `INSERT`s for you (parent first, then children).
+3. **Cascade:** `cascade` means "apply this operation to related entities." With
+   `CascadeType.PERSIST`, saving the order saves its items in the same unit of work, so you
+   don't save each child by hand.
+
+```java
+@Transactional                                  // one transaction for the whole graph
+public Order placeOrder(Long userId, List<Item> items) {
+  Order order = new Order(userRepo.getReferenceById(userId));
+  for (Item i : items) order.addItem(new OrderItem(order, i));  // sets BOTH sides
+  return orderRepo.save(order);   // cascade persists the items; all-or-nothing on commit
+}
+```
+
+If anything inside throws, the transaction rolls back and the database is untouched — no
+orphaned order, no half-written items.
+
+<Callout type="danger" title="Cascade delete is a loaded gun">
+`CascadeType.ALL` / `ON DELETE CASCADE` is convenient for owned children (delete an order →
+delete its items). But put it on the wrong relationship — say User → Posts with cascade
+remove — and deleting one user silently wipes their posts, comments, and everything
+downstream. Cascade **down** to things the parent truly owns; never cascade across
+references to shared entities.
+</Callout>
+
+<Quiz questions={[
+  {
+    q: "In a one-to-many relationship (a User has many Posts), where does the foreign key go?",
+    options: ["On the User (the 'one') row", "On the Post (the 'many') row", "In a separate join table", "On both rows"],
+    answer: 1,
+    explain: "The FK lives on the MANY side: posts.user_id. A single column can't store 'many' ids, so the many side points back to the one. The same column expresses both the 1:N and the N:1 views."
+  },
+  {
+    q: "You load 50 orders, then loop and read each order's items, firing 50 extra queries. What is this and the fix?",
+    options: ["A deadlock; add a lock", "The N+1 problem; fetch items in one JOIN/include query", "A cache miss; add Redis", "Normal behavior; ignore it"],
+    answer: 1,
+    explain: "Classic N+1: 1 query for the orders + N for the children. Fetch the relationship eagerly for THIS query (JOIN FETCH / include / selectinload) to collapse it to 1–2 queries."
+  }
+]} />
+
+<QA q="Where does the foreign key go in a one-to-many relationship, and why?">
+
+On the **many** side. If a user has many posts, the foreign key `author_id` lives on the
+`posts` table, each row pointing back to its one user. It can't live on the user row because
+a single column (or row) can't hold "many" references. The same `posts.author_id` column
+expresses both directions: one-to-many when you look from the user, many-to-one when you
+look from the post — they're the same relationship, not two.
+
+</QA>
+
+<QA q="How do you model a many-to-many relationship?">
+
+You can't with a single foreign key, because both sides have "many." You add a third table —
+a **junction (join) table** — whose rows pair the two keys, e.g. `enrollment(student_id,
+course_id)` with the pair as its primary key. That decomposes the many-to-many into two
+one-to-many relationships (one student has many enrollments; one course has many
+enrollments). In ORMs you point both entities at the join table (JPA `@ManyToMany` +
+`@JoinTable`, SQLAlchemy `secondary=`, Prisma's implicit relation table); add columns to the
+junction table itself (e.g. `enrolled_at`) and you promote it to a first-class entity.
+
+</QA>
+
+<QA q="What is the N+1 query problem and how do you fix it?">
+
+It's the performance trap where loading N parent rows then lazily accessing a relationship
+fires **one extra query per parent** — 1 + N total (e.g. 100 users → 101 queries). The fix is
+to fetch the relationship in a **single** query: `JOIN FETCH` in JPQL, `joinedload` /
+`selectinload` in SQLAlchemy, or `include` in Prisma — collapsing it to one or two queries.
+The wrong fix is making everything eager globally, which over-fetches on pages that don't
+need the children; choose the fetch strategy per query.
+
+</QA>
+
+<QA q="Why must creating a parent and its children happen in one transaction?">
+
+For **atomicity**: a parent and its children form one logical unit, so they must all commit
+or all roll back. If you save an `Order`, then fail while inserting its `OrderItem`s without a
+transaction, you're left with an order that has no items — corrupt data. Wrapping the whole
+graph in one transaction (`@Transactional` / session commit / `$transaction`) guarantees
+all-or-nothing, and the ORM's unit of work orders the inserts (parent before child, so the
+foreign key is valid) and applies cascades within that single boundary.
+
+</QA>

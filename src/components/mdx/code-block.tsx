@@ -78,23 +78,19 @@ export function CodeBlock(preProps: ComponentProps<"pre">) {
   const badge      = codeLang ? LANG_LABELS[codeLang] : null;
   const badgeColor = codeLang ? LANG_COLORS[codeLang] : null;
 
-  // When hidden: render an invisible data marker so the coverage checker
-  // can count how many language-specific blocks exist on the page.
-  if (hidden) {
-    return (
-      <span
-        data-code-lang={codeLang}
-        data-code-hidden="true"
-        style={{ display: "none" }}
-        aria-hidden="true"
-      />
-    );
-  }
-
+  // Render identical element structure on server and client. When a block's
+  // language doesn't match the selected one, hide it via CSS after mount
+  // instead of swapping the element type — swapping <div>/<span> shifted
+  // siblings and caused a hydration mismatch on pages that mix languages.
+  // The block stays in the DOM so the coverage checker can still count it.
   return (
     <div
+      suppressHydrationWarning
       className="code-block-wrapper group relative my-5"
       data-code-lang={codeLang ?? "agnostic"}
+      data-code-hidden={hidden ? "true" : undefined}
+      style={hidden ? { display: "none" } : undefined}
+      aria-hidden={hidden ? true : undefined}
     >
       <div className="code-block-header">
         {badge && (

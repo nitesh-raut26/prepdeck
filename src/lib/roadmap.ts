@@ -192,6 +192,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Python FastAPI", doc: "backend/fastapi" },
       { label: "AuthN & AuthZ (JWT, OAuth)", doc: "backend/auth" },
       { label: "REST & GraphQL", doc: "backend/rest-and-graphql" },
+      { label: "Entity relationships & ORM", doc: "backend/entity-relationships" },
       { label: "WebSockets", doc: "backend/websockets" },
       { label: "Microservices", doc: "backend/microservices" },
       { label: "Kafka & RabbitMQ", doc: "backend/kafka" },
