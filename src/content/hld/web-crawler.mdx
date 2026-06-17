@@ -1,0 +1,119 @@
+---
+title: "Design a Web Crawler"
+summary: "BFS over the web graph at scale: the URL frontier with politeness queues, dedup with a Bloom filter, crawler traps and freshness, and how to distribute the whole thing by domain."
+order: 13
+tags: ["system-design", "crawler", "bfs", "case-study"]
+---
+
+## Prompt
+
+> Crawl the web: start from seed URLs, fetch pages, extract links, store the content, and
+> repeat — at the scale of **billions of pages**, while being **polite** to each site and
+> keeping content reasonably **fresh**.
+
+<Callout type="info" title="Why this one, and at what level">
+It's a **BFS over the web graph** ([graphs](/dsa/graphs-bfs-dfs)) turned into a distributed
+system. **SDE-1:** the fetch → parse → enqueue loop and a seen-set. **SDE-2:** the URL
+frontier, dedup at scale, and politeness. **SDE-3 / Staff:** distributing the frontier,
+crawler traps, freshness/re-crawl policy, and prioritization. Asked at **Google, Amazon,
+Microsoft** and search/data startups.
+</Callout>
+
+## 1. Requirements
+
+**Functional:** fetch pages from seeds, extract and follow links, store content for
+indexing. **Non-functional:** **scalable** (billions of pages); **polite** (respect
+`robots.txt`, cap requests per domain); **robust** (avoid traps, handle failures);
+**fresh** (re-crawl changing pages); **dedup** (don't crawl the same URL/content twice).
+
+## 2. Architecture
+
+```text
+seeds ─▶ URL frontier ─▶ fetchers ─▶ parser ─▶ extract links
+          (priority +      (HTTP)      │           │
+           per-domain                   ▼           ▼
+           politeness)            content store   dedup filter
+              ▲                    (S3 / blob)    (Bloom filter / seen-set)
+              └──────────────── new, unseen URLs ◀──┘
+```
+
+The **URL frontier** is the heart of the design — a queue of URLs to crawl that enforces
+two competing goals at once: **priority** (crawl important/fresh pages sooner) and
+**politeness** (don't hammer one server).
+
+## 3. The decisions that matter
+
+- **Politeness:** never blast a single domain. Maintain **per-domain queues** with a
+  minimum delay between requests to the same host, and obey `robots.txt` (cached per
+  domain). A common design: a front set of queues for priority, a back set keyed by domain
+  for politeness, with a mapping between them.
+- **Dedup at scale:** a billions-URL "have I seen this?" set won't fit in memory as a plain
+  hash set. Use a **Bloom filter** (tiny, fast, false positives only — occasionally skip a
+  new URL, never re-crawl). Also dedup **content** (hash the page) to catch the same page
+  under different URLs.
+- **Crawler traps & cycles:** infinite calendars, session-id URLs, deep dynamic links. Cap
+  URL length and crawl depth per domain, normalize URLs (strip fragments/params), and
+  budget pages per domain.
+- **Freshness / re-crawl:** pages change at different rates. Re-crawl high-change pages
+  (news) often, static pages rarely — an adaptive policy based on observed change
+  frequency.
+- **Distribution:** partition the frontier **by domain hash** so each crawler node owns a
+  set of domains (which also makes politeness local). Cache **DNS** aggressively — DNS
+  lookups are a surprising bottleneck.
+
+## Design drills
+
+<DesignDrills
+  topic="Web Crawler"
+  drills={[
+    {
+      prompt: "Track 'already crawled' across billions of URLs without exhausting memory.",
+      level: "Core",
+      covers: [
+        "Bloom filter for the seen-set: tiny memory, false positives only (skip a new URL, never re-crawl).",
+        "Content hashing to dedup identical pages served under different URLs.",
+        "Shard the filter by URL hash across nodes for capacity."
+      ]
+    },
+    {
+      prompt: "Stay polite: never overload a single domain while still crawling fast overall.",
+      level: "Stretch",
+      covers: [
+        "Per-domain back-queues with a min delay; obey cached robots.txt.",
+        "Partition the frontier by domain so one node paces each host.",
+        "Separate priority (what to crawl next) from politeness (when you're allowed to)."
+      ]
+    },
+    {
+      prompt: "The crawler gets stuck in an infinite calendar / session-id trap.",
+      level: "Core",
+      covers: [
+        "Normalize URLs (strip fragments, sort/limit query params).",
+        "Cap depth and pages-per-domain budgets.",
+        "Detect low-information patterns (near-duplicate content) and prune."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why use a Bloom filter for the 'seen URLs' set instead of a hash set?">
+
+Because the seen-set spans **billions** of URLs and a plain hash set of full URLs won't fit
+in memory. A **Bloom filter** stores membership in a tiny bit array with only **false
+positives** (it may occasionally say "seen" for a new URL) and never false negatives — so
+the worst case is rarely *skipping* a fresh page, never *re-crawling* an old one, which is
+exactly the acceptable trade-off. You can shard the filter across nodes for more capacity
+and pair it with content hashing to catch duplicate pages under different URLs.
+
+</QA>
+
+<QA q="What is the URL frontier and why is it the hardest part?">
+
+The frontier is the queue of URLs still to crawl, and it must satisfy two goals that pull
+against each other: **prioritization** (crawl important or fresh pages sooner) and
+**politeness** (never exceed a per-domain request rate or violate robots.txt). A typical
+design splits it into priority front-queues feeding domain-keyed back-queues, with a delay
+enforced per domain. Distributing it by domain hash keeps politeness local to each node.
+Get the frontier wrong and you either crawl rudely (and get blocked) or inefficiently.
+
+</QA>
