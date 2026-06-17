@@ -1,0 +1,144 @@
+---
+title: "Design Search Autocomplete (Typeahead)"
+summary: "Top-k suggestions under ~100 ms per keystroke: a trie with cached top-k at every node, an offline pipeline that weights it from query logs, prefix sharding, and ranking by frequency + recency + personalization."
+order: 10
+tags: ["system-design", "trie", "search", "cache", "case-study"]
+---
+
+## Prompt
+
+> As the user types each character, return the **top ~10 completions** ranked by
+> popularity. Billions of queries a day, **p99 under ~100 ms per keystroke**, and
+> suggestions should reflect what people are actually searching for.
+
+<Callout type="info" title="Why this one, and at what level">
+This is the **web-scale version of the [tries](/dsa/tries) data structure** — the
+interview checks whether you can take an in-memory trie to production. **SDE-1:** the trie
+and prefix walk. **SDE-2:** caching top-k per node, the offline build, and the latency
+budget. **SDE-3 / Staff:** sharding a giant trie, freshness vs. speed, personalization,
+and ranking. Asked at **Google, Amazon, LinkedIn, Meta, Elastic**.
+</Callout>
+
+## 1. Requirements
+
+**Functional:** prefix → top-k completions ranked by popularity; reflect fresh/trending
+terms. **Non-functional:** **p99 under ~100 ms** (it fires on *every keystroke*, so the
+budget is brutal); extremely read-heavy; **eventual freshness is fine** — suggestions can
+lag minutes or hours behind reality without anyone noticing.
+
+That last point is the key unlock: because suggestions don't need to be real-time, you can
+**precompute** aggressively.
+
+## 2. Core data structure — a trie with top-k baked in
+
+A trie maps prefixes to completions. The naive query — walk to the prefix node, then DFS
+all descendants and sort by frequency — is **far too slow per keystroke** for a popular
+prefix with millions of completions.
+
+The fix: **precompute and cache the top-k completions at each trie node.** A query becomes:
+
+1. Walk to the prefix node — O(length of prefix).
+2. Return its cached top-k list — O(k).
+
+No descendant scan, no per-query sort. Memory cost is k entries per node, which is the
+trade you happily make for a 100 ms budget.
+
+<Visualizer algo="trie" />
+
+## 3. The offline build pipeline
+
+Do **not** mutate the trie on every search — that would couple the write firehose to the
+read path. Instead:
+
+```text
+query logs ──▶ aggregate (query, count) over a rolling window  (MapReduce / stream)
+           ──▶ build a weighted trie, precompute top-k per node  (offline job)
+           ──▶ ship an immutable snapshot to serving nodes       (load into memory)
+```
+
+Serving nodes hold a **read-only snapshot** and swap to a fresh one periodically. You
+trade freshness (minutes/hours) for a serving path that's pure in-memory reads. Trending
+terms get a **shorter window** or time-decay so today's spike surfaces fast.
+
+## 4. Serving & scale
+
+- **Shard by prefix** (first 1–2 characters): the `a…` trie lives on one set of nodes,
+  `b…` on another. A query routes by its prefix to exactly one shard.
+- **Replicate hot shards** — common first letters get far more traffic.
+- **Cache + CDN** the most common short prefixes at the edge; they dominate volume.
+- **Client-side debounce:** only fire after a short pause in typing to cut request count.
+
+## 5. Ranking
+
+Popularity is the base signal, but strong suggestions blend:
+
+- **Frequency** — the cached count from the logs.
+- **Recency / trending** — time-decayed counts so spikes rise quickly.
+- **Personalization** — the user's own history, language, location (applied as a
+  re-rank on top of the global list, not a separate trie per user).
+- **Hygiene** — de-dupe near-identical queries, filter offensive terms, basic spell
+  correction. Learning-to-rank is the natural ML follow-up.
+
+## 6. Deep dives
+
+- **Fresh trends fast:** keep a small, short-window "trending" trie merged on top of the
+  big slow one, so breaking terms appear without a full rebuild.
+- **Typos:** fuzzy prefix matching via edit-distance (bounded) or a symspell-style index.
+- **Mid-word / multi-word:** index suffixes or n-grams, not just whole-query prefixes.
+
+## Design drills
+
+<DesignDrills
+  topic="Search Autocomplete"
+  drills={[
+    {
+      prompt: "Justify precomputing top-k at each node instead of scanning descendants per query.",
+      level: "Warm-up",
+      covers: [
+        "A popular prefix has millions of descendants — per-keystroke DFS+sort blows the 100 ms budget.",
+        "Top-k per node makes a query O(prefix length + k), pure reads.",
+        "Cost is k entries × nodes of memory, refreshed offline — an easy trade at this latency."
+      ]
+    },
+    {
+      prompt: "Keep suggestions fresh without rebuilding the whole trie constantly.",
+      level: "Core",
+      covers: [
+        "Decouple write firehose from reads: aggregate logs offline, ship immutable snapshots.",
+        "Overlay a short-window trending trie for breaking terms.",
+        "Time-decay counts so old popularity fades; swap snapshots atomically."
+      ]
+    },
+    {
+      prompt: "The global trie is too big for one machine. Shard it.",
+      level: "Stretch",
+      covers: [
+        "Partition by first 1–2 chars; route queries by prefix to one shard.",
+        "Replicate hot first-letters; cache common short prefixes at the edge.",
+        "Rebalance when a prefix gets hot (e.g. split 's' into 'sa'…'sz')."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why cache top-k completions at every trie node instead of computing them per query?">
+
+Because a popular prefix (say `"a"`) can have millions of descendant completions, and
+doing a DFS + sort on every keystroke would shatter the ~100 ms budget. Precomputing the
+top-k at each node turns a query into a prefix walk (O(length)) plus returning a cached
+list (O(k)) — no scan, no sort. The price is k entries of memory per node, refreshed by an
+offline job, which is a trivial trade given the latency requirement and that suggestions
+only need to be eventually fresh.
+
+</QA>
+
+<QA q="How do you keep suggestions fresh without constantly rebuilding the index?">
+
+Decouple the write firehose from the read path. Aggregate query logs **offline** into
+windowed `(query, count)` data, rebuild a weighted trie with precomputed top-k, and ship
+**immutable snapshots** that serving nodes load into memory and swap atomically. For
+breaking trends, overlay a small **short-window trending trie** on top of the big slow one
+so spikes appear within minutes without a full rebuild. Time-decay keeps stale popularity
+from dominating.
+
+</QA>
