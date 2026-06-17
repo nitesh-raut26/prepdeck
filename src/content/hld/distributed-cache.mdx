@@ -1,0 +1,132 @@
+---
+title: "Design a Distributed Cache (Redis/Memcached-style)"
+summary: "Take the single-node LRU cache to a cluster: consistent hashing to shard keys, replication for availability, eviction and TTL, the hot-key problem, and what breaks when a node dies."
+order: 11
+tags: ["system-design", "cache", "consistent-hashing", "case-study"]
+---
+
+## Prompt
+
+> Design an in-memory key-value cache (think Redis/Memcached) that supports `get`, `put`,
+> and TTL, scales across many nodes, stays fast (sub-millisecond), and survives node
+> failures without losing the whole cache.
+
+<Callout type="info" title="Why this one, and at what level">
+It's the bridge from the [LRU cache](/lld/lru-cache) you code in LLD to a distributed
+system. **SDE-1:** the single-node design (hash map + eviction). **SDE-2:** sharding with
+consistent hashing and TTL/eviction policy. **SDE-3 / Staff:** replication, failure
+handling, hot keys, and client- vs server-side routing. Asked at **Amazon, Meta, Microsoft,
+Snowflake**; also the backbone of the [URL-shortener](/hld/url-shortener) read path.
+</Callout>
+
+## 1. The single node first
+
+One cache node is a **hash map** for O(1) lookup plus an **eviction policy** for when
+memory fills — exactly the [LRU cache](/lld/lru-cache): a hash map paired with a doubly
+linked list so `get`, `put`, and evict-the-least-recent are all O(1). Add a **TTL** per
+entry (expiry timestamp; treat expired as a miss, plus a background sweeper).
+
+<Visualizer algo="cache" />
+
+## 2. Scaling out — how do keys find a node?
+
+The whole problem is **routing a key to the right node**, and surviving the node count
+changing. Naive `hash(key) % N` remaps **almost every key** when `N` changes (a node added
+or lost), causing a mass cache miss — a "cache stampede" against the database.
+
+**Consistent hashing** fixes it: nodes and keys are hashed onto a ring; a key belongs to
+the next node clockwise. Adding or removing a node moves only **~1/N of keys**, not all of
+them. **Virtual nodes** (many points per physical node) smooth out uneven distribution.
+
+<Visualizer algo="consistent-hashing" />
+
+## 3. Replication & availability
+
+A pure cache miss isn't fatal (you reload from the DB), but losing a node full of hot keys
+*is* — every one of those keys now stampedes the database. So replicate:
+
+- **Primary–replica per shard:** each shard's keys live on a primary plus one or more
+  replicas. If the primary dies, a replica is promoted; reads can also fan out to replicas.
+- **Gossip / membership:** nodes track who's alive (gossip protocol) so the ring updates
+  and only the failed node's ~1/N slice rehashes.
+
+## 4. Eviction & consistency
+
+- **Eviction policy:** LRU (default) or LFU for skewed access; some workloads use random or
+  TTL-based. (Same policy you implement in [LRU cache](/lld/lru-cache).)
+- **Write strategy:** a cache sits in front of a DB — see the
+  [caching strategies](/backend/caching-strategies) page for cache-aside vs write-through
+  and **invalidation**, the genuinely hard part.
+- **It's a cache, not a database:** it can drop data under memory pressure; never treat it
+  as the source of truth.
+
+## 5. The hot key
+
+Consistent hashing balances *many* keys, but **one** ultra-popular key still lands on a
+single node and can overload it. Mitigate by **replicating that key** across several nodes,
+or adding a small **client-local cache** in front of the distributed tier for the hottest
+entries.
+
+## Client-side vs server-side routing
+
+- **Client-side (Memcached-style):** the client library knows the ring and picks the node —
+  no extra hop, but every client must agree on membership.
+- **Server-side (Redis Cluster-style):** any node can redirect a request to the right one,
+  or a proxy routes — simpler clients, one possible extra hop.
+
+## Design drills
+
+<DesignDrills
+  topic="Distributed Cache"
+  drills={[
+    {
+      prompt: "Explain why hash(key) % N is a disaster when a node is added, and what to use instead.",
+      level: "Core",
+      covers: [
+        "Changing N changes (key mod N) for almost every key → near-total remap and cache miss storm.",
+        "Consistent hashing moves only ~1/N keys when membership changes.",
+        "Virtual nodes even out load and reduce variance across physical nodes."
+      ]
+    },
+    {
+      prompt: "A cache node dies holding the hottest keys. Limit the blast radius.",
+      level: "Stretch",
+      covers: [
+        "Replicas per shard so a promotion keeps those keys warm.",
+        "Only the failed node's ~1/N slice rehashes (consistent hashing).",
+        "Backfill/warm the replacement; rate-limit DB reloads to avoid a stampede."
+      ]
+    },
+    {
+      prompt: "One key (a viral item) overwhelms its single node despite balanced hashing.",
+      level: "Stretch",
+      covers: [
+        "Replicate the hot key across multiple nodes and spread reads.",
+        "Client-local (in-process) cache in front of the distributed tier.",
+        "Detect hot keys via per-key metrics and promote them automatically."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why consistent hashing instead of hash(key) % N for sharding a cache?">
+
+With `hash(key) % N`, changing `N` (adding or losing a node) changes the result for nearly
+every key, so almost the entire cache misses at once and stampedes the database.
+**Consistent hashing** places nodes and keys on a ring and assigns each key to the next
+node clockwise, so a membership change relocates only **~1/N of keys** — the slice owned by
+(or moving to) the changed node. Virtual nodes add many ring points per physical node to
+keep the distribution even. It's the standard answer for any sharded, elastic store.
+
+</QA>
+
+<QA q="A distributed cache loses a node — why does it matter if a cache miss is recoverable?">
+
+A single miss is cheap (reload from the DB), but losing a node means **all** of that
+node's hot keys miss **simultaneously**, and that synchronized flood can overwhelm the
+database — the failure converts a cache problem into a database outage. That's why you
+**replicate** each shard (promote a replica on failure) and rely on consistent hashing so
+only ~1/N of keys move, and why you rate-limit/warm the backfill so the reload itself
+doesn't become a stampede.
+
+</QA>
