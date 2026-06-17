@@ -1,0 +1,181 @@
+---
+title: "Design an In-Memory File System"
+summary: "The Composite-pattern LLD: model files and directories as one Node tree so ls/mkdir/read/write traverse uniformly, then extend to search, permissions, and thread-safety. Maps to LeetCode 588."
+order: 15
+difficulty: "Classic"
+tags: ["LLD", "oop", "composite-pattern", "tree"]
+---
+
+## The ask
+
+Build an in-memory file system supporting `mkdir`, `ls`, `addContentToFile`, and
+`readContentFromFile`, with arbitrarily nested directories. Paths are absolute
+(`/a/b/file.txt`). (This is **LeetCode 588** in disguise.)
+
+<Callout type="info" title="Why this one, and at what level">
+It's the cleanest test of the **Composite pattern** — a tree where leaves and containers
+share an interface. **SDE-1:** a working tree with path traversal. **SDE-2:** the
+files-and-dirs-as-one-Node insight and clean path parsing. **SDE-3:** extensions —
+search/glob, permissions, symlinks, and thread-safety. Asked at **Amazon, Microsoft,
+Google, Bloomberg**.
+</Callout>
+
+## The insight — files and directories are the same shape
+
+The naive design has two unrelated classes and `if (isDirectory)` checks smeared through
+every operation. The **Composite pattern** unifies them: a `Node` is either a **file**
+(leaf: has content) or a **directory** (composite: has named children). Both live in one
+tree, so traversal is uniform and you stop special-casing at every step.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="In-Memory File System"
+  difficulty="LLD / Hard — LeetCode 588"
+  problem="Support mkdir, ls, addContentToFile, readContentFromFile with nested directories and absolute paths."
+  stages={[
+    {
+      label: "Spec → the tree",
+      prompt: "What's the data structure under all four operations?",
+      reveal: "A tree. Each node has a name and is either a directory (a map name → child Node) or a file (a content string). The root is a directory named '/'. Every operation is 'walk the path to a node, then act' — so nail path traversal once and reuse it."
+    },
+    {
+      label: "Composite: one Node type",
+      prompt: "Two classes (File, Directory) or one Node with both roles?",
+      reveal: "One Node with an isFile flag (or subclasses File/Directory sharing a Node interface) is the Composite pattern. Directories hold children: Map<string, Node>. This removes the if-it's-a-file-else-directory branching from the traversal code — you walk children uniformly."
+    },
+    {
+      label: "Path traversal is the core helper",
+      prompt: "How do I avoid rewriting path-walking in every method?",
+      reveal: "One traverse(path) that splits on '/', walks child by child from root, creating intermediate dirs when the op allows (mkdir) or erroring when it doesn't (read). Every public method becomes: traverse, then do the small leaf action. ls on a file returns just its name; ls on a dir returns sorted child names."
+    }
+  ]}
+/>
+
+## Implementation
+
+```ts
+class Node {
+  isFile = false;
+  content = "";
+  children = new Map<string, Node>();   // only used when it's a directory
+  constructor(public name: string) {}
+}
+
+class FileSystem {
+  private root = new Node("/");
+
+  private parts(path: string) {
+    return path.split("/").filter(Boolean);   // "/a/b" -> ["a","b"]
+  }
+
+  // Walk to the node at `path`, creating directories along the way if asked.
+  private traverse(path: string, create = false): Node {
+    let cur = this.root;
+    for (const part of this.parts(path)) {
+      if (!cur.children.has(part)) {
+        if (!create) throw new Error(`No such path: ${path}`);
+        cur.children.set(part, new Node(part));
+      }
+      cur = cur.children.get(part)!;
+    }
+    return cur;
+  }
+
+  ls(path: string): string[] {
+    const node = this.traverse(path);
+    if (node.isFile) return [node.name];
+    return [...node.children.keys()].sort();
+  }
+
+  mkdir(path: string): void { this.traverse(path, true); }
+
+  addContentToFile(path: string, content: string): void {
+    const file = this.traverse(path, true);   // create parent dirs + file node
+    file.isFile = true;
+    file.content += content;                   // append semantics
+  }
+
+  readContentFromFile(path: string): string {
+    const file = this.traverse(path);
+    if (!file.isFile) throw new Error("Not a file");
+    return file.content;
+  }
+}
+```
+
+<Callout type="tip" title="One Node type kills the branching">
+Because directories and files share `Node`, `traverse` walks the tree without asking "is
+this a file or a folder?" at each step — the Composite pattern's whole point. Mention it;
+it's the design vocabulary the interviewer is listening for.
+</Callout>
+
+## Complexity & follow-ups
+
+- **Complexity:** each op is O(path length) traversal; `ls` on a directory is O(children
+  log children) for the sort.
+- **Search / glob:** DFS the subtree matching a pattern (`*.txt`) — naturally recursive on
+  the Composite tree.
+- **Permissions:** add owner + rwx bits per node; check on traverse.
+- **Symlinks:** a node that points to another path — watch for cycles when traversing.
+- **Thread-safety:** concurrent `mkdir`/write on the same parent races on the children map
+  — guard with a lock per directory, or a read-write lock (many readers, one writer).
+- **Real FS:** swap content strings for block pointers + an [LRU](/lld/lru-cache) page
+  cache; this is where in-memory meets storage.
+
+## Design drills
+
+<DesignDrills
+  topic="In-Memory File System"
+  drills={[
+    {
+      prompt: "Add search: find all files matching a glob like /a/**/*.log.",
+      level: "Core",
+      covers: [
+        "Recursive DFS over the Composite tree, matching each segment.",
+        "Handle ** (any depth) vs * (one segment) vs literal names.",
+        "Return absolute paths; prune subtrees that can't match."
+      ]
+    },
+    {
+      prompt: "Make concurrent mkdir and writes on the same directory safe.",
+      level: "Stretch",
+      covers: [
+        "Per-directory lock (or read-write lock) around children mutations.",
+        "Lock ordering by path depth to avoid deadlock when moving nodes.",
+        "Copy-on-write or optimistic checks for high-read workloads."
+      ]
+    },
+    {
+      prompt: "Add Unix-style permissions and ownership.",
+      level: "Core",
+      covers: [
+        "Owner + group + rwx bits per Node; an effective-user context.",
+        "Check execute (traverse) on directories vs read/write on files.",
+        "Deny early in traverse so partial paths don't leak existence."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why model files and directories with one Node type (the Composite pattern)?">
+
+Because the operations — traverse a path, list children, read content — want to treat the
+tree uniformly. With two unrelated classes you'd branch on "is this a file or a directory?"
+in every method, which is brittle. The **Composite pattern** gives leaves (files) and
+containers (directories) a common `Node` type; directories simply hold a `name → Node` map.
+Path traversal then walks children without special-casing, and extensions (search,
+permissions) operate recursively on the one tree.
+
+</QA>
+
+<QA q="How do you make the file system thread-safe under concurrent mkdir and writes?">
+
+The contention is on a directory's children map (two threads creating entries under the
+same parent) and on a file's content. Guard each directory with a lock — a **read-write
+lock** lets many readers (`ls`, `read`) proceed while serializing writers
+(`mkdir`, `addContent`). For multi-node operations like move/rename, acquire locks in a
+consistent order (e.g. by path depth) to avoid deadlock. For read-heavy workloads,
+copy-on-write or optimistic concurrency reduces lock contention.
+
+</QA>

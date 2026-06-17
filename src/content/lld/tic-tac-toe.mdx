@@ -1,0 +1,190 @@
+---
+title: "Design Tic-Tac-Toe (extensible to N-in-a-row)"
+summary: "A board-game LLD that rewards extensibility: clean Board/Player/Game classes, O(1) win detection with running counters instead of rescanning, and a Strategy seam so the same design scales to Connect-4 and Gomoku."
+order: 8
+difficulty: "Classic"
+tags: ["LLD", "oop", "game", "strategy-pattern"]
+---
+
+## The ask
+
+Two players alternate marking an `N×N` grid; the first to place `N` in a row
+(horizontal, vertical, or diagonal) wins; a full board with no winner is a draw. Build it
+with clean OOP, and be ready to extend it to bigger boards and other win rules.
+
+<Callout type="info" title="Why this one, and at what level">
+It's tiny, so interviewers judge **how** you build it, not whether it works. **SDE-1:** a
+correct, playable game with turn handling. **SDE-2:** O(1) win detection and clean class
+boundaries. **SDE-3:** an extensibility seam (Strategy for the win rule) so Connect-4 and
+Gomoku reuse the design, plus input validation and turn enforcement. Asked at **Amazon,
+Microsoft, Adobe, Atlassian**; siblings include Snake, Chess, and Minesweeper.
+</Callout>
+
+## The insight — don't rescan the board
+
+The naive win check rescans rows, columns, and diagonals after every move. Even scanning
+only the affected lines is O(N) per move. You can do **O(1)**: keep a running counter for
+each row, each column, and the two diagonals. Mark `+1` for player X and `−1` for player
+O. After a move, if any counter the move touched hits `|counter| == N`, that line is
+complete — that player just won.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Tic-Tac-Toe"
+  difficulty="LLD design — 30 min"
+  problem="N×N board, two players alternate, N-in-a-row wins, full board is a draw. Clean OOP, fast win detection, extensible to other board games."
+  stages={[
+    {
+      label: "Spec → entities",
+      prompt: "What are the nouns, and which one owns the turn order?",
+      reveal: "Board (the grid + win bookkeeping), Player/Mark (X or O), and Game (orchestrates turns, validates moves, declares the result). Keeping turn logic in Game — not Board — is the clean split: Board knows positions, Game knows whose turn it is and when it's over."
+    },
+    {
+      label: "Make win detection O(1)",
+      prompt: "How do I avoid rescanning lines after every move?",
+      reveal: "Keep per-row, per-column, and two diagonal counters. X adds +1, O adds −1. A move updates at most 4 counters (its row, its column, and the diagonals if it sits on one). If any reaches +N or −N, that line is won. O(1) per move, O(N) extra space."
+    },
+    {
+      label: "Build the extensibility seam",
+      prompt: "Connect-4 and Gomoku reuse most of this. What varies, and how do I isolate it?",
+      reveal: "The win RULE varies (N-in-a-row anywhere vs exactly-N-with-gravity vs K-in-a-row on a big board). Put it behind a WinningStrategy interface that takes the board + last move and returns won/not. Board and Game stay fixed; a new game is a new Strategy (plus a move-placement rule for gravity)."
+    },
+    {
+      label: "Guard the inputs and the turn",
+      prompt: "What illegal moves must I reject before touching the board?",
+      reveal: "Out-of-range cell, already-occupied cell, moving when it's not your turn, and moving after the game is over. Reject these in Game.move() with clear errors before mutating Board — validation lives in one place, not sprinkled through the UI."
+    }
+  ]}
+/>
+
+## Implementation
+
+```ts
+type Mark = "X" | "O";
+
+class Board {
+  private grid: (Mark | null)[][];
+  private rows: number[]; private cols: number[];
+  private diag = 0; private anti = 0;
+
+  constructor(public readonly n: number) {
+    this.grid = Array.from({ length: n }, () => Array(n).fill(null));
+    this.rows = Array(n).fill(0);
+    this.cols = Array(n).fill(0);
+  }
+
+  isEmpty(r: number, c: number) {
+    return r >= 0 && r < this.n && c >= 0 && c < this.n && this.grid[r][c] === null;
+  }
+
+  // Returns true if THIS move completed a line — O(1).
+  place(r: number, c: number, mark: Mark): boolean {
+    this.grid[r][c] = mark;
+    const d = mark === "X" ? 1 : -1;
+    this.rows[r] += d; this.cols[c] += d;
+    if (r === c) this.diag += d;
+    if (r + c === this.n - 1) this.anti += d;
+    const win = this.n;
+    return Math.abs(this.rows[r]) === win || Math.abs(this.cols[c]) === win
+        || Math.abs(this.diag) === win || Math.abs(this.anti) === win;
+  }
+}
+
+class Game {
+  private board: Board;
+  private turn: Mark = "X";
+  private moves = 0;
+  private over = false;
+
+  constructor(n = 3) { this.board = new Board(n); }
+
+  move(r: number, c: number): "X wins" | "O wins" | "draw" | "ok" {
+    if (this.over) throw new Error("Game is over");
+    if (!this.board.isEmpty(r, c)) throw new Error("Cell taken or out of range");
+
+    const won = this.board.place(r, c, this.turn);
+    this.moves++;
+    if (won) { this.over = true; return `${this.turn} wins` as const; }
+    if (this.moves === this.board.n ** 2) { this.over = true; return "draw"; }
+    this.turn = this.turn === "X" ? "O" : "X";
+    return "ok";
+  }
+}
+```
+
+<Callout type="tip" title="Counters = O(1) win detection">
+Tracking a running sum per row/column/diagonal turns "did this move win?" into four
+comparisons. Mention the complexity out loud: naive rescans are O(N) per move; counters
+are O(1) with O(N) space. It's a small board, but the interviewer is checking whether you
+*think* about cost.
+</Callout>
+
+## Complexity & follow-ups
+
+- **Gomoku (K-in-a-row on a big M×N):** counters don't generalize (a line of K can sit
+  anywhere). Instead, check only the four directions **through the last move**, counting
+  contiguous same-marks — O(K) per move.
+- **Connect-4:** add gravity (a move drops to the lowest empty row in its column) and check
+  around the landing cell. Board + Game stay; the **placement rule** and **WinningStrategy**
+  change.
+- **Bot player:** a `Player` interface with a human and a minimax/alpha-beta AI
+  implementation — Strategy again.
+- **Networked play:** turn tokens + authoritative server state so two clients can't both
+  move.
+
+## Design drills
+
+<DesignDrills
+  topic="Tic-Tac-Toe"
+  drills={[
+    {
+      prompt: "Extend the design to Connect-4 without rewriting Board or Game.",
+      level: "Core",
+      covers: [
+        "A MovePlacement rule (gravity: land in the lowest empty row of a column).",
+        "A WinningStrategy that checks 4-in-a-row around the landed cell.",
+        "Board/Game orchestration unchanged — only the injected strategies differ."
+      ]
+    },
+    {
+      prompt: "Support Gomoku: 5-in-a-row on a 15×15 board.",
+      level: "Stretch",
+      covers: [
+        "Counters per full line no longer work (a 5-run sits anywhere) — check 4 directions through the last move.",
+        "O(K) per move by walking outward until the mark changes.",
+        "Same Game loop; swap the WinningStrategy."
+      ]
+    },
+    {
+      prompt: "Add an AI opponent.",
+      level: "Stretch",
+      covers: [
+        "A Player interface (human vs bot) so Game stays agnostic.",
+        "Minimax with alpha-beta pruning for the bot move.",
+        "Difficulty = search depth; Strategy pattern again."
+      ]
+    }
+  ]}
+/>
+
+<QA q="How do you detect a win in O(1) instead of rescanning the board?">
+
+Keep a running counter for each row, each column, and the two diagonals; player X adds
+`+1` and player O adds `−1`. A move updates at most four counters (its row, its column, and
+each diagonal it lies on). If any of those reaches `+N` or `−N`, the move just completed
+that line. That's O(1) time per move and O(N) extra space, versus O(N) (or O(N²)) for
+rescanning lines.
+
+</QA>
+
+<QA q="How would you extend this to Connect-4 or Gomoku without rewriting it?">
+
+Isolate what varies behind interfaces. The **win rule** becomes a `WinningStrategy`
+(takes the board + last move, returns whether it won), and the **placement rule** becomes
+its own seam (Connect-4 adds gravity). `Board` and `Game` — the grid storage and the turn
+loop — stay fixed; a new game is a new strategy pair. For Gomoku's K-in-a-row, the strategy
+checks the four directions through the last move in O(K) rather than using full-line
+counters, since a winning run can appear anywhere on a large board.
+
+</QA>

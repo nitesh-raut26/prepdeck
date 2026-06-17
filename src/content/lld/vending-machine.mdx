@@ -1,0 +1,255 @@
+---
+title: "Design a Vending Machine"
+summary: "The State-pattern LLD classic: model states (idle → has-money → dispensing) instead of a status flag, make change correctly, handle sold-out and refunds, and survive the if/else explosion that sinks most candidates."
+order: 7
+difficulty: "Classic"
+tags: ["LLD", "state-pattern", "strategy-pattern", "oop"]
+---
+
+## The ask
+
+A machine that **accepts money**, lets a user **select a product**, **dispenses** it
+with **correct change**, and survives the messy reality: insufficient funds, sold-out
+slots, cancel/refund mid-transaction, and an admin who restocks. Forty-five minutes,
+clean OOP, working code.
+
+<Callout type="info" title="Why this question, and at what level">
+It's a **state-machine in disguise** — interviewers use it to see whether you model
+behaviour with polymorphism or drown in conditionals. **SDE-1:** correct classes and a
+working happy path. **SDE-2:** the State pattern, clean change-making, and edge cases.
+**SDE-3:** you extend it without touching existing states (Strategy for payment),
+reason about concurrency and partial-failure, and name the trade-offs. Asked at
+**Amazon, Microsoft, Atlassian, Walmart Global Tech, Uber, Flipkart**; siblings are the
+coffee machine, ATM (see [atm](/lld/atm)) and the elevator (see [elevator](/lld/elevator)).
+</Callout>
+
+## The insight — model states, not a flag
+
+The naive design is a `status` enum and a giant `switch` **inside every method**
+(`insertMoney`, `selectProduct`, `dispense`, `cancel`). With `S` states and `A` actions
+you get `S × A` branches scattered across the class, and every new state edits every
+method — the change that breaks three others.
+
+The **State pattern** flips it: each state is a class that knows only **its own legal
+transitions**. "Select a product before paying" is rejected in `IdleState.selectProduct`,
+in one place, and the context just delegates.
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> Idle
+  Idle --> HasMoney: insert money
+  HasMoney --> HasMoney: insert more
+  HasMoney --> Dispensing: select (funds ok)
+  HasMoney --> Idle: cancel / refund
+  Dispensing --> Idle: dispense + change
+  Idle --> SoldOut: stock empty
+  SoldOut --> Idle: restock`} />
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Vending Machine"
+  difficulty="LLD design — 40 min"
+  problem="Accept money, select a product, dispense with correct change. Handle insufficient funds, sold-out, cancel/refund, and restock — with clean, extensible OOP."
+  stages={[
+    {
+      label: "Spec → a (state × action) matrix",
+      prompt: "What are the states, and what actions can a user attempt in each?",
+      reveal: "States: Idle, HasMoney, Dispensing, SoldOut. Actions: insertMoney, selectProduct, dispense, cancel. Draw the grid out loud — most cells are illegal (select before paying, insert while dispensing). The legal transitions ARE the design; naming them up front is the senior move."
+    },
+    {
+      label: "Spot where the naive design rots",
+      prompt: "If state is just an enum, where does the logic for these transitions live?",
+      reveal: "In a switch on the enum inside each of the four methods — S×A branches smeared across the class. Adding a 'card payment accepted' state means editing all four methods and hoping you covered every combination. That coupling is exactly what the interviewer is watching for."
+    },
+    {
+      label: "State pattern: one class per state",
+      prompt: "How do I make illegal actions impossible to forget?",
+      reveal: "Define a State interface with the four actions. Each concrete state implements only its legal transitions and returns a clear error for the rest — so 'dispense before paying' is handled once, in IdleState. The VendingMachine (context) holds currentState and delegates; transitions are state.setState(...) calls."
+    },
+    {
+      label: "Money & change — and where greedy breaks",
+      prompt: "How do I return change, and is greedy always correct?",
+      reveal: "Greedy (largest coin first) is correct for canonical sets like {1,5,10,25}. It is NOT optimal for arbitrary denominations (e.g. {1,3,4} making 6 → greedy 4+1+1, optimal 3+3) — that's the coin-change DP (see /dsa/dynamic-programming). Also handle 'cannot make exact change' by refusing the sale and refunding, not short-changing the user."
+    },
+    {
+      label: "Edge cases & partial failure",
+      prompt: "Money taken, then the motor jams mid-dispense. Now what?",
+      reveal: "Treat a purchase as a tiny transaction: reserve the item and the change, attempt the mechanical dispense, commit on success, roll back (refund + un-reserve) on failure. For a real machine concurrency is mostly single-user, but admin restock can race with a purchase — guard inventory mutations with a lock per slot. Saying 'reserve → dispense → commit/rollback' unprompted is the SDE-3 signal."
+    }
+  ]}
+/>
+
+## Implementation
+
+```ts
+interface State {
+  insertMoney(cents: number): void;
+  selectProduct(code: string): void;
+  dispense(): void;
+  cancel(): void;
+}
+
+type Slot = { product: string; priceCents: number; qty: number };
+
+class VendingMachine {
+  readonly idle = new IdleState(this);
+  readonly hasMoney = new HasMoneyState(this);
+  readonly dispensing = new DispensingState(this);
+
+  state: State = this.idle;
+  balanceCents = 0;        // money the current user has inserted
+  selected: string | null = null;
+
+  constructor(private inventory: Map<string, Slot>) {}
+
+  setState(s: State) { this.state = s; }
+  slot(code: string) { return this.inventory.get(code); }
+  inStock(code: string) { return (this.slot(code)?.qty ?? 0) > 0; }
+
+  // The context just delegates — no business logic lives here.
+  insertMoney(c: number) { this.state.insertMoney(c); }
+  selectProduct(code: string) { this.state.selectProduct(code); }
+  dispense() { this.state.dispense(); }
+  cancel() { this.state.cancel(); }
+
+  refund() { const r = this.balanceCents; this.balanceCents = 0; return r; }
+}
+
+class IdleState implements State {
+  constructor(private m: VendingMachine) {}
+  insertMoney(c: number) { this.m.balanceCents += c; this.m.setState(this.m.hasMoney); }
+  selectProduct() { throw new Error("Insert money first"); }
+  dispense() { throw new Error("Insert money and select a product first"); }
+  cancel() { /* nothing to refund */ }
+}
+
+class HasMoneyState implements State {
+  constructor(private m: VendingMachine) {}
+  insertMoney(c: number) { this.m.balanceCents += c; }
+  selectProduct(code: string) {
+    const slot = this.m.slot(code);
+    if (!slot || slot.qty === 0) throw new Error("Sold out");
+    if (this.m.balanceCents < slot.priceCents)
+      throw new Error(`Need ${slot.priceCents - this.m.balanceCents}¢ more`);
+    this.m.selected = code;
+    this.m.setState(this.m.dispensing);
+    this.m.dispense();                 // funds confirmed → proceed
+  }
+  dispense() { throw new Error("Select a product first"); }
+  cancel() { console.log(`Refunded ${this.m.refund()}¢`); this.m.setState(this.m.idle); }
+}
+
+class DispensingState implements State {
+  constructor(private m: VendingMachine) {}
+  insertMoney() { throw new Error("Dispensing — please wait"); }
+  selectProduct() { throw new Error("Dispensing — please wait"); }
+  dispense() {
+    const code = this.m.selected!;
+    const slot = this.m.slot(code)!;
+    slot.qty -= 1;                                  // commit the item
+    const change = this.m.balanceCents - slot.priceCents;
+    this.m.balanceCents = 0;
+    this.m.selected = null;
+    this.m.setState(this.m.idle);
+    console.log(`Dispensed ${slot.product}, change ${change}¢`);
+  }
+  cancel() { throw new Error("Too late to cancel — already dispensing"); }
+}
+```
+
+<Callout type="tip" title="Why State beats a status enum">
+Each state owns its legal transitions, so an illegal action is rejected in exactly one
+place — no `switch` smeared across four methods. Adding a `SoldOut` or `CardAccepted`
+state is a **new class**, not an edit to every existing method (open/closed principle).
+Say this trade-off out loud; it's the difference between "wrote code" and "designed."
+</Callout>
+
+## Complexity & follow-ups
+
+- **Change-making:** greedy is O(coins) and optimal for canonical sets; for arbitrary
+  denominations it's the coin-change **DP** — know both and when each applies.
+- **Payment methods (cash, card, UPI):** wrap behind a `PaymentStrategy` interface so the
+  state machine never changes when you add a rail — Strategy + State compose cleanly.
+- **Concurrency:** a physical machine is single-user, but admin **restock** can race a
+  purchase — guard each `Slot` mutation with a lock; model the dispense as
+  reserve → dispense → commit/rollback so a jam never charges the customer.
+- **Observability:** emit events (sale, sold-out, jam) so you can answer "which slots
+  sell out fastest?" — the product-thinking follow-up.
+
+## Design drills
+
+<DesignDrills
+  topic="Vending Machine"
+  drills={[
+    {
+      prompt: "Add card and UPI payments without touching any State class.",
+      level: "Core",
+      covers: [
+        "A PaymentStrategy interface (authorize, capture, refund) injected into the context.",
+        "States call this.m.payment.capture() — they stay agnostic to the rail.",
+        "Refund path on cancel routes through the same strategy (card auth-reversal vs cash)."
+      ]
+    },
+    {
+      prompt: "An admin restocks a slot while a customer is mid-purchase on it. Keep it consistent.",
+      level: "Core",
+      covers: [
+        "Per-slot lock (or atomic compare-and-set on qty) so reserve and restock don't interleave.",
+        "Reserve-on-select so the purchased unit can't be double-sold.",
+        "Restock is an admin action gated to Idle/SoldOut, not allowed mid-dispense."
+      ]
+    },
+    {
+      prompt: "The motor jams after the customer paid but before the item drops. Design the recovery.",
+      level: "Stretch",
+      covers: [
+        "Treat the purchase as a transaction: reserve item + change, dispense, commit or roll back.",
+        "On failure: refund fully, release the reserved unit, log a jam event, move the slot to a fault state.",
+        "Idempotency: a retry must not double-charge or double-dispense."
+      ]
+    },
+    {
+      prompt: "Support arbitrary coin denominations where greedy change is wrong.",
+      level: "Stretch",
+      covers: [
+        "Show a greedy failure case ({1,3,4} for 6).",
+        "Coin-change DP over available counts (bounded knapsack), or refuse when exact change is impossible.",
+        "Prefer keeping small coins in reserve to stay able to make change."
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why use the State pattern instead of a status enum and a switch statement?">
+
+A status enum pushes the transition logic into a `switch` inside **every** method, so
+`S` states × `A` actions becomes branches scattered across the class — and every new
+state forces edits to all methods, the classic source of regressions. The State pattern
+gives each state its own class that implements only its **legal** transitions and
+rejects the rest in one place. Adding a state is a new class (open/closed), and the
+context simply delegates. It's more files but far less coupling — exactly the trade-off
+interviewers want you to articulate.
+
+</QA>
+
+<QA q="How do you make change, and when does the greedy approach fail?">
+
+Greedy — hand back the largest coin that fits, repeat — is optimal for **canonical**
+systems like {1, 5, 10, 25}. It fails for arbitrary denominations: with {1, 3, 4}
+making 6, greedy gives 4+1+1 (three coins) while 3+3 (two) is optimal. There the correct
+tool is the **coin-change DP**. Also handle the "can't make exact change" case by
+refusing the sale and refunding rather than short-changing the customer — and keep small
+denominations in reserve so you stay able to give change.
+
+</QA>
+
+<QA q="Money was accepted but the item fails to dispense. How do you stay consistent?">
+
+Model the purchase as a small **transaction**: reserve the unit and the change, attempt
+the mechanical dispense, then commit on success or roll back on failure (full refund,
+release the reserved unit, mark the slot faulted, emit a jam event). Make the operation
+**idempotent** so a retry can't double-charge or double-dispense. This "reserve →
+dispense → commit/rollback" framing is the senior signal — it shows you treat the
+physical action as something that can fail.
+
+</QA>

@@ -1,0 +1,174 @@
+---
+title: "Design a Meeting Scheduler / Calendar"
+summary: "Interval management as LLD: detect conflicts, assign the minimum number of rooms with a sweep-line heap, and extend to recurring events, attendee free-slot intersection, and concurrent double-booking. Maps to LeetCode 253 / My Calendar."
+order: 14
+difficulty: "Classic"
+tags: ["LLD", "oop", "intervals", "heap"]
+---
+
+## The ask
+
+Book meetings with a start and end time across a set of rooms: reject overlaps in the same
+room, assign a free room when one's available, and answer "how many rooms do we need?"
+(This is **My Calendar I/II** and **Meeting Rooms II / LeetCode 253** as a design problem.)
+
+<Callout type="info" title="Why this one, and at what level">
+It rewards knowing the **interval toolkit** ([heaps & intervals](/dsa/heaps-and-intervals))
+and wrapping it in clean objects. **SDE-1:** book + conflict detection. **SDE-2:** the
+min-rooms sweep-line/heap and a clean Scheduler API. **SDE-3:** recurring events, time
+zones, attendee free-slot intersection, and double-booking under concurrency. Asked at
+**Google, Microsoft, Amazon, Atlassian** (calendars are their bread and butter).
+</Callout>
+
+## The two core algorithms
+
+- **Conflict detection (one room):** two intervals `[s1,e1)` and `[s2,e2)` overlap iff
+  `s1 < e2 and s2 < e1`. Keep each room's bookings sorted (a `TreeMap`/balanced BST keyed
+  on start) so you can binary-search the neighbours and check only those — O(log n) per
+  booking instead of scanning all.
+- **Minimum rooms (sweep line + heap):** sort meetings by start; keep a **min-heap of end
+  times** of in-progress meetings. For each meeting, if the earliest end ≤ its start, a room
+  freed up (pop and reuse); else allocate a new room (push). The heap's max size is the
+  answer.
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Meeting Scheduler"
+  difficulty="LLD / Medium — LeetCode 253 + My Calendar"
+  problem="Book meetings across rooms with no overlaps; assign a free room; report the minimum rooms needed."
+  stages={[
+    {
+      label: "Spec → entities",
+      prompt: "What are the objects and what does each own?",
+      reveal: "Meeting (start, end, attendees), Room (id + its sorted bookings), and Scheduler (orchestrates booking across rooms). Keep the overlap rule in one place; Scheduler decides which room, Room knows its own timeline."
+    },
+    {
+      label: "Conflict check without scanning everything",
+      prompt: "How do I know a new [s,e) fits a room in better than O(n)?",
+      reveal: "Store a room's bookings in a TreeMap keyed by start. The only possible conflicts are the booking just before and just after the new start (floor/ceiling lookups). Two intervals overlap iff s1 < e2 and s2 < e1 — check those two neighbours in O(log n)."
+    },
+    {
+      label: "Minimum rooms = max concurrency",
+      prompt: "How many rooms do N meetings need?",
+      reveal: "Sort by start; walk through with a min-heap of end times. Before placing meeting i, pop every end ≤ start_i (those rooms freed). The heap size after pushing is the rooms in use; the running max is the answer — a sweep line counting peak overlap. O(n log n)."
+    }
+  ]}
+/>
+
+## Implementation
+
+```ts
+type Meeting = { start: number; end: number };
+
+class Scheduler {
+  // Each room holds bookings sorted by start time.
+  private rooms: Meeting[][] = [];
+
+  private overlaps(a: Meeting, b: Meeting) {
+    return a.start < b.end && b.start < a.end;   // half-open intervals
+  }
+
+  // Book into the first room with no conflict; open a new room if none fits.
+  book(m: Meeting): number {
+    for (let i = 0; i < this.rooms.length; i++) {
+      if (!this.rooms[i].some((b) => this.overlaps(b, m))) {
+        this.rooms[i].push(m);
+        return i;                                 // assigned room index
+      }
+    }
+    this.rooms.push([m]);                          // all busy → new room
+    return this.rooms.length - 1;
+  }
+}
+
+// Minimum rooms for a fixed set — the sweep-line / min-heap classic.
+function minRooms(meetings: Meeting[]): number {
+  const sorted = [...meetings].sort((a, b) => a.start - b.start);
+  const endHeap: number[] = [];                    // min-heap of end times
+  let peak = 0;
+  for (const m of sorted) {
+    while (endHeap.length && endHeap[0] <= m.start) heapPop(endHeap);
+    heapPush(endHeap, m.end);
+    peak = Math.max(peak, endHeap.length);
+  }
+  return peak;
+}
+```
+
+<Callout type="tip" title="Half-open intervals remove the off-by-one">
+Treat times as `[start, end)`. A meeting ending at 10:00 and one starting at 10:00 then
+**don't** conflict (`s1 < e2 and s2 < e1` is false), which matches how calendars actually
+behave. State the convention up front — it kills a whole class of boundary bugs.
+</Callout>
+
+## Complexity & follow-ups
+
+- **Booking:** O(log n) per room with a TreeMap; the naive `some()` scan above is O(n) per
+  room — fine to start, then optimize when asked.
+- **Min rooms:** O(n log n) via the heap.
+- **Recurring meetings:** store a rule (RRULE) + expand lazily into instances within a
+  query window — don't materialize infinite occurrences.
+- **Time zones:** store everything in **UTC**, convert at the edges; mind DST transitions.
+- **Find a common slot** across attendees: merge each person's busy intervals, then
+  intersect the free gaps (interval intersection).
+- **Concurrency / double-booking:** two requests for the same room+time race — guard with a
+  per-room lock or an **optimistic** check-and-insert (unique constraint on room+overlap)
+  so the second booking fails cleanly.
+
+## Design drills
+
+<DesignDrills
+  topic="Meeting Scheduler"
+  drills={[
+    {
+      prompt: "Find the earliest common free slot of duration D across K attendees.",
+      level: "Core",
+      covers: [
+        "Merge each attendee's busy intervals, then intersect the free gaps.",
+        "Sweep all busy intervals together; a gap ≥ D where 0 are busy is a candidate.",
+        "Return the first such slot; O(total intervals log) with a heap."
+      ]
+    },
+    {
+      prompt: "Two users book the same room for the same time simultaneously. Prevent the double-booking.",
+      level: "Stretch",
+      covers: [
+        "Per-room lock around check-conflict-then-insert (make it atomic).",
+        "Or optimistic: insert with a DB constraint that rejects overlaps, retry on conflict.",
+        "Idempotency key so a client retry doesn't create two bookings."
+      ]
+    },
+    {
+      prompt: "Support recurring meetings (every weekday for a quarter) without storing infinite rows.",
+      level: "Core",
+      covers: [
+        "Store a recurrence rule (RRULE) + exceptions, not every instance.",
+        "Expand lazily into concrete meetings within the queried window.",
+        "Conflict checks run against the expanded instances for that window."
+      ]
+    }
+  ]}
+/>
+
+<QA q="How do you compute the minimum number of rooms for a set of meetings?">
+
+It's the **maximum number of overlapping meetings** at any instant. Sort meetings by start
+time and sweep through them with a **min-heap of end times**: before placing each meeting,
+pop every end time `≤` its start (those rooms are now free), then push its end time. The
+peak heap size during the sweep is the minimum rooms needed — O(n log n). Equivalent
+framing: a sweep line over `+1` at each start and `−1` at each end, tracking the running
+peak.
+
+</QA>
+
+<QA q="How do you stop two simultaneous requests from double-booking the same room?">
+
+Make the "check for conflict, then insert" step **atomic**. Either take a **per-room lock**
+so only one booking evaluates that room's timeline at a time, or use **optimistic
+concurrency** — insert with a database constraint/transaction that rejects overlapping
+intervals and have the loser retry. Add an **idempotency key** so a client retry of the
+same request doesn't create a duplicate. Without atomicity, both requests can see the slot
+free and both insert — the classic race.
+
+</QA>
