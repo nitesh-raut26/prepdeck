@@ -1,0 +1,150 @@
+---
+title: "Design an Ad Click Aggregator (Event Counting at Scale)"
+summary: "The streaming-aggregation interview: ingest billions of click events, count them in time windows with near-real-time and historical views, dedupe for idempotency, survive hot partitions, and reconcile approximate fast paths against exact batch recomputes."
+order: 12
+tags: ["system-design", "streaming", "aggregation", "kafka", "case-study"]
+---
+
+## Prompt
+
+> Capture **ad click** events (billions/day), and serve **aggregated metrics** — clicks
+> per ad per minute/hour/day — to advertiser dashboards with **near-real-time** freshness
+> *and* accurate **historical** rollups. Money depends on the counts, so they must
+> eventually be exact.
+
+<Callout type="info" title="Why this one, and at what level">
+It's the canonical **count-events-at-scale** problem (clicks, views, likes, metrics,
+[URL-shortener](/hld/url-shortener) analytics — same shape). **SDE-1:** the write →
+aggregate → read pipeline. **SDE-2:** stream processing, windowing, and idempotent dedupe.
+**SDE-3 / Staff:** hot-partition skew, late events/watermarks, the lambda/kappa choice,
+and reconciling approximate vs exact. Asked at **Google, Meta, Amazon, Uber, TikTok,
+Reddit**.
+</Callout>
+
+## 1. Requirements
+
+**Functional:** record each click; query aggregates by ad and time bucket (minute → day);
+top-N ads. **Non-functional:** very high **write** throughput; **low-latency reads** of
+pre-aggregated data; **idempotency** (a click counted once despite retries/duplicates);
+fast path can be **approximate**, but historical totals must be **exact** (billing).
+
+## 2. Estimate
+
+~10B clicks/day ≈ **115k writes/s** average, peaks several × that. Raw events at ~100
+bytes ≈ ~1 TB/day — store raw for reconciliation, but **never** aggregate by scanning raw
+per query.
+
+## 3. Architecture
+
+```text
+clients ─▶ ingestion API ─▶ [ Kafka ]
+                              partitioned by adId
+                                   │
+                       ┌───────────┴───────────┐
+                       ▼ (speed layer)          ▼ (batch layer)
+              stream processor            raw event store (S3)
+              (Flink/Spark): windowed     │ periodic exact
+              counts, ~seconds fresh      │ recompute (reconcile)
+                       │                  │
+                       ▼                  ▼
+                 OLAP / time-series store  ◀── corrected totals
+                       │
+                       ▼
+               advertiser dashboard (read pre-aggregated buckets)
+```
+
+The read path **never** touches raw events — it reads pre-aggregated minute/hour/day
+buckets from an [OLAP/time-series store](/databases/olap-vs-oltp). All the work is on write.
+
+## 4. The decisions that matter
+
+- **Idempotency / dedupe:** each click carries a unique `event_id`; the processor drops
+  duplicates (a dedupe window keyed on `event_id`) so retries and at-least-once delivery
+  from [the queue](/hld/messaging-and-queues) don't inflate counts.
+- **Windowing:** aggregate into **tumbling windows** (fixed minute buckets), then roll
+  minutes → hours → days. Emit on window close.
+- **Late events & watermarks:** a click can arrive after its window closed (mobile retry,
+  clock skew). Use **watermarks** to wait a bounded grace period, then either fold late
+  events into a correction or let the batch layer fix them.
+- **Hot partitions (skew):** a viral ad concentrates traffic on one Kafka partition / one
+  aggregator key. Mitigate by **salting** the key (`adId#shard`) to spread load, then
+  summing the shards at read time.
+- **Approximate fast path:** for *unique* users use **HyperLogLog**; for top-N use
+  count-min sketch. Cheap and fast; the batch layer provides the exact number later.
+
+## 5. Lambda vs Kappa
+
+- **Lambda:** a fast **speed layer** (approximate, seconds) + a slow **batch layer**
+  (exact, scans raw, overwrites the speed numbers). Two code paths to maintain.
+- **Kappa:** one streaming pipeline; "recompute" = replay the Kafka log. Simpler, now the
+  common default.
+
+Either way the principle is the same: serve fast/approximate immediately, then
+**reconcile** to exact from durable raw events — the answer to "what if the stream
+processor double-counts or drops?"
+
+## Design drills
+
+<DesignDrills
+  topic="Ad Click Aggregator"
+  drills={[
+    {
+      prompt: "A single ad goes viral and overwhelms one partition. Keep aggregation balanced.",
+      level: "Stretch",
+      covers: [
+        "Salt the key (adId#0..adId#N) so one ad spreads across partitions/aggregators.",
+        "Sum the salted shards at read time to recover the per-ad total.",
+        "Auto-detect hot keys and raise their shard count dynamically."
+      ]
+    },
+    {
+      prompt: "Clicks are billed, so counts must be exact — but the stream may double-count or drop.",
+      level: "Core",
+      covers: [
+        "Per-event event_id + dedupe window for idempotent counting on the fast path.",
+        "Durable raw events (S3/Kafka) enable an exact batch recompute that overwrites estimates.",
+        "Reconciliation job compares speed vs batch and corrects the served totals."
+      ]
+    },
+    {
+      prompt: "An event arrives 10 minutes after its window closed. Don't lose it.",
+      level: "Core",
+      covers: [
+        "Watermarks: hold windows open a bounded grace period for stragglers.",
+        "Beyond the grace period, route late events to a correction/late stream.",
+        "Batch layer is the ultimate backstop for very late data."
+      ]
+    }
+  ]}
+/>
+
+<QA q="How do you keep counts idempotent when the queue only guarantees at-least-once delivery?">
+
+Attach a unique `event_id` to every click and **dedupe on it** before counting — the
+processor keeps a dedupe set/window keyed on `event_id` and ignores repeats. Because
+[at-least-once delivery](/backend/background-jobs) means the same event can arrive twice
+(retries, redelivery after a crash), counting must be idempotent in the consumer, not
+assumed from the broker. For exactness over long horizons, you also retain raw events and
+run a periodic batch recompute that the fast path's estimates reconcile against.
+
+</QA>
+
+<QA q="One ad gets 100× the traffic of others and hot-spots a partition. What do you do?">
+
+That's **partition skew**. Spread the hot key by **salting** it — write to `adId#0 …
+adId#N` so the load fans across N partitions/aggregators — and **sum the shards** when
+reading to recover the true per-ad count. Detect hot keys at runtime and increase their
+shard count adaptively. This is the streaming analogue of the hot-key problem in caching:
+the fix is always to break one overloaded key into many.
+
+</QA>
+
+<QA q="Why serve pre-aggregated buckets instead of counting raw events per query?">
+
+Because counting billions of raw rows on every dashboard load is impossibly slow and
+expensive. You aggregate **on write** into minute/hour/day buckets via stream processing,
+store those in an OLAP/time-series store, and the read path just fetches the relevant
+pre-summed buckets — O(buckets), not O(events). Raw events are still retained, but only for
+**reconciliation** (exact batch recompute) and replay, never for live queries.
+
+</QA>
