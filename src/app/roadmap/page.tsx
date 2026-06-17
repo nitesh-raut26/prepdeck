@@ -41,7 +41,7 @@ export default function RoadmapPage() {
       </p>
 
       <ol className="mt-8 space-y-4">
-        {ROADMAP.map((lvl) => {
+        {[...ROADMAP].sort((a, b) => a.level - b.level).map((lvl) => {
           const primary = getSection(lvl.sections[0]);
           const accent = primary?.accent ?? "#818cf8";
           const ready = lvl.topics.filter(

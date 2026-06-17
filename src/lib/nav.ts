@@ -73,12 +73,21 @@ export const SECTIONS: Section[] = [
     accent: "#fbbf24",
   },
   {
+    id: "databases",
+    title: "Databases",
+    label: "Databases",
+    icon: "Database",
+    blurb:
+      "Level 6 — SQL and NoSQL in depth: indexing, query optimization, transactions, replication and sharding. Learn how data is stored before you design systems around it.",
+    accent: "#60a5fa",
+  },
+  {
     id: "hld",
     title: "System Design (HLD)",
     label: "System Design",
     icon: "Network",
     blurb:
-      "Level 6 — high-level design fundamentals plus applied case studies drawn straight from real systems.",
+      "Level 7 — high-level design fundamentals plus applied case studies drawn straight from real systems.",
     accent: "#34d399",
   },
   {
@@ -87,7 +96,7 @@ export const SECTIONS: Section[] = [
     label: "Backend",
     icon: "Server",
     blurb:
-      "Level 7 — Node.js, Spring Boot and FastAPI: auth, REST, GraphQL, WebSockets and microservices in production.",
+      "Level 8 — Node.js, Spring Boot and FastAPI: auth, REST, GraphQL, WebSockets and microservices in production.",
     accent: "#4ade80",
   },
   {
@@ -96,17 +105,8 @@ export const SECTIONS: Section[] = [
     label: "Frontend",
     icon: "PanelsTopLeft",
     blurb:
-      "Level 8 — HTML, CSS, JavaScript, TypeScript, React and Next.js, from a blank page to shipped products.",
+      "Level 9 — HTML, CSS, JavaScript, TypeScript, React and Next.js, from a blank page to shipped products.",
     accent: "#e879f9",
-  },
-  {
-    id: "databases",
-    title: "Databases",
-    label: "Databases",
-    icon: "Database",
-    blurb:
-      "Level 9 — SQL and NoSQL in depth: indexing, query optimization, transactions, replication and sharding.",
-    accent: "#60a5fa",
   },
   {
     id: "devops",

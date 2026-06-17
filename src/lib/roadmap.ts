@@ -149,7 +149,7 @@ export const ROADMAP: RoadmapLevel[] = [
     ],
   },
   {
-    level: 6,
+    level: 7,
     title: "High-Level Design",
     goal: "Design systems that scale: estimation, caching, queues, replication — then full designs of real products.",
     sections: ["hld"],
@@ -182,7 +182,7 @@ export const ROADMAP: RoadmapLevel[] = [
     ],
   },
   {
-    level: 7,
+    level: 8,
     title: "Backend Development",
     goal: "Build production APIs: Node.js, Spring Boot and FastAPI with auth, REST, GraphQL, WebSockets and microservices.",
     sections: ["backend"],
@@ -203,7 +203,7 @@ export const ROADMAP: RoadmapLevel[] = [
     ],
   },
   {
-    level: 8,
+    level: 9,
     title: "Frontend Development",
     goal: "Ship polished UIs: HTML, CSS, JavaScript, TypeScript, React and Next.js, from a blank page to a SaaS product.",
     sections: ["frontend"],
@@ -216,7 +216,7 @@ export const ROADMAP: RoadmapLevel[] = [
     ],
   },
   {
-    level: 9,
+    level: 6,
     title: "Databases in Depth",
     goal: "Go beyond CRUD: indexing, query plans, transactions, locks, replication and sharding in SQL and NoSQL.",
     sections: ["databases", "fundamentals"],
