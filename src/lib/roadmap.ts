@@ -75,6 +75,7 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Heaps & intervals", doc: "dsa/heaps-and-intervals" },
       { label: "Tries", doc: "dsa/tries" },
       { label: "Graphs", doc: "dsa/graphs-bfs-dfs" },
+      { label: "Advanced graphs", doc: "dsa/advanced-graphs" },
       { label: "Union-Find", doc: "dsa/union-find" },
       {
         label: "Segment & Fenwick trees",
@@ -88,6 +89,7 @@ export const ROADMAP: RoadmapLevel[] = [
     goal: "Recognize the pattern behind a problem in seconds: pointers, windows, search, recursion, greedy and DP.",
     sections: ["dsa"],
     topics: [
+      { label: "How to think (pattern decoder)", doc: "dsa/how-to-think" },
       { label: "Sorting & searching", doc: "dsa/sorting-and-searching" },
       { label: "Two pointers", doc: "dsa/two-pointers" },
       { label: "Sliding window", doc: "dsa/sliding-window" },
@@ -97,6 +99,9 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Dynamic programming", doc: "dsa/dynamic-programming" },
       { label: "DP patterns in depth", doc: "dsa/dp-patterns" },
       { label: "String algorithms", doc: "dsa/string-algorithms" },
+      { label: "Bit manipulation", doc: "dsa/bit-manipulation" },
+      { label: "Mathematics for coding", doc: "dsa/math-for-coding" },
+      { label: "Streaming & bounded-memory", doc: "dsa/streaming-and-memory" },
     ],
   },
   {
@@ -107,9 +112,11 @@ export const ROADMAP: RoadmapLevel[] = [
     topics: [
       { label: "Study plan", doc: "dsa/study-plan" },
       { label: "Problem bank", doc: "dsa/problem-bank" },
+      { label: "Company question bank", doc: "dsa/company-question-bank" },
       { label: "Algorithms in your projects", doc: "dsa/project-algorithms" },
       { label: "Blind 75 walkthrough", doc: "dsa/blind-75" },
       { label: "NeetCode 150 walkthrough", doc: "dsa/neetcode-150" },
+      { label: "Concurrency coding", doc: "dsa/concurrency-coding" },
       { label: "Mock-interview drills", doc: "dsa/mock-drills" },
     ],
   },
@@ -134,6 +141,11 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Notification system", doc: "lld/notification-system" },
       { label: "Chat system (WhatsApp LLD)", doc: "lld/chat-system" },
       { label: "Uber (LLD)", doc: "lld/uber" },
+      { label: "Vending machine", doc: "lld/vending-machine" },
+      { label: "Tic-tac-toe", doc: "lld/tic-tac-toe" },
+      { label: "Meeting scheduler", doc: "lld/meeting-scheduler" },
+      { label: "File system", doc: "lld/file-system" },
+      { label: "Payment retry", doc: "lld/payment-retry" },
     ],
   },
   {
@@ -159,6 +171,14 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Design Twitter/X", doc: "hld/design-twitter" },
       { label: "Design Google Drive", doc: "hld/design-google-drive" },
       { label: "Scaling journey: 100 → 1B users", doc: "hld/scaling-journey" },
+      { label: "URL shortener", doc: "hld/url-shortener" },
+      { label: "Web crawler", doc: "hld/web-crawler" },
+      { label: "Typeahead", doc: "hld/typeahead" },
+      { label: "Distributed unique ID", doc: "hld/distributed-unique-id" },
+      { label: "Distributed cache", doc: "hld/distributed-cache" },
+      { label: "Distributed message queue", doc: "hld/distributed-message-queue" },
+      { label: "Ad click aggregator", doc: "hld/ad-click-aggregator" },
+      { label: "Design webhooks", doc: "hld/design-webhooks" },
     ],
   },
   {
@@ -178,6 +198,8 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "API gateway & service discovery", doc: "backend/api-gateway" },
       { label: "Distributed locks", doc: "backend/distributed-locks" },
       { label: "DDD & modular monoliths", doc: "backend/ddd" },
+      { label: "Background jobs", doc: "backend/background-jobs" },
+      { label: "Caching strategies", doc: "backend/caching-strategies" },
     ],
   },
   {
@@ -201,6 +223,7 @@ export const ROADMAP: RoadmapLevel[] = [
     topics: [
       { label: "SQL fundamentals", doc: "databases/sql-fundamentals" },
       { label: "PostgreSQL & MySQL", doc: "databases/postgres-and-mysql" },
+      { label: "OLAP vs OLTP", doc: "databases/olap-vs-oltp" },
       { label: "MongoDB & Redis", doc: "databases/mongodb-and-redis" },
       { label: "Indexing & optimization", doc: "databases/indexing" },
       { label: "Transactions & locks", doc: "databases/transactions" },
@@ -208,6 +231,9 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "MVCC", doc: "databases/mvcc" },
       { label: "The query optimizer", doc: "databases/query-optimizer" },
       { label: "Event sourcing & CQRS", doc: "databases/event-sourcing-cqrs" },
+      { label: "Concurrency & transactions", doc: "fundamentals/concurrency" },
+      { label: "Computer networking", doc: "fundamentals/networking" },
+      { label: "Security & cryptography", doc: "fundamentals/security" },
     ],
   },
   {
@@ -240,6 +266,8 @@ export const ROADMAP: RoadmapLevel[] = [
       { label: "Agents", doc: "aiml/agents" },
       { label: "Vector databases", doc: "aiml/vector-databases" },
       { label: "Fine-tuning", doc: "aiml/fine-tuning" },
+      { label: "LLM evaluation & safety", doc: "aiml/llm-eval-safety" },
+      { label: "MLOps & model deployment", doc: "aiml/mlops" },
     ],
   },
   {
