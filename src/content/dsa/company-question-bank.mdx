@@ -1,0 +1,135 @@
+---
+title: "Company Question Bank — Who Asks What"
+summary: "The interview funnel (DSA → LLD → HLD) mapped to each company's house style and recently-reported question patterns — so you prep for the round you'll actually get, not a generic list."
+order: 29
+difficulty: "Checklist"
+tags: ["company", "interview-prep", "problem-list", "roadmap"]
+---
+
+## How to use this page
+
+Every loop runs the same **funnel** — a coding screen, then onsite rounds that add design:
+
+1. **DSA round** — clear it with the [patterns](/dsa/how-to-think) and the
+   [Blind 75](/dsa/blind-75).
+2. **LLD round** (SDE-2+) — [OOP/SOLID](/lld/oop-and-solid), patterns, and the classics
+   ([LRU](/lld/lru-cache), [vending machine](/lld/vending-machine),
+   [tic-tac-toe](/lld/tic-tac-toe)).
+3. **HLD round** (SDE-2/3) — the [approach](/hld/approach) plus case studies
+   ([URL shortener](/hld/url-shortener), [feed](/hld/design-twitter), and friends).
+
+<Callout type="warn" title="On 'latest asked questions'">
+Specific questions rotate and leak quickly go stale; **patterns don't**. What follows is
+the durable signal — each company's *style* and the *recurring* question shapes reported
+through 2025–2026 — mapped to the pages that train them. Drill the pattern, not the
+trophy question.
+</Callout>
+
+## By level — what each round expects
+
+- **SDE-1 / new grad:** DSA is ~everything. Easy–medium across arrays, strings, hashing,
+  trees, BFS/DFS, basic DP. LLD light (one OOP design), no HLD.
+- **SDE-2:** harder DSA (medium–hard), a full **LLD** round, and an entry **HLD** round.
+- **SDE-3 / Staff:** DSA still screens, but **HLD depth** and trade-off judgment dominate,
+  plus deep LLD and ownership/behavioral.
+
+## Big Tech
+
+### Amazon
+- **Style:** medium DSA + a strong **LP/behavioral** bar; OOD is common at SDE-2.
+- **DSA:** graphs/BFS-DFS, [heaps & intervals](/dsa/heaps-and-intervals),
+  [two pointers](/dsa/two-pointers), [DP](/dsa/dynamic-programming).
+- **LLD/HLD:** [parking lot](/lld/parking-lot), [LRU](/lld/lru-cache); design
+  [a URL shortener](/hld/url-shortener), [a distributed cache](/hld/distributed-cache).
+
+### Google
+- **Style:** algorithmic depth + clean analysis; expect "now optimize / now prove it."
+- **DSA:** [graphs](/dsa/advanced-graphs), [DP patterns](/dsa/dp-patterns),
+  [backtracking](/dsa/backtracking), [tries](/dsa/tries), [math](/dsa/math-for-coding).
+- **HLD:** [typeahead](/hld/typeahead), [web crawler](/hld/web-crawler),
+  [YouTube](/hld/design-youtube). Sometimes a [concurrency](/dsa/concurrency-coding) round.
+
+### Meta
+- **Style:** fast medium DSA (speed matters), product-flavored HLD, "ownership" behavioral.
+- **DSA:** [arrays/strings](/dsa/arrays-and-strings), [graphs](/dsa/graphs-bfs-dfs),
+  [intervals](/dsa/heaps-and-intervals), [binary search](/dsa/binary-search).
+- **HLD:** [news feed / Twitter](/hld/design-twitter), [Instagram](/hld/design-instagram),
+  [ad click aggregation](/hld/ad-click-aggregator).
+
+### Microsoft
+- **Style:** balanced, fundamentals-first; OOD and some [bit](/dsa/bit-manipulation) work.
+- **DSA:** [linked lists](/dsa/linked-lists), [trees](/dsa/trees-and-bsts),
+  [strings](/dsa/string-algorithms), DP.
+- **LLD/HLD:** [tic-tac-toe](/lld/tic-tac-toe), [file system](/lld/file-system);
+  [distributed ID](/hld/distributed-unique-id).
+
+### Apple / Netflix
+- **Apple:** fundamentals + domain depth; [LLD](/lld/oop-and-solid) and memory-aware code.
+- **Netflix:** senior bar — [HLD at scale](/hld/scaling-journey),
+  [streaming/CDN](/hld/design-netflix), strong system ownership over puzzle DSA.
+
+## Product / scale-ups
+
+### Uber
+- Real-time + geo + maps. [Design Uber](/hld/design-uber),
+  [advanced graphs](/dsa/advanced-graphs) (routing), [message queue](/hld/distributed-message-queue).
+
+### Stripe
+- Correctness + **API design** + practical coding (often realistic, less trick-puzzle).
+  [API design](/lld/api-design), [idempotency/payments](/lld/payment-retry),
+  [REST/GraphQL](/backend/rest-and-graphql).
+
+### Airbnb / LinkedIn
+- Full-stack + product HLD; LinkedIn leans graph/feed
+  ([feed](/hld/design-twitter), [typeahead](/hld/typeahead)).
+
+### Atlassian
+- Values-based behavioral + practical [LLD](/lld/applied-patterns) and balanced HLD.
+
+## Data / infra / AI
+
+### Databricks / Snowflake
+- Distributed-systems and data depth. [Databases at scale](/hld/databases-at-scale),
+  [OLAP vs OLTP](/databases/olap-vs-oltp), [message queue](/hld/distributed-message-queue),
+  [consistency](/hld/cap-consistency).
+
+### Nvidia
+- Systems + parallelism + [concurrency](/dsa/concurrency-coding); C++ and memory matter.
+
+### OpenAI / AI labs
+- Strong general SWE + [AI/ML depth](/aiml/llms); pragmatic coding and
+  [LLM systems](/aiml/rag). Research-eng roles add ML breadth.
+
+### Bloomberg / HFT
+- [Bit tricks](/dsa/bit-manipulation), [math](/dsa/math-for-coding),
+  low-latency [concurrency](/dsa/concurrency-coding), and tight C++.
+
+## Startups & mid-size product companies
+
+Fewer rounds, more "can you ship": one practical DSA screen, often a take-home or a
+realistic [LLD](/lld/oop-and-solid), and a pragmatic [HLD](/hld/approach) about *their*
+product. Breadth ([backend](/backend/microservices), [databases](/databases/indexing),
+[caching](/backend/caching-strategies)) beats exotic algorithms.
+
+<QA q="I have limited time before a loop — how do I prioritize across DSA, LLD, and HLD?">
+
+Match effort to the **round you'll actually get**, which depends on level. New grad / SDE-1:
+spend almost everything on **DSA** (the [Blind 75](/dsa/blind-75) patterns) — there's
+usually no design round. SDE-2: keep DSA sharp but add a full **LLD** pass (the
+[classics](/lld/lru-cache)) and an entry **HLD** ([approach](/hld/approach) +
+[URL shortener](/hld/url-shortener)). SDE-3 / Staff: DSA only needs to stay warm; invest in
+**HLD depth and trade-offs** plus deep LLD. Then bias toward the specific company's style
+from the lists above (e.g. Amazon behavioral/LP, Google analysis, Stripe API design).
+
+</QA>
+
+<QA q="Are leaked 'recently asked' question lists worth grinding?">
+
+Use them as a **distribution**, not a script. Specific questions rotate, get banned, or
+won't recur for you, so memorizing a leaked list is brittle — and interviewers probe with
+follow-ups that punish memorization. The reliable signal is the **pattern frequency** and
+the **company's style** (which this page maps to the training pages). Drill the underlying
+pattern from a blank editor until you can re-derive it; that transfers to whatever variant
+you're actually handed.
+
+</QA>
