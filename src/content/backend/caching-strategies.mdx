@@ -1,0 +1,118 @@
+---
+title: "Caching Strategies & Invalidation"
+summary: "Where caches live, the five read/write patterns (cache-aside, read/write-through, write-behind, refresh-ahead), and the failure modes that actually break production: stampede, penetration, avalanche, and the dual-write race."
+order: 6
+difficulty: "Level 7"
+tags: ["backend", "caching", "performance", "redis"]
+---
+
+## Why this is a backend topic, not just an HLD one
+
+In [system design](/hld/caching) caching is a box you draw. In backend interviews it's
+*code*: which pattern you pick, how you invalidate, and how you survive the day a hot key
+expires under load. "There are only two hard things in computer science: cache
+invalidation and naming things" — interviewers test the first one.
+
+<Callout type="info" title="Where caches live (each layer is a cache)">
+**Browser / client** → **CDN / edge** → **app-local (in-process)** → **distributed
+(Redis/Memcached)** → **database buffer pool**. A request ideally never reaches the DB.
+Each layer trades freshness for latency; name the layer you mean.
+</Callout>
+
+## The read/write patterns
+
+| Pattern | How it works | Use when |
+|---|---|---|
+| **Cache-aside (lazy)** ✅ | app checks cache; on miss, reads DB and populates | the default — read-heavy, tolerant of a first-miss |
+| **Read-through** | cache library loads from DB on miss (app only talks to cache) | you want the cache to own loading logic |
+| **Write-through** | write goes to cache **and** DB synchronously | reads must be fresh right after a write |
+| **Write-behind (write-back)** | write to cache, flush to DB asynchronously | write-heavy, can tolerate a small durability risk |
+| **Refresh-ahead** | proactively refresh hot keys before they expire | predictable hot set, latency-critical |
+
+```ts
+// Cache-aside read — the pattern you'll write 90% of the time
+async function getUser(id: string): Promise<User> {
+  const key = `user:${id}`;
+  const hit = await redis.get(key);
+  if (hit) return JSON.parse(hit);              // cache hit
+
+  const user = await db.users.findById(id);     // miss → source of truth
+  await redis.set(key, JSON.stringify(user), "EX", 300); // populate, 5-min TTL
+  return user;
+}
+
+// On update: invalidate (don't try to keep cache and DB perfectly in lockstep)
+async function updateUser(id: string, patch: Partial<User>) {
+  await db.users.update(id, patch);
+  await redis.del(`user:${id}`);                // next read repopulates
+}
+```
+
+## Invalidation — the actually-hard part
+
+- **TTL (expiry):** simplest; bounds staleness without bookkeeping. Start here.
+- **Write-invalidate:** on update, delete the key (above). Prefer **delete over update** —
+  updating cache + DB as two writes invites a race where they disagree.
+- **Versioned / keyed:** bake a version into the key (`user:42:v7`); bump the version to
+  invalidate whole families without scanning.
+
+<Callout type="warn" title="The dual-write race">
+Writing to the DB and the cache as two separate steps can interleave: thread A writes DB,
+thread B reads stale DB + repopulates cache, thread A deletes cache — and B's stale value
+lands *after* the delete. Mitigations: delete-after-write (and accept a tiny stale
+window), short TTLs as a safety net, or change-data-capture so the cache follows the DB's
+log. There is no perfectly-consistent cache without giving up availability — say so.
+</Callout>
+
+## The four production failure modes
+
+- **Cache stampede / thundering herd:** a hot key expires and thousands of requests miss
+  simultaneously, all hammering the DB. Fix with a **mutex/lock** so one request
+  recomputes while others wait, **request coalescing**, **early/probabilistic
+  recomputation** before expiry, or **TTL jitter**.
+- **Cache penetration:** queries for keys that **don't exist** skip the cache every time
+  and pound the DB (often an attack). Fix by **caching the negative result** (a null
+  sentinel with short TTL) or a **Bloom filter** of valid keys.
+- **Cache avalanche:** many keys expire at the **same instant** (e.g. all set with TTL
+  300 at deploy). Fix with **randomized TTLs** (jitter).
+- **Hot key:** one key gets disproportionate traffic and overloads a single node.
+  Replicate it across nodes or add a local in-process cache in front.
+
+## Eviction
+
+When memory fills, the cache evicts: **LRU** (default, recency) or **LFU** (frequency,
+better for skewed access). This is the [LRU cache](/lld/lru-cache) you implement in LLD —
+the same policy, now a config flag.
+
+<QA q="Cache-aside vs write-through — when do you pick each?">
+
+**Cache-aside** (lazy load on miss, invalidate on write) is the default for read-heavy
+workloads: the cache only holds what's actually read, and writes just delete the key. Its
+cost is the first-read miss and a brief staleness window. **Write-through** writes to cache
+and DB together so reads are fresh immediately after a write — good when a stale read right
+after an update is unacceptable — at the cost of write latency and caching data that may
+never be read. Many systems combine cache-aside reads with write-invalidate on updates.
+
+</QA>
+
+<QA q="A popular cached key expires and the database falls over. What happened and how do you prevent it?">
+
+That's a **cache stampede**: the moment the hot key expires, every concurrent request
+misses and recomputes from the DB at once. Prevent it by letting **one** request rebuild
+the value behind a lock while the rest wait or serve stale (mutex / single-flight),
+**recomputing early** (refresh-ahead or probabilistic early expiry), and adding **TTL
+jitter** so keys don't expire in lockstep. Related defenses: cache negative lookups
+(penetration) and randomize TTLs across keys (avalanche).
+
+</QA>
+
+<QA q="Why prefer deleting a cache entry over updating it on a write?">
+
+Because updating both the cache and the DB is a **dual write** that can interleave and
+leave them disagreeing (a concurrent reader can repopulate the cache with a stale value
+after your update). Deleting the key sidesteps that: the next read misses and repopulates
+from the source of truth, so the cache can never hold a value the DB doesn't. You still
+accept a tiny stale window and lean on short TTLs (or CDC) as a backstop, but deletion is
+far less race-prone than trying to keep two stores byte-for-byte in sync.
+
+</QA>
