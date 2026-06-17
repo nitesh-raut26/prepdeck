@@ -1,0 +1,204 @@
+---
+title: "Bit Manipulation"
+summary: "The operator alphabet, the handful of identities that actually win interviews (XOR cancellation, x & (x-1), x & -x), and the bitmask bridge into subset DP — leveled from SDE-1 warm-ups to Staff-level XOR puzzles."
+order: 17
+difficulty: "Core pattern"
+tags: ["bit-manipulation", "xor", "bitmask", "math"]
+---
+
+## Why bits show up in interviews
+
+Bit tricks look like party tricks until you see where they live in real systems:
+permission flags (`chmod 755`), database bitmap indexes, Bloom filters, feature
+flags packed into one integer, network masks, and the `bitmask` state in DP.
+Interviewers reach for them as a **fast signal**: a candidate who can derive
+`x & (x - 1)` understands two's-complement; one who memorized it doesn't survive
+the follow-up.
+
+<Callout type="info" title="Where this lands by level">
+**SDE-1:** you can set/clear/test a bit and use XOR to cancel pairs.
+**SDE-2:** you derive the counting/power-of-two tricks and reach for a bitmask
+when the state is a small set. **SDE-3 / Staff:** you turn a "find the odd one
+out" word problem into an O(1)-space XOR argument and explain the two's-complement
+edge cases unprompted. Heaviest at **Amazon, Microsoft, Nvidia, Qualcomm, Adobe,
+Bloomberg**; the bitmask form recurs at **Google and Meta** inside hard DP.
+</Callout>
+
+## The five operators (the alphabet)
+
+| Op | Symbol | Does |
+|----|--------|------|
+| AND | `&` | 1 only where **both** bits are 1 — used to *mask / test* |
+| OR | `\|` | 1 where **either** is 1 — used to *set* |
+| XOR | `^` | 1 where bits **differ** — used to *toggle / cancel* |
+| NOT | `~` | flips every bit (two's-complement: `~x == -x - 1`) |
+| Shift | `<<` `>>` | multiply / divide by powers of two, build masks |
+
+## The identities that win interviews
+
+Memorizing solutions fails on the follow-up; these five *derivations* compose into
+almost every bit question:
+
+- **XOR cancels pairs:** `a ^ a == 0` and `a ^ 0 == a`, and XOR is commutative +
+  associative. So XOR-ing a whole array makes every duplicated value vanish —
+  whatever's left appeared an odd number of times.
+- **`x & (x - 1)` clears the lowest set bit.** Subtracting 1 flips the lowest `1`
+  to `0` and everything below it to `1`; AND-ing wipes that run. Loop until zero to
+  **count set bits** in O(number-of-set-bits) — Brian Kernighan's trick.
+- **`x & (-x)` isolates the lowest set bit** (because `-x == ~x + 1`). Powers Fenwick
+  trees and "lowest differing bit" arguments.
+- **Power of two ⇔ exactly one set bit ⇔ `x > 0 and (x & (x - 1)) == 0`.**
+- **Subsets ↔ integers.** A set of `n` items maps to `0 .. 2ⁿ - 1`; bit `i` set means
+  "item `i` chosen." This is the bridge to bitmask DP (see
+  [dp-patterns](/dsa/dp-patterns)).
+
+```python
+def get_bit(x, i):    return (x >> i) & 1
+def set_bit(x, i):    return x | (1 << i)
+def clear_bit(x, i):  return x & ~(1 << i)
+def toggle_bit(x, i): return x ^ (1 << i)
+
+def count_set_bits(x):          # Brian Kernighan: loop runs once per set bit
+    c = 0
+    while x:
+        x &= x - 1              # drop the lowest set bit
+        c += 1
+    return c
+
+def is_power_of_two(x):
+    return x > 0 and (x & (x - 1)) == 0
+
+def single_number(nums):        # every value appears twice except one
+    out = 0
+    for v in nums:
+        out ^= v                # pairs cancel; the loner survives
+    return out
+
+def iterate_subsets(items):     # all 2^n subsets via the integer ↔ subset bridge
+    n = len(items)
+    for mask in range(1 << n):
+        yield [items[i] for i in range(n) if mask & (1 << i)]
+```
+
+## Think it through like the interview
+
+The "appears twice" version is a one-liner; the **"appears three times"** version is
+where interviewers separate memorizers from derivers — XOR alone can't cancel triples.
+
+<ThinkThrough
+  title="Single Number II"
+  difficulty="Medium — LeetCode 137 (Amazon, Google)"
+  problem="Every element appears exactly three times except one, which appears once. Find it in O(n) time and O(1) space."
+  stages={[
+    {
+      label: "Why the XOR trick dies here",
+      prompt: "XOR cancels PAIRS. What happens to a value that appears three times?",
+      reveal: "a ^ a ^ a = a — three copies leave one copy behind, not zero. So a single XOR over the array does NOT isolate the answer. Recognising that the pair-cancellation tool doesn't fit is the first real step; now you need a counter that resets every THREE, not every two."
+    },
+    {
+      label: "Count per bit position, mod 3",
+      prompt: "Forget the numbers as wholes. What is true of each BIT COLUMN across the array?",
+      reveal: "Fix bit position k. Every tripled number contributes 0 or 3 to the count of 1s in column k. The lone number contributes 0 or 1. So (number of 1s in column k) mod 3 is exactly the lone number's bit k. Sum each of the 32 columns mod 3 and you rebuild the answer — O(32n) time, O(1) space."
+    },
+    {
+      label: "Collapse 32 counters into two integers",
+      prompt: "Can I track 'seen once' and 'seen twice' as bitmasks and reset at three?",
+      reveal: "Keep two masks: ones (bits seen 1×mod3) and twos (bits seen 2×mod3). On each value: ones = (ones ^ v) & ~twos; twos = (twos ^ v) & ~ones. A bit that reaches the third sighting gets cleared from both. After the pass, ones IS the answer — true O(1) space, the Staff-level finish.",
+      code: "def single_number_ii(nums):\n    ones = twos = 0\n    for v in nums:\n        ones = (ones ^ v) & ~twos\n        twos = (twos ^ v) & ~ones\n    return ones"
+    }
+  ]}
+/>
+
+<Callout type="warn" title="The language gotchas interviewers probe">
+Python ints are **arbitrary precision** with no fixed width — there's no natural
+32-bit overflow, so `~x` is `-x-1` and negative numbers have "infinite" leading 1s.
+For fixed-width problems (e.g. *Sum of Two Integers*) mask with `& 0xFFFFFFFF` and
+reinterpret the sign yourself. In Java use `>>>` for the **logical** right shift
+(zero-fill) vs `>>` (sign-extending). In C/C++, shifting by `≥` the width or
+left-shifting a negative is **undefined behaviour** — say so; it's a senior signal.
+</Callout>
+
+<Quiz questions={[
+  {
+    q: "What does x & (x - 1) evaluate to?",
+    options: ["x with its lowest set bit cleared", "x with all bits flipped", "the lowest set bit of x in isolation", "x divided by two"],
+    answer: 0,
+    explain: "Subtracting 1 flips the lowest 1 and the zeros below it; AND-ing clears that run, removing exactly the lowest set bit. Looping until zero counts set bits (Kernighan)."
+  },
+  {
+    q: "An array has every value twice except one. Best way to find the loner?",
+    options: ["Sort then scan — O(n log n)", "Hash-map counts — O(n) time, O(n) space", "XOR the whole array — O(n) time, O(1) space", "Nested loops — O(n²)"],
+    answer: 2,
+    explain: "XOR is commutative and a^a=0, so all pairs cancel and only the unique value remains. O(n) time and O(1) space beats the hash-map's O(n) memory."
+  }
+]} />
+
+## Practice — climb the ladder
+
+The skill is *reframing a word problem as bit columns or XOR cancellation*. Each rung
+forces that reframing under a new disguise.
+
+<PracticeLadder
+  topic="Bit Manipulation"
+  tiers={[
+    {
+      label: "Warm-up — SDE-1 fluency",
+      note: "set/test bits and basic XOR cancellation",
+      problems: [
+        { name: "Number of 1 Bits", lc: "number-of-1-bits", difficulty: "Easy", trains: "Kernighan's x & (x-1) loop — count set bits without scanning all 32." },
+        { name: "Single Number", lc: "single-number", difficulty: "Easy", trains: "The canonical XOR-cancels-pairs one-liner." },
+        { name: "Power of Two", lc: "power-of-two", difficulty: "Easy", trains: "One-set-bit test: x > 0 and (x & (x-1)) == 0." },
+        { name: "Counting Bits", lc: "counting-bits", difficulty: "Easy", trains: "DP over bits: count[i] = count[i >> 1] + (i & 1)." }
+      ]
+    },
+    {
+      label: "Core — SDE-2 staples",
+      note: "per-bit reasoning and fixed-width arithmetic",
+      problems: [
+        { name: "Single Number II", lc: "single-number-ii", difficulty: "Medium", trains: "Per-bit count mod 3, then the two-mask O(1) finish." },
+        { name: "Sum of Two Integers", lc: "sum-of-two-integers", difficulty: "Medium", trains: "Add without + : XOR is the sum, AND<<1 is the carry — plus the Python masking gotcha." },
+        { name: "Reverse Bits", lc: "reverse-bits", difficulty: "Easy", trains: "Shift-and-OR across 32 positions; the divide-and-conquer speedup is the follow-up." },
+        { name: "Missing Number", lc: "missing-number", difficulty: "Easy", trains: "XOR indices against values so every present number cancels." }
+      ]
+    },
+    {
+      label: "Stretch — SDE-3 / Staff XOR puzzles",
+      note: "say the discard/invariant argument out loud",
+      problems: [
+        { name: "Single Number III", lc: "single-number-iii", difficulty: "Medium", trains: "Two loners: XOR-all, then split the array by any differing bit (x & -x)." },
+        { name: "Maximum XOR of Two Numbers", lc: "maximum-xor-of-two-numbers-in-an-array", difficulty: "Medium", trains: "Greedy bit-by-bit with a binary trie — bits meet tries." },
+        { name: "Bitwise AND of Numbers Range", lc: "bitwise-and-of-numbers-range", difficulty: "Medium", trains: "The AND of a range is the common high-bit prefix — derive why low bits vanish." },
+        { name: "Subsets", lc: "subsets", difficulty: "Medium", trains: "Enumerate 0..2^n-1 — the integer ↔ subset bridge into bitmask DP." }
+      ]
+    }
+  ]}
+/>
+
+<QA q="How do you check if an integer is a power of two in O(1)?">
+
+A power of two has **exactly one set bit**, so `x & (x - 1)` (which clears the lowest
+set bit) becomes `0`. Guard against zero and negatives: `x > 0 and (x & (x - 1)) == 0`.
+The same `x & (x - 1)` idea, looped, is Brian Kernighan's set-bit count.
+
+</QA>
+
+<QA q="Detect the unique element when every other appears twice — and when every other appears three times.">
+
+**Twice:** XOR the whole array; pairs cancel (`a ^ a = 0`) and the loner remains — O(n)
+time, O(1) space. **Three times:** XOR no longer cancels, so count 1-bits **per
+column mod 3** — each tripled number adds 0 or 3 to a column, the loner adds 0 or 1, so
+each column mod 3 reconstructs the answer. Collapse the 32 counters into two bitmasks
+(`ones`, `twos`) updated so a bit clears on its third sighting; `ones` is the answer.
+
+</QA>
+
+<QA q="Why is bit manipulation worth learning beyond puzzle questions?">
+
+Because it's the substrate under real systems: bitmap indexes and Bloom filters
+(membership in O(1) bits), permission/feature flags packed into one integer, network
+subnet masks, Fenwick trees (`x & -x`), and **bitmask dynamic programming** where the
+DP state is a small subset of items (TSP, assignment, *Partition to K Equal Subsets*).
+Interviewers know that, which is why a clean `x & (x-1)` derivation reads as low-level
+fluency rather than trivia.
+
+</QA>
