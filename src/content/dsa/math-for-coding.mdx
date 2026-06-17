@@ -1,0 +1,191 @@
+---
+title: "Math & Number Theory for Coding"
+summary: "The math interviews actually test: GCD/Euclid, modular arithmetic and the 1e9+7 convention, fast exponentiation, the sieve and primality, nCr mod p, and the overflow traps — the toolkit behind half of LeetCode's medium math tags."
+order: 18
+difficulty: "Core pattern"
+tags: ["math", "number-theory", "modular-arithmetic"]
+---
+
+## Why a math page
+
+A surprising share of "array" problems are number theory wearing a costume: anything with
+"return the answer modulo 1e9+7", counting problems, digit problems, or "is this
+reachable" GCD puzzles. None of it is research math — it's six reusable tools. Heaviest at
+**Google, Amazon, Adobe**, and quant/HFT screens (**Two Sigma, Jane Street, Bloomberg**).
+
+## GCD & LCM (Euclid)
+
+```python
+def gcd(a, b):
+    while b: a, b = b, a % b      # gcd(a,b) = gcd(b, a mod b)
+    return a
+
+def lcm(a, b):
+    return a // gcd(a, b) * b     # divide FIRST to avoid overflow
+```
+
+GCD shows up in "reduce a fraction", "can I tile/reach with steps p and q" (reachable iff
+the target is a multiple of `gcd(p, q)`), and string-period problems.
+
+## Modular arithmetic — the `1e9+7` convention
+
+Counting answers blow past 64 bits, so problems ask for the result **mod a large prime**
+(`1_000_000_007`). The rules that survive the mod:
+
+- `(a + b) % m`, `(a − b + m) % m` (add `m` so it stays non-negative), `(a * b) % m` — all fine.
+- **Division does not** distribute over mod. To compute `a / b mod m` you need the
+  **modular inverse** of `b`. When `m` is prime, Fermat's little theorem gives
+  `inverse(b) = b^(m−2) mod m`.
+
+```python
+MOD = 1_000_000_007
+def inv(b):           # modular inverse via Fermat (m is prime)
+    return pow(b, MOD - 2, MOD)
+```
+
+## Fast exponentiation (binary exp)
+
+`pow(x, n)` in O(log n) by squaring — and the engine behind the modular inverse above:
+
+```python
+def fast_pow(x, n, mod=None):
+    result = 1
+    while n > 0:
+        if n & 1: result = result * x % mod if mod else result * x
+        x = x * x % mod if mod else x * x
+        n >>= 1
+    return result
+```
+
+(Python's built-in `pow(x, n, mod)` already does this — but interviewers ask you to derive it.)
+
+## Primes — sieve & primality
+
+```python
+def sieve(n):                      # all primes ≤ n, O(n log log n)
+    is_p = [True] * (n + 1)
+    is_p[0] = is_p[1] = False
+    for i in range(2, int(n ** 0.5) + 1):
+        if is_p[i]:
+            for j in range(i * i, n + 1, i):   # start at i*i; smaller multiples already marked
+                is_p[j] = False
+    return [i for i, p in enumerate(is_p) if p]
+
+def is_prime(x):                   # single number: trial division to √x
+    if x < 2: return False
+    i = 2
+    while i * i <= x:
+        if x % i == 0: return False
+        i += 1
+    return True
+```
+
+## Combinatorics mod p
+
+`nCr mod p` = factorials times inverse factorials:
+
+```python
+def nCr_mod(n, r, mod=1_000_000_007):
+    if r < 0 or r > n: return 0
+    num = den = 1
+    for i in range(r):
+        num = num * (n - i) % mod
+        den = den * (i + 1) % mod
+    return num * pow(den, mod - 2, mod) % mod
+```
+
+## Think it through like the interview
+
+<ThinkThrough
+  title="Pow(x, n)"
+  difficulty="Medium — LeetCode 50 (Amazon, Google, Bloomberg)"
+  problem="Implement pow(x, n) — x to the power n — better than the naive O(n) loop, handling negative n."
+  stages={[
+    {
+      label: "Why O(n) multiplication is wrong",
+      prompt: "n can be ~2 billion. How many multiplications does the naive loop do?",
+      reveal: "n of them — up to ~2×10⁹, which times out. The win is realizing exponents add: x^n = x^(n/2) · x^(n/2), so you can halve n each step instead of decrementing it."
+    },
+    {
+      label: "Square and halve — O(log n)",
+      prompt: "If x^n = (x^(n/2))², how do I handle odd n, and how many steps is it?",
+      reveal: "Even n: square the half-power. Odd n: one extra factor of x. Iteratively: scan the bits of n; whenever a bit is set, fold the current square into the result, then square x. That's O(log n) multiplications — the same binary-exponentiation skeleton used for modular inverse."
+    },
+    {
+      label: "Negative n and overflow",
+      prompt: "What breaks at the boundaries?",
+      reveal: "Negative n: compute x^(−n) and return 1/result (in Python convert n to its magnitude; in languages with fixed ints, watch INT_MIN where −n overflows — cast to long first). For modular versions, take the mod every multiply so products never overflow.",
+      code: "def my_pow(x, n):\n    if n < 0: x, n = 1 / x, -n\n    result = 1.0\n    while n:\n        if n & 1: result *= x\n        x *= x\n        n >>= 1\n    return result"
+    }
+  ]}
+/>
+
+<Callout type="warn" title="Overflow is the silent killer">
+Python integers are unbounded, so these read cleanly — but in **Java/C++**, `a * b` for
+two ints near 10⁹ overflows a 32-bit `int` *before* you take the mod. Use 64-bit (`long` /
+`long long`), take the mod after **every** multiply, and for `lcm` divide before
+multiplying. State this; it's a common rejection reason in those languages.
+</Callout>
+
+## Practice — climb the ladder
+
+The skill is **spotting the math tool** hiding in a word problem — "modulo 1e9+7" means
+modular arithmetic, "huge exponent" means binary exp, "count primes" means a sieve.
+
+<PracticeLadder
+  topic="Math & Number Theory"
+  tiers={[
+    {
+      label: "Warm-up — SDE-1",
+      note: "the core tools in isolation",
+      problems: [
+        { name: "Pow(x, n)", lc: "powx-n", difficulty: "Medium", trains: "Binary exponentiation — square and halve, handle negative n." },
+        { name: "Sqrt(x)", lc: "sqrtx", difficulty: "Easy", trains: "Integer sqrt via binary search — no float tricks." },
+        { name: "Count Primes", lc: "count-primes", difficulty: "Medium", trains: "Sieve of Eratosthenes, start crossing at i*i." },
+        { name: "Happy Number", lc: "happy-number", difficulty: "Easy", trains: "Digit math + cycle detection." }
+      ]
+    },
+    {
+      label: "Core — SDE-2",
+      note: "digit and divisor reasoning",
+      problems: [
+        { name: "Factorial Trailing Zeroes", lc: "factorial-trailing-zeroes", difficulty: "Medium", trains: "Count factors of 5 — the non-brute-force insight." },
+        { name: "Excel Sheet Column Number", lc: "excel-sheet-column-number", difficulty: "Easy", trains: "Base-26 positional decoding." },
+        { name: "Greatest Common Divisor of Strings", lc: "greatest-common-divisor-of-strings", difficulty: "Easy", trains: "Euclid's algorithm applied to string periods." },
+        { name: "Ugly Number II", lc: "ugly-number-ii", difficulty: "Medium", trains: "Multi-pointer merge on prime factors {2,3,5}." }
+      ]
+    },
+    {
+      label: "Stretch — SDE-3 / quant",
+      note: "modular and combinatorial finishes",
+      problems: [
+        { name: "Super Pow", lc: "super-pow", difficulty: "Medium", trains: "Modular exponentiation with the exponent given as a digit array." },
+        { name: "Number of Digit One", lc: "number-of-digit-one", difficulty: "Hard", trains: "Digit DP / counting by place value." },
+        { name: "Largest Divisible Subset", lc: "largest-divisible-subset", difficulty: "Medium", trains: "Divisibility chains via sort + DP." }
+      ]
+    }
+  ]}
+/>
+
+<QA q="Why do problems ask for the answer modulo 1e9+7, and how do you keep results correct under it?">
+
+Because counting answers overflow 64-bit integers, so the problem fixes a large **prime**
+modulus to keep numbers bounded while staying comparable. Addition, subtraction (add `m`
+to avoid negatives), and multiplication all distribute over the mod — take it after every
+operation. **Division doesn't**: to compute `a / b mod m` you multiply by the **modular
+inverse** of `b`, which for a prime `m` is `b^(m−2) mod m` (Fermat). 1e9+7 is chosen
+because it's prime (so inverses exist) and `~10⁹`, so two values multiplied stay under 64
+bits before reduction.
+
+</QA>
+
+<QA q="How do you check primality efficiently — one number vs. many?">
+
+For a **single** number, trial-divide only up to `√x` (a composite must have a factor at
+or below its square root) — O(√x). For **all primes up to n**, use the **Sieve of
+Eratosthenes**: mark multiples of each prime starting at `i*i` (smaller multiples are
+already crossed out), which is O(n log log n) — far better than testing each number. Reach
+for the sieve whenever you need primality repeatedly over a range; use trial division for a
+one-off check.
+
+</QA>
