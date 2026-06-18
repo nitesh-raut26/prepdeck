@@ -77,6 +77,95 @@ one pointer to the head and advance both at the same speed until they meet again
 
 </QA>
 
+## Think it through
+
+The whole pattern lives or dies on one question: *why is it safe to throw
+away a pointer's current position?* Reason through the cleanest example of
+that argument before revealing anything.
+
+<ThinkThrough
+  title="Container With Most Water"
+  difficulty="Medium — LeetCode 11"
+  problem="Heights = [1,8,6,2,5,4,8,3,7]. Each value is a vertical wall. Pick two walls; the water they hold is min(left, right) × distance between them. Return the maximum. (Answer: 49, between the 8 at index 1 and the 7 at index 8.)"
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What exactly am I maximizing, and what bounds the area of any pair?",
+      reveal: "Area = min(h[i], h[j]) × (j − i). Two knobs fight each other: width (j − i) and the SHORTER of the two walls (water spills over the lower one). Edges: fewer than two walls → 0; equal heights are allowed; flat input like [3,3,3]."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct answer and its cost?",
+      reveal: "Try all pairs: two nested loops, O(n²) time, O(1) space. Fine for small n, too slow for n = 10⁵. The repeated work: I keep re-measuring pairs that can't beat what I've seen. Can I start from the pair with the most width and shed possibilities provably?"
+    },
+    {
+      label: "The key move",
+      prompt: "Start at both ends (widest base). The shorter wall limits the area — so which pointer is safe to move inward?",
+      reveal: "Move the pointer at the SHORTER wall. Here's the proof that makes this a pattern, not a guess: the area is capped by the shorter wall. If I move the TALLER wall inward, width shrinks AND the cap (the shorter wall) can't rise — so no pair I skip could have been better. Only moving the shorter wall has any chance of lifting the cap. Each step retires one wall safely → O(n)."
+    },
+    {
+      label: "Code the template",
+      prompt: "Converge from both ends; advance the shorter side. What about a tie?",
+      reveal: "On a tie, move either side — neither choice can skip a strictly better pair (both walls are the limiter, so shrinking width on either side loses width without a chance to raise the cap).",
+      code: "def max_area(h):\n    lo, hi = 0, len(h) - 1\n    best = 0\n    while lo < hi:\n        area = min(h[lo], h[hi]) * (hi - lo)\n        best = max(best, area)\n        if h[lo] < h[hi]:    # shorter wall on the left\n            lo += 1          # only moving it can raise the cap\n        else:\n            hi -= 1\n    return best"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and what makes the discard argument airtight?",
+      reveal: "O(n) time, O(1) space — each pointer moves inward at most n times. The airtight part: every pointer move discards exactly the pairs that provably can't beat the current best, because the shorter wall caps them. Memorize that sentence — 'I can discard this side because it can never improve the answer' is the two-pointer pattern in every problem it appears in."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Container With Most Water: the two walls are equal height. Which pointer should you move?",
+    options: [
+      "Either — when they're equal, neither move can skip a strictly better pair",
+      "Always the left pointer",
+      "Always the right pointer",
+      "Stop — equal walls mean you've found the maximum"
+    ],
+    answer: 0,
+    explain: "Both walls are the limiter, so shrinking the width on either side loses width with no chance to raise the cap. Picking a side by convention is fine; correctness doesn't depend on which."
+  },
+  {
+    q: "Why is the opposite-ends two-pointer scan O(n) rather than O(n²)?",
+    options: [
+      "Each pointer only moves toward the other, so together they take at most n steps",
+      "Because the input is sorted, which makes every step O(1)",
+      "Because it allocates no extra memory",
+      "Because min() and max() are constant time"
+    ],
+    answer: 0,
+    explain: "lo only increases and hi only decreases; they meet after at most n moves total. Linear work, no nesting — that's the whole speedup over checking all pairs."
+  },
+  {
+    q: "Two-sum on an UNSORTED array, and you want O(1) extra space. Can opposite-ends two pointers do it directly?",
+    options: [
+      "No — opposite-ends needs sorted order; you'd pay O(n log n) to sort first",
+      "Yes, it works on any array as-is",
+      "Yes, as long as you move both pointers each step",
+      "No, two pointers can never solve two-sum"
+    ],
+    answer: 0,
+    explain: "The 'move the smaller sum's pointer up' decision is only valid when the array is sorted. Unsorted, either sort first (O(n log n)) or use a hash set (O(n) time, O(n) space). Naming that trade-off out loud is the senior signal."
+  },
+  {
+    q: "Floyd's fast/slow pointers return True on a linked list. What does that mean, and what did it cost?",
+    options: [
+      "There's a cycle; O(1) extra space — no visited set needed",
+      "There's a cycle; O(n) space for the visited set",
+      "The list is sorted; O(1) space",
+      "The list is a palindrome; O(n) space"
+    ],
+    answer: 0,
+    explain: "A faster pointer must eventually lap a slower one inside a loop, so meeting ⇒ cycle. The win over a hash set of visited nodes is memory: O(1) instead of O(n)."
+  }
+]} />
+
 ## Practice — climb the ladder
 
 Two pointers earns its keep on SORTED data or paired ends: each step
