@@ -198,6 +198,95 @@ range scans are fast).
   default recursion limit; the iterative-with-stack version exists for a
   reason.
 
+## Think it through
+
+The page's ladder flags one habit as the senior tree skill: a node *returns*
+one value to its parent while you *track* a different answer on the side.
+Reason through the cleanest example before revealing.
+
+<ThinkThrough
+  title="Diameter of a Binary Tree"
+  difficulty="Easy-Medium — LeetCode 543"
+  problem="The diameter is the number of EDGES on the longest path between any two nodes — and that path need NOT pass through the root. Return it."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "Where does the longest path 'bend', and what's the answer for a single node?",
+      reveal: "Any path has a single highest point — the node where it bends from going up to going down. At that apex node, the path = (deepest reach on the left) + (deepest reach on the right). Edges: empty tree → 0; one node → 0 (no edges)."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Obvious solution and why it's slow?",
+      reveal: "For every node, compute height(left) + height(right) — the longest path bending there — and take the max over all nodes. Correct, but each height() call is its own O(n) walk, so computing it at all n nodes is O(n²). The repeated work: heights are recomputed from scratch at every node."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "I'm already computing height in a post-order walk. What can I piggyback on it?",
+      reveal: "Compute height in ONE post-order pass. At each node you already have lh and rh (its children's heights) — so update a running best diameter = lh + rh + 2 right there, then RETURN the node's own height to its parent. Return one thing (height), track another (best). That split is the whole technique."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why return height but accumulate 'best' in an outer variable?",
+      reveal: "The parent needs only the height to compute its own path; the diameter is a global maximum that can occur at any apex, so it lives outside the recursion (nonlocal) and is updated at every node.",
+      code: "def diameter(root):\n    best = 0\n    def height(node):            # height in EDGES; also updates best\n        nonlocal best\n        if node is None:\n            return -1            # empty = -1, so a leaf reports height 0\n        lh = height(node.left)\n        rh = height(node.right)\n        best = max(best, lh + rh + 2)  # longest path bending at this node\n        return 1 + max(lh, rh)\n    height(root)\n    return best"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and how does this idea generalize?",
+      reveal: "O(n) time (each node visited once), O(h) recursion stack. The same return-vs-track shape solves Maximum Path Sum (return the best downward arm, track the best bend that may dip into negatives) and many others — once you can name 'what do I return to my parent vs what do I record globally', hard tree problems collapse."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In-order traversal (left, node, right) of a BST produces the values in:",
+    options: [
+      "Sorted ascending order",
+      "Insertion order",
+      "Level-by-level order",
+      "Reverse-sorted order"
+    ],
+    answer: 0,
+    explain: "Visiting the smaller (left) subtree before the node before the larger (right) subtree yields keys in increasing order. This single fact is behind 'kth smallest in a BST' and BST validation by traversal."
+  },
+  {
+    q: "To validate a BST, why is checking each node only against its immediate children wrong?",
+    options: [
+      "The invariant is about whole subtrees — a node deep in a right subtree can still violate an ancestor's bound; pass (low, high) bounds down instead",
+      "Children might be null, which crashes the check",
+      "It's correct but runs in O(n²)",
+      "Nothing is wrong — child comparisons are sufficient"
+    ],
+    answer: 0,
+    explain: "Example: 5 with right child 8 whose left child is 3. Child checks pass, but 3 sits in 5's right subtree and breaks 'everything right of 5 is > 5'. Bounds (or an in-order monotonicity check) catch it."
+  },
+  {
+    q: "You insert 1, 2, 3, 4, 5 into a plain BST in that order. What's the height and why?",
+    options: [
+      "Height n−1 — it degenerates into a right-leaning chain, so operations become O(n)",
+      "Height ≈ log n — BSTs rebalance themselves on insert",
+      "Height 0 — everything lands on one level",
+      "It raises a duplicate-key error"
+    ],
+    answer: 0,
+    explain: "A plain BST does NOT self-balance; sorted input is its worst case, producing a linked list. Guaranteed O(log n) height is exactly what AVL and Red-Black trees buy with rotations."
+  },
+  {
+    q: "Why do databases index with B-trees rather than hash tables?",
+    options: [
+      "B-trees keep keys ordered, so they serve range queries (BETWEEN, ORDER BY); hash tables destroy order",
+      "B-trees use less memory than hash tables",
+      "Hash tables can't store integer keys",
+      "B-trees give O(1) point lookups"
+    ],
+    answer: 0,
+    explain: "Order questions (ranges, sorting, nearest) are everywhere in SQL, and only an ordered structure answers them. B-trees also pack many keys per disk page, staying 3–4 levels deep for millions of rows."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Validate that a binary tree is a BST — and what's wrong with the obvious approach?">
