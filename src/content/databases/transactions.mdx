@@ -6,6 +6,19 @@ difficulty: "Advanced"
 tags: ["transactions", "acid", "locking", "deadlock", "isolation", "concurrency"]
 ---
 
+## Starting from Zero — A Physical Intuition
+
+Before discussing ACID and locks, let's visualize transactions through physical analogies:
+
+*   **The Ink Ledger (ACID transactions)**: Imagine a paper bank ledger. Transferring $100 from Alice to Bob requires two steps: subtracting 100 from Alice's line, and adding 100 to Bob's line. 
+    *   **Atomicity**: You must write both lines in permanent ink. If you drop your pen mid-way (a crash), you cannot leave the ledger with only the subtraction written. You must cross out the scratch (rollback) so it's as if nothing happened.
+    *   **Durability**: Once both lines are written and stamped, they cannot disappear—even if the bank building catches fire, the physical ledger is locked in a fireproof safe (disk storage).
+*   **The Locked Cabinet vs The Version Check (Locking)**: 
+    *   **Pessimistic Locking**: You walk up to a client's filing cabinet and put a padlock on it (SELECT FOR UPDATE). Nobody else can look inside or make changes until you finish your work and unlock it (COMMIT).
+    *   **Optimistic Locking**: You leave the client folder unlocked on a table. Before you edit it, you note down the stamped version number on the cover (e.g. Version 5). You copy the data to your notepad, do your thinking, and write your updates. When you return to save your changes, you check if the cover is still stamped Version 5. If it is, you write your changes and stamp it Version 6. If it has already been stamped Version 6 by someone else, you throw away your notepad draft and start over.
+
+---
+
 ## Why Transactions Exist
 
 Without transactions, concurrent database operations produce corrupted data:
@@ -20,6 +33,7 @@ Thread B: Alice - $100 → Write $400  ← Overwrites A's write! Alice loses $10
 ```
 
 A **transaction** groups multiple operations into an atomic unit: all succeed or all fail, no half-states.
+
 
 ```sql
 BEGIN;
@@ -419,6 +433,72 @@ checklist.
   ]}
 />
 
+### Think it through like the interview
+
+Don't just list isolation levels — trace how concurrency anomalies interleave in real database timelines.
+
+<ThinkThrough
+  title="Transaction Isolation Anomalies"
+  difficulty="Database Concurrency"
+  problem="A credit system runs transactions concurrently. Tracing raw read/write timestamps, derive how the database identifies a Dirty Read, a Non-Repeatable Read, and a Phantom Read."
+  stages={[
+    {
+      label: "Dirty Read (Read Uncommitted)",
+      prompt: "Explain the timeline where Transaction A updates balance to $600, Transaction B reads the balance as $600, and Transaction A then aborts (Rollback). What is the anomaly?",
+      reveal: "This is a Dirty Read. Transaction B read uncommitted data written by Transaction A. Once Transaction A rolled back, that write vanished, leaving B with dirty data that never existed. This is prevented under Read Committed."
+    },
+    {
+      label: "Non-Repeatable Read (Read Committed)",
+      prompt: "Under the Read Committed level, Transaction B queries the account balance and sees $500. Transaction A updates the balance to $400 and COMMITS. Transaction B runs the exact same query in the same transaction and gets $400. Why does this occur?",
+      reveal: "This is a Non-Repeatable Read. Under Read Committed, each individual SELECT statement generates a new snapshot of committed data. Since Transaction A committed its update before B's second SELECT, B sees the new value. To prevent this, the transaction must be elevated to Repeatable Read (which pins a single snapshot at the start)."
+    },
+    {
+      label: "Phantom Read (Repeatable Read vs Serializable)",
+      prompt: "How does a Phantom Read differ from a Non-Repeatable Read when querying database tables?",
+      reveal: "A Non-Repeatable Read concerns updates/deletions to *existing rows* that the transaction has already read. A Phantom Read occurs when a transaction queries a *set of rows* matching a condition (e.g. active users), and a concurrent transaction commits an INSERT/DELETE of a *new row* matching that condition, causing the set's size to change when re-queried."
+    }
+  ]}
+/>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Under the 'Atomicity' guarantee of ACID, what happens if a database crashes halfway through executing a transaction?",
+    options: [
+      "The database keeps the successfully executed modifications and discards the remaining ones.",
+      "The database rolls back all changes made by the transaction, ensuring that no partial state is ever persisted.",
+      "The database pauses operations until an administrator manually restarts the transaction."
+    ],
+    answer: "The database rolls back all changes made by the transaction, ensuring that no partial state is ever persisted.",
+    explanation: "Atomicity is 'all-or-nothing'. If a transaction is interrupted or fails at any point, all intermediate modifications are completely undone."
+  },
+  {
+    question: "How does a database engine resolve a Deadlock between concurrent transactions?",
+    options: [
+      "It pauses both transactions indefinitely until one naturally releases its lock.",
+      "It monitors locks with a dependency graph, detects cycles, selects a 'victim' transaction to abort/rollback, and allows the other to proceed.",
+      "It merges the two transactions into a single execution thread."
+    ],
+    answer: "It monitors locks with a dependency graph, detects cycles, selects a 'victim' transaction to abort/rollback, and allows the other to proceed.",
+    explanation: "Since both transactions are blocked waiting on each other, the database must actively intervene. It detects the circular wait, aborts one transaction (releasing its locks), and reports the error to the client."
+  },
+  {
+    question: "What is the primary architectural use case for the 'FOR UPDATE SKIP LOCKED' clause in SQL query locking?",
+    options: [
+      "To bypass index scans and execute queries faster.",
+      "To implement lock-free high-frequency statistical aggregations.",
+      "To build high-throughput job queues where multiple concurrent workers can safely dequeue distinct tasks without lock blocking."
+    ],
+    answer: "To build high-throughput job queues where multiple concurrent workers can safely dequeue distinct tasks without lock blocking.",
+    explanation: "Normally, 'FOR UPDATE' blocks other readers. Adding 'SKIP LOCKED' instructs concurrent workers to skip over already-locked rows and fetch the next available pending job, avoiding contention and wait bottlenecks."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Lost Update**: Simulate the lost update problem — two concurrent Python threads both read a counter, increment, and write back. Show the bug, then fix it with `FOR UPDATE` locking.
@@ -427,3 +507,4 @@ checklist.
 4. **SKIP LOCKED Queue**: Implement a job queue with PostgreSQL where multiple worker processes can pull jobs concurrently without conflicts, using `SELECT FOR UPDATE SKIP LOCKED`.
 
 This covers Level 9 — Databases. Next: [Cloud & DevOps](/devops/cloud-platforms) for Level 10.
+

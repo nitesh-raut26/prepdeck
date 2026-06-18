@@ -6,6 +6,17 @@ difficulty: "Core"
 tags: ["sql", "databases", "joins", "aggregates", "window-functions", "query"]
 ---
 
+## Starting from Zero — A Physical Intuition
+
+Before writing queries, let's understand SQL through physical analogies:
+
+*   **The Filing Clerk (The Query Engine)**: Imagine a giant archive library. You cannot retrieve folders yourself. Instead, you write a request note specifying what you need (e.g., "Find all client files from Chicago whose status is active"). A fast filing clerk (the database engine) reads your query, figures out the fastest path to the right drawer, extracts only those files, and returns them to you.
+*   **The Folder Joiner (INNER vs LEFT JOIN)**: Imagine you have two boxes of cards: Box A contains *User profiles* (each card has a User ID), and Box B contains *Receipts* (each card has a User ID and a purchase amount).
+    *   **INNER JOIN**: You match cards from Box A and Box B by User ID. If a user has no receipts, or if a receipt lists a deleted User ID, you throw those cards aside. You only keep matches.
+    *   **LEFT JOIN**: You keep *every single card* from Box A. If a user has matching receipts in Box B, you staple them together. If a user has no receipts, you still keep their card but leave the receipt fields blank (NULL).
+
+---
+
 ## What is SQL?
 
 **SQL** (Structured Query Language, pronounced "sequel" or "S-Q-L") is the standard language for interacting with **relational databases**. It lets you:
@@ -14,11 +25,6 @@ tags: ["sql", "databases", "joins", "aggregates", "window-functions", "query"]
 - Control access and permissions (DCL)
 - Manage transactions (TCL)
 
-```
-Analogy: SQL is like speaking to a filing cabinet that contains millions
-of perfectly organized files. You tell it exactly what you want and the
-conditions it must meet, and it finds or modifies the data instantly.
-```
 
 SQL was created in 1974 at IBM, standardized as ANSI SQL, and is used in every major database: PostgreSQL, MySQL, SQLite, Oracle, SQL Server. The core syntax is nearly identical across all of them.
 
@@ -425,6 +431,72 @@ problems — climb in order; each rung assumes the one above.
   ]}
 />
 
+### Think it through like the interview
+
+Don't just write queries from top to bottom — derive the logical execution order to debug syntax anomalies.
+
+<ThinkThrough
+  title="The Logical Query Execution Order"
+  difficulty="Core SQL"
+  problem="You write a query: `SELECT price * quantity AS total_cost FROM orders WHERE total_cost > 100`. The database compiler throws an error: 'Column total_cost does not exist'. Explain why this happens and trace the actual execution order."
+  stages={[
+    {
+      label: "Map query writing vs execution order",
+      prompt: "While we write SELECT first in SQL, in what order does the database engine actually execute the FROM, WHERE, and SELECT clauses?",
+      reveal: "The database executes clauses in this logical order: 1. FROM (identifies the source tables), 2. JOIN (combines tables), 3. WHERE (filters raw rows), 4. GROUP BY (groups rows), 5. HAVING (filters groups), 6. SELECT (extracts/calculates fields), 7. DISTINCT, 8. ORDER BY (sorts outputs), 9. LIMIT/OFFSET."
+    },
+    {
+      label: "Explain the compiler error",
+      prompt: "Based on this execution order, why does `WHERE total_cost > 100` fail to find the alias `total_cost` defined in the SELECT clause?",
+      reveal: "Because the WHERE clause is executed at Step 3, before the SELECT clause is run at Step 6. At the time of filtering rows in WHERE, the alias `total_cost` has not been calculated or assigned yet. To fix it, we must repeat the expression in the WHERE clause: `WHERE price * quantity > 100`, or wrap the query inside a CTE/Subquery."
+    },
+    {
+      label: "Determine alias validity in sorting",
+      prompt: "If `WHERE` cannot see SELECT aliases, can the `ORDER BY` clause reference `total_cost`? Why or why not?",
+      reveal: "Yes, `ORDER BY` runs at Step 8, which is *after* the SELECT clause (Step 6). By the time sorting occurs, the calculation is completed and the alias `total_cost` exists, making `ORDER BY total_cost DESC` completely valid."
+    }
+  ]}
+/>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Which of the following describes the behavior of a LEFT JOIN between Table A (left) and Table B (right)?",
+    options: [
+      "It returns only the rows that match in both Table A and Table B.",
+      "It returns all rows from Table A, along with matching rows from Table B; mismatched fields in Table B are filled with NULL values.",
+      "It returns all rows from Table B, dropping Table A rows that do not have matches."
+    ],
+    answer: "It returns all rows from Table A, along with matching rows from Table B; mismatched fields in Table B are filled with NULL values.",
+    explanation: "A LEFT JOIN preserves every row of the left-hand table (Table A) regardless of whether a match exists in the right table. Mismatches are filled with NULL."
+  },
+  {
+    question: "What is the key difference between the WHERE clause and the HAVING clause in SQL?",
+    options: [
+      "WHERE is used for filtering individual rows before grouping; HAVING is used to filter aggregated groups after GROUP BY is run.",
+      "WHERE is only supported in MySQL, whereas HAVING is only supported in PostgreSQL.",
+      "WHERE can reference aggregate functions like COUNT(*), while HAVING cannot."
+    ],
+    answer: "WHERE is used for filtering individual rows before grouping; HAVING is used to filter aggregated groups after GROUP BY is run.",
+    explanation: "The WHERE clause acts on raw rows before they are compressed. The HAVING clause acts on the resulting aggregated groups afterward."
+  },
+  {
+    question: "Unlike GROUP BY, how do Window Functions (defined with the OVER clause) operate on query result rows?",
+    options: [
+      "They collapse multiple matching rows into a single row to summarize data.",
+      "They keep all original rows intact, adding the calculation result as a new column beside each row.",
+      "They write the output data to a temporary cache table on the disk."
+    ],
+    answer: "They keep all original rows intact, adding the calculation result as a new column beside each row.",
+    explanation: "Window functions partition and rank rows but do not collapse them. The number of rows in the output matches the input exactly."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Joins**: Find all users who have never written a post.
@@ -433,3 +505,4 @@ problems — climb in order; each rung assumes the one above.
 4. **Recursive**: Given an `employees` table with `id`, `name`, `manager_id`, write a query to find all direct and indirect reports of a given manager.
 
 Next: [PostgreSQL & MySQL](/databases/postgres-and-mysql) — production database systems.
+

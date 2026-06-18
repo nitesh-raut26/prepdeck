@@ -6,9 +6,22 @@ difficulty: "Intermediate"
 tags: ["postgresql", "mysql", "acid", "transactions", "explain", "indexing", "production"]
 ---
 
+## Starting from Zero — A Physical Intuition
+
+Before comparing storage engines, let's visualize PostgreSQL and MySQL through physical analogies:
+
+*   **PostgreSQL as the Photocopy Vault (MVCC)**: Imagine an office where documents are stored in a cabinet. When an employee wants to update a client's address, they don't erase the old text. Instead, they write the new address on a photocopy of the file and put it in the drawer. 
+    *   **The Reader**: A coworker who started reading the old file five minutes ago continues to read their copy undisturbed.
+    *   **The Writer**: The writer puts their new copy in the drawer. Once approved (committed), any *new* coworker looking at the drawer will get the new photocopy.
+    This is **Multi-Version Concurrency Control (MVCC)**: readers and writers never block each other.
+*   **MySQL as the Bound Catalog (Clustered Indexing)**: Think of a thick dictionary. The pages are physically printed and bound alphabetically by word (the Primary Key). If you want to search by page number or definition length, you check a separate index list in the back (Secondary Index). This list doesn't contain the full page data; it just points you back to the word (Primary Key), requiring you to turn to that page to read the definition.
+
+---
+
 ## PostgreSQL vs MySQL — The Big Picture
 
 Both are open-source relational databases that implement SQL. The choice shapes your architecture.
+
 
 | | PostgreSQL | MySQL (InnoDB) |
 |---|---|---|
@@ -356,6 +369,72 @@ multi-join analytics. Climb in order.
   ]}
 />
 
+### Think it through like the interview
+
+Don't just discuss MVCC abstractly — derive the database's internal row headers and visibility checks under high concurrency.
+
+<ThinkThrough
+  title="MVCC in Action: Transaction Isolation"
+  difficulty="Database Internals"
+  problem="Two transactions run concurrently in PostgreSQL. Transaction A (id = 101) updates a user's name from 'Alice' to 'Alex' but has not committed yet. Transaction B (id = 102) queries the user's name. Tracing Postgres internal row attributes, explain why B does not see 'Alex'."
+  stages={[
+    {
+      label: "Understand internal transaction metadata",
+      prompt: "What hidden metadata fields does PostgreSQL attach to every row to track transaction visibility?",
+      reveal: "Postgres attaches system columns, primarily `xmin` (the transaction ID that created/inserted the row version) and `xmax` (the transaction ID that deleted or replaced the row version). When a row is active, `xmax` is 0."
+    },
+    {
+      label: "Trace the UPDATE under MVCC",
+      prompt: "When Transaction A (id = 101) updates 'Alice' to 'Alex', what physical operations does Postgres perform in the table heap?",
+      reveal: "Under MVCC, Postgres does not overwrite the row. It sets the existing 'Alice' row's `xmax` to 101 (marking it deleted/superseded by transaction 101). It then inserts a brand new row version with 'Alex', setting its `xmin` to 101 and its `xmax` to 0. Both row versions exist in the table concurrently."
+    },
+    {
+      label: "Compute visibility for concurrent readers",
+      prompt: "Transaction B (id = 102) runs under the Read Committed isolation level. How does it determine which of the two versions ('Alice' or 'Alex') to return?",
+      reveal: "Transaction B checks if Transaction 101 (the creator of the 'Alex' version and deleter of the 'Alice' version) is committed. Because A is still uncommitted, B ignores the 'Alex' row version (it was created by an uncommitted transaction) and reads the 'Alice' row version (whose `xmax` is set to 101, which is ignored because 101 has not committed). Thus, B safely reads 'Alice' without blocking."
+    }
+  ]}
+/>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "What is a clustered index (used by default in MySQL InnoDB) and how does it store data?",
+    options: [
+      "An index that stores only index pointers to rows stored randomly in a heap file.",
+      "An index where the actual row data is physically stored in the leaf nodes of the B-Tree ordered by the primary key.",
+      "A memory-only index cache used exclusively for fast reads."
+    ],
+    answer: "An index where the actual row data is physically stored in the leaf nodes of the B-Tree ordered by the primary key.",
+    explanation: "In a clustered index (InnoDB's default primary key storage), the table is the index. The leaf nodes contain the actual row data, making primary key lookups exceptionally fast."
+  },
+  {
+    question: "Why is the PostgreSQL AUTOVACUUM daemon critical for maintaining database performance over time?",
+    options: [
+      "To automatically create missing indexes based on slow query history.",
+      "To clean up dead row versions (tuples) accumulated by MVCC updates and deletes, preventing table bloat and reclaiming space.",
+      "To backup the database WAL logs to external cloud storage."
+    ],
+    answer: "To clean up dead row versions (tuples) accumulated by MVCC updates and deletes, preventing table bloat and reclaiming space.",
+    explanation: "Because MVCC creates new row versions rather than deleting old ones in place, deleted row versions remain on disk as dead tuples. Autovacuum cleans them up to prevent query slowdowns due to table bloat."
+  },
+  {
+    question: "What is the primary role of the Write-Ahead Log (WAL) in maintaining ACID transactions?",
+    options: [
+      "It serves as a caching buffer to respond to client queries faster.",
+      "It ensures Durability by writing transaction changes to an append-only log on disk before confirming a successful commit to the client.",
+      "It records query statistics to optimize explain plans."
+    ],
+    answer: "It ensures Durability by writing transaction changes to an append-only log on disk before confirming a successful commit to the client.",
+    explanation: "Writing randomly scattered data blocks to disk is slow. WAL writes transaction changes sequentially to an append-only file, guaranteeing that data can be recovered after a crash before executing slower random disk writes."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Transactions**: Write a money transfer stored procedure that atomically debits one account and credits another, with proper error handling and rollback.
@@ -364,3 +443,4 @@ multi-join analytics. Climb in order.
 4. **Production**: Design a connection pool configuration for an app with 50 app server instances, each with 10 concurrent workers.
 
 Next: [MongoDB & Redis](/databases/mongodb-and-redis) — NoSQL databases.
+

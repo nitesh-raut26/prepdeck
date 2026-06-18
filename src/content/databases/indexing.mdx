@@ -6,15 +6,19 @@ difficulty: "Advanced"
 tags: ["indexing", "b-tree", "query-optimization", "performance", "explain"]
 ---
 
+## Starting from Zero — A Physical Intuition
+
+Before writing index structures, let's understand how they work through physical analogies:
+
+*   **The Library Index Cards (The Index)**: Imagine a massive library with millions of books. If you want to find a book by its author, and there is no catalog, you must walk through every single aisle, shelf by shelf, reading every book spine (Full Table Scan). An index is a box of catalog cards sorted alphabetically by author. You search the card box in seconds, find the shelf code (e.g. Aisle 12, Shelf C), and walk directly to the book.
+*   **Highway Lane Signs (B-Tree Fan-out)**: If you search a binary tree, you make one choice at each step (left or right). For millions of rows, this takes many steps. A B-Tree is like a major highway with multiple exit signs at each juncture (high fan-out). Each sign lists range boundaries (e.g. "Exits 10-20, Exits 21-40"). This lets you narrow down millions of records to the exact leaf page in just 3 or 4 jumps.
+
+---
+
 ## Why Indexes Exist
 
 Without an index, finding a row requires reading every single row in the table — a **full table scan** at O(n). With an index, the database can jump directly to matching rows.
 
-```
-Analogy: Finding a name in a phone book.
-Without index: Read every page left to right until you find the name.
-With index:    Open to the right letter, then to the right page — O(log n).
-```
 
 The cost: indexes are **data structures maintained by the database** — every INSERT, UPDATE, and DELETE must update all relevant indexes. More indexes = slower writes. Index selectively.
 
@@ -354,6 +358,72 @@ checklist.
   ]}
 />
 
+### Think it through like the interview
+
+Don't just discuss indexes abstractly — trace B+ Tree node traversals step-by-step to show how the database finds records.
+
+<ThinkThrough
+  title="B+ Tree Query Traversal"
+  difficulty="Database Internals"
+  problem="Trace how a query for `WHERE id = 35` and a range query for `WHERE id BETWEEN 30 AND 50` navigate a B+ Tree index with a root node `[50]`, internal nodes `[25]` and `[75]`, and leaf nodes holding adjacent ranges."
+  stages={[
+    {
+      label: "Find a single record (equality)",
+      prompt: "Explain how the search for `id = 35` traverses the nodes from root to leaf.",
+      reveal: "1. The query begins at the Root Node `[50]`. Since 35 is less than 50, it follows the left branch.\n2. It arrives at the Internal Node `[25]`. The key ranges are sorted; since 35 is greater than 25, it follows the right branch.\n3. It lands on the Leaf Node containing data elements `[30, 40]`. It scans this leaf node in memory, locates the pointer for key 35, and fetches the row."
+    },
+    {
+      label: "Optimize range lookups",
+      prompt: "For `WHERE id BETWEEN 30 AND 50`, does the database repeat this root-to-leaf search for every single key in the range?",
+      reveal: "No. The B+ Tree leaf nodes form a doubly-linked list. The query travels root-to-leaf once to find the lower bound key (30). Once it lands on the leaf node containing 30, it simply reads sequentially across the sibling links (rightwards) until it hits a key greater than 50. It avoids traversing back up to the root, making range queries highly efficient."
+    },
+    {
+      label: "Handle leaf node capacity splits",
+      prompt: "If a leaf node is full and a new key is inserted, how does the B+ Tree maintain its balance?",
+      reveal: "The full leaf node splits into two nodes, each holding roughly half the keys. The middle key is pushed up to the parent node. If the parent node is also full, it splits as well, cascading up. This ensures the tree height remains balanced and query paths remain equal-length."
+    }
+  ]}
+/>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "If a composite index is created on columns (user_id, status, created_at), which of the following queries CANNOT use this index?",
+    options: [
+      "WHERE user_id = 10 AND status = 'pending'",
+      "WHERE status = 'pending' AND created_at > '2024-01-01'",
+      "WHERE user_id = 10 AND created_at > '2024-01-01'"
+    ],
+    answer: "WHERE status = 'pending' AND created_at > '2024-01-01'",
+    explanation: "Under the leftmost prefix rule, queries must filter on the first column of the index (user_id) to traverse it. Skipping the first column makes the index unusable."
+  },
+  {
+    question: "Why might a database query planner decide to perform a full table scan (Seq Scan) even if a column has an index?",
+    options: [
+      "Because the index is locked during read operations.",
+      "Because the query is expected to match a large percentage of the table (e.g. >30%), where sequential disk reads are faster than random index seek I/O.",
+      "Because the table statistics are always refreshed on every query execution."
+    ],
+    answer: "Because the query is expected to match a large percentage of the table (e.g. >30%), where sequential disk reads are faster than random index seek I/O.",
+    explanation: "If a query returns a large fraction of the table, hopping back and forth between the index and heap (random access) is slower than reading the entire table sequentially from disk."
+  },
+  {
+    question: "What is the primary trade-off of adding multiple indexes to a database table?",
+    options: [
+      "It decreases index storage space but slows down select queries.",
+      "It speeds up read queries but slows down write operations (INSERT, UPDATE, DELETE) since every index must be updated synchronously.",
+      "It limits the maximum size of data types allowed in SQL columns."
+    ],
+    answer: "It speeds up read queries but slows down write operations (INSERT, UPDATE, DELETE) since every index must be updated synchronously.",
+    explanation: "Indexes are secondary structures. When data changes, all referencing indexes must be modified to match, increasing write latency."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Composite Index Design**: Given a query `SELECT * FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC`, design the optimal index and explain why.
@@ -362,3 +432,4 @@ checklist.
 4. **Pagination**: Implement cursor-based pagination for a `posts` table sorted by `created_at DESC` — the cursor should be the `created_at` + `id` of the last item seen.
 
 Next: [Transactions & Locking](/databases/transactions) — concurrency control deep-dive.
+
