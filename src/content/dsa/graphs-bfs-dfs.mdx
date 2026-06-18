@@ -2100,78 +2100,66 @@ Negative cycles: Floyd-Warshall detects them via `dist[i][i] < 0` after the main
   }
 ]} />
 
-## Practice Ladder
-
-### Level 1 — Foundations
-1. **Number of Islands** (LeetCode 200) — DFS/BFS on grid; do both
-2. **Flood Fill** (LeetCode 733) — DFS with color matching
-3. **Find the Town Judge** (LeetCode 997) — in-degree/out-degree
-4. **Clone Graph** (LeetCode 133) — BFS + hash map
-
-### Level 2 — Core Patterns
-5. **Course Schedule** (LeetCode 207) — topological sort / cycle detection
-6. **Course Schedule II** (LeetCode 210) — return the actual order
-7. **Rotting Oranges** (LeetCode 994) — multi-source BFS
-8. **01 Matrix** (LeetCode 542) — multi-source BFS from all zeros
-9. **Pacific Atlantic Water Flow** (LeetCode 417) — multi-source DFS from both coasts
-
-### Level 3 — Weighted Graphs
-10. **Network Delay Time** (LeetCode 743) — classic Dijkstra
-11. **Path with Maximum Probability** (LeetCode 1514) — max-heap Dijkstra
-12. **Number of Connected Components** (LeetCode 323) — Union-Find
-13. **Graph Valid Tree** (LeetCode 261) — n-1 edges + no cycle
-14. **Word Ladder** (LeetCode 127) — BFS on implicit word graph
-
-### Level 4 — Advanced
-15. **Cheapest Flights Within K Stops** (LeetCode 787) — Bellman-Ford with constraint
-16. **Critical Connections** (LeetCode 1192) — bridges with low-link
-17. **Reconstruct Itinerary** (LeetCode 332) — Eulerian path on directed graph
-18. **Swim in Rising Water** (LeetCode 778) — Dijkstra or binary search + BFS
-19. **Jump Game IV** (LeetCode 1345) — BFS with value-grouped positions
-
-### Level 5 — Master
-20. **Find Critical and Pseudo-Critical Edges** (LeetCode 1489) — Kruskal edge inclusion/exclusion
-21. Implement Kosaraju's + Tarjan's from memory
-22. Floyd-Warshall + transitive closure
-23. Bellman-Ford arbitrage detection on currency graphs
-24. A* search on a grid with heuristics
-
-Next: [Union-Find](/dsa/union-find) — the data structure for incremental connectivity, and the backbone of Kruskal's MST.
-
 ## Practice — climb the ladder
 
-Three questions before any graph problem: directed or not? weighted or
-not? what counts as a node? Grids are graphs — neighbors are the 4 cells.
+Three questions before any graph problem: directed or not? weighted or not? what counts as a node? Grids are graphs — neighbors are the 4 cells.
 
 <PracticeLadder
-  topic="Graphs — BFS & DFS"
+  topic="Graphs — BFS, DFS & Shortest Paths"
   tiers={[
     {
-      label: "Warm-up",
-      note: "flood the grid",
+      label: "Level 1 — Foundations",
+      note: "flood fills, components, basic traversal",
       problems: [
         { name: "Flood Fill", lc: "flood-fill", difficulty: "Easy", trains: "DFS on a grid in its smallest form — visit, mark, recurse on 4 neighbors." },
-        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "Connected components — sink each island as you find it; THE graph warm-up." }
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "Connected components — sink each island as you find it; THE graph warm-up." },
+        { name: "Find the Town Judge", lc: "find-the-town-judge", difficulty: "Easy", trains: "Model trust as directed edges; the judge has in-degree n−1 and out-degree 0." },
+        { name: "Clone Graph", lc: "clone-graph", difficulty: "Medium", trains: "BFS/DFS with a visited MAP (old → new) — copying while walking." }
       ]
     },
     {
-      label: "Core",
-      note: "BFS for distance, DFS for structure, topo for order",
+      label: "Level 2 — Core Patterns",
+      note: "multi-source BFS, topological sort, cycle detection",
       problems: [
-        { name: "Rotting Oranges", lc: "rotting-oranges", difficulty: "Medium", trains: "Multi-source BFS — start the queue with EVERY rotten orange; level = minute." },
-        { name: "01 Matrix", lc: "01-matrix", difficulty: "Medium", trains: "Multi-source BFS again, from the zeros — distance fields radiate outward." },
-        { name: "Clone Graph", lc: "clone-graph", difficulty: "Medium", trains: "Traversal with a visited MAP (old → new) — copying while walking." },
-        { name: "Course Schedule", lc: "course-schedule", difficulty: "Medium", trains: "Cycle detection / topological sort — prerequisites are a directed graph." },
-        { name: "Pacific Atlantic Water Flow", lc: "pacific-atlantic-water-flow", difficulty: "Medium", trains: "Reverse thinking — flow FROM the oceans inward, intersect the reachable sets." }
+        { name: "Course Schedule", lc: "course-schedule", difficulty: "Medium", trains: "Cycle detection / topological sort — prerequisites are directed edges." },
+        { name: "Course Schedule II", lc: "course-schedule-ii", difficulty: "Medium", trains: "Same as above but return the actual topological order via Kahn's BFS." },
+        { name: "Rotting Oranges", lc: "rotting-oranges", difficulty: "Medium", trains: "Multi-source BFS — seed ALL rotten oranges at t=0; each level = one minute." },
+        { name: "01 Matrix", lc: "01-matrix", difficulty: "Medium", trains: "Multi-source BFS from every zero simultaneously — distance radiates outward." },
+        { name: "Pacific Atlantic Water Flow", lc: "pacific-atlantic-water-flow", difficulty: "Medium", trains: "Reverse thinking — BFS/DFS FROM both oceans inward, intersect reachable sets." }
       ]
     },
     {
-      label: "Stretch",
-      note: "BFS under constraints",
+      label: "Level 3 — Weighted Graphs",
+      note: "Dijkstra, Union-Find, BFS on implicit graphs",
       problems: [
-        { name: "Shortest Path in Binary Matrix", lc: "shortest-path-in-binary-matrix", difficulty: "Medium", trains: "BFS = shortest path in unweighted graphs — 8 directions, visited-on-enqueue." },
-        { name: "Word Ladder", lc: "word-ladder", difficulty: "Hard", trains: "Words as nodes, one-letter edits as edges — modeling IS the problem." }
+        { name: "Network Delay Time", lc: "network-delay-time", difficulty: "Medium", trains: "Classic Dijkstra — single source, non-negative weights, answer is max dist." },
+        { name: "Path with Maximum Probability", lc: "path-with-maximum-probability", difficulty: "Medium", trains: "Max-heap Dijkstra — flip to maximization by negating or using a max-heap." },
+        { name: "Number of Connected Components in an Undirected Graph", lc: "number-of-connected-components-in-an-undirected-graph", difficulty: "Medium", trains: "Union-Find or DFS — count distinct components after merging all edges." },
+        { name: "Graph Valid Tree", lc: "graph-valid-tree", difficulty: "Medium", trains: "Tree = connected + no cycle = exactly n−1 edges; use Union-Find or BFS." },
+        { name: "Word Ladder", lc: "word-ladder", difficulty: "Hard", trains: "BFS on an implicit graph where nodes = words and edges = one-letter changes." }
+      ]
+    },
+    {
+      label: "Level 4 — Advanced",
+      note: "Bellman-Ford, bridges, Eulerian path, constrained BFS",
+      problems: [
+        { name: "Cheapest Flights Within K Stops", lc: "cheapest-flights-within-k-stops", difficulty: "Medium", trains: "Bellman-Ford with k+1 relaxation rounds — the temp-copy prevents chaining." },
+        { name: "Critical Connections in a Network", lc: "critical-connections-in-a-network", difficulty: "Hard", trains: "Bridge-finding with DFS + low-link values — edge u→v is a bridge when low[v] > disc[u]." },
+        { name: "Reconstruct Itinerary", lc: "reconstruct-itinerary", difficulty: "Hard", trains: "Hierholzer's algorithm — Eulerian path on a directed multigraph, post-order DFS." },
+        { name: "Swim in Rising Water", lc: "swim-in-rising-water", difficulty: "Hard", trains: "Dijkstra where cost = max elevation along path, or binary search + BFS/DFS." },
+        { name: "Jump Game IV", lc: "jump-game-iv", difficulty: "Hard", trains: "BFS with value-grouped position map — key is grouping same-value positions." }
+      ]
+    },
+    {
+      label: "Level 5 — Master",
+      note: "MST edge analysis, all-pairs, SCC",
+      problems: [
+        { name: "Find Critical and Pseudo-Critical Edges in MST", lc: "find-critical-and-pseudo-critical-edges-in-minimum-spanning-tree", difficulty: "Hard", trains: "Kruskal MST with edge inclusion / forced-exclusion to classify each edge." },
+        { name: "Minimum Cost to Connect All Points", lc: "min-cost-to-connect-all-points", difficulty: "Medium", trains: "Prim's or Kruskal's MST on a dense graph — Manhattan distance as edge weight." },
+        { name: "Shortest Path Visiting All Nodes", lc: "shortest-path-visiting-all-nodes", difficulty: "Hard", trains: "BFS on (node, visited-bitmask) state — classic bitmask DP meets BFS." },
+        { name: "Bus Routes", lc: "bus-routes", difficulty: "Hard", trains: "BFS on routes (not stops) — model stops-per-route, level = bus transfers taken." }
       ]
     }
   ]}
 />
+
