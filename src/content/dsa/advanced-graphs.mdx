@@ -23,8 +23,15 @@ lean on it. The skill isn't memorizing five algorithms; it's the **decision tabl
 
 ## Dijkstra — the workhorse
 
-Greedy: always expand the closest unsettled node, using a **min-heap** of `(dist, node)`.
-Correct only because non-negative weights mean once you pop a node, its distance is final.
+**When:** single-source shortest path on a weighted graph with **non-negative**
+edges — maps, routing, minimum-cost reachability.
+
+**How it works:** it's BFS with a **min-heap** instead of a plain queue. Always pull
+out the closest unsettled node, then *relax* its edges (lower a neighbour's distance
+if the path through this node is cheaper). It's **correct only because** weights are
+non-negative: once you pop a node, no later path can beat its distance — adding more
+non-negative edges can't get cheaper — so it's final. The `if d > dist...: continue`
+line skips stale heap entries from earlier, larger estimates.
 
 ```python
 import heapq
@@ -46,8 +53,15 @@ def dijkstra(graph, src):           # graph: {u: [(v, w), ...]}
 
 ## Bellman-Ford — when edges go negative
 
-Relax **all** edges `V−1` times; one more relaxation that still improves means a
-**negative cycle**. Slower than Dijkstra but handles negatives and detects cycles:
+**When:** edges can be **negative** (Dijkstra's greedy assumption fails), or you
+must **detect a negative cycle**.
+
+**How it works:** just relax **every** edge, `V−1` times. The key fact: after round
+k, every shortest path using at most k edges is already correct — and a simple
+shortest path has at most V−1 edges, so V−1 rounds settle them all. Then one *extra*
+round that still improves means a **negative cycle** (you could loop it forever to
+drive the cost down). Slower than Dijkstra at O(V·E), but that's the price of
+handling negatives:
 
 ```python
 def bellman_ford(edges, V, src):     # edges: [(u, v, w), ...]
@@ -65,8 +79,12 @@ def bellman_ford(edges, V, src):     # edges: [(u, v, w), ...]
 
 ## MST & flow in one breath
 
-- **MST (Kruskal):** sort edges, add the cheapest that doesn't form a cycle (cycle check
-  via [union-find](/dsa/union-find)). Prim grows a tree with a heap, like Dijkstra.
+- **MST** — connect every node with minimum total edge weight (n−1 edges, no cycle);
+  think "cheapest cabling to wire up all the cities." **Kruskal:** sort edges, add the
+  cheapest that doesn't form a cycle (cycle check via
+  [union-find](/dsa/union-find)). **Prim:** grow one tree outward with a heap, always
+  taking the cheapest edge to a *new* node — like Dijkstra, but comparing edge weight
+  instead of total distance from a source.
 - **Max-flow / min-cut:** push flow along augmenting paths until none remain; the
   max-flow equals the **min-cut** (max-flow min-cut theorem). Most interview "flow"
   problems are really **bipartite matching** — model as a flow network with a source → left
