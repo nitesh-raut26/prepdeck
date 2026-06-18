@@ -73,6 +73,8 @@ import {
   dijkstraSteps,
   WEIGHTED_GRAPH,
 } from "@/lib/viz/graph-algos";
+import { bitwiseSteps, type BitOp } from "@/lib/viz/bit-algos";
+import { fastPowSteps, gcdSteps } from "@/lib/viz/math-algos";
 import type { Complexity } from "@/lib/viz/types";
 import { cn } from "@/lib/cn";
 import { useStepper } from "./stepper";
@@ -142,7 +144,10 @@ export type VisualizerAlgo =
   | "btree"
   | "isolation"
   | "attention"
-  | "drift";
+  | "drift"
+  | "bitwise"
+  | "gcd"
+  | "fast-power";
 
 /**
  * MDX entry point: <Visualizer algo="binary-search" />
@@ -230,6 +235,12 @@ export function Visualizer({ algo, problem }: { algo: VisualizerAlgo; problem?: 
       return <AttentionViz />;
     case "drift":
       return <DriftViz />;
+    case "bitwise":
+      return <BitwiseViz />;
+    case "gcd":
+      return <GcdViz />;
+    case "fast-power":
+      return <FastPowViz />;
     default:
       return (
         <div className="not-prose my-6 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
@@ -662,6 +673,82 @@ function DpViz({ initial }: { initial?: string }) {
               <VizField label="string 2 (≤6)" value={s2} onChange={setS2} onCommit={() => setLcsIn({ s1, s2 })} />
             </>
           )}
+        </>
+      }
+    >
+      <DpCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+/* ── Bit manipulation & number theory (reuse the table canvas) ────────── */
+
+const BIT_OPS: { id: BitOp; label: string }[] = [
+  { id: "and", label: "AND &" },
+  { id: "or", label: "OR |" },
+  { id: "xor", label: "XOR ^" },
+];
+
+function BitwiseViz() {
+  const [op, setOp] = useState<BitOp>("and");
+  const a = useIntInput(180);
+  const b = useIntInput(105);
+  const steps = useMemo(() => bitwiseSteps(a.value, b.value, op), [a.value, b.value, op]);
+  const stepper = useStepper(steps);
+  return (
+    <VizPlayer
+      title="Bitwise operators — bit by bit"
+      complexity={{ time: "O(1) per word", space: "O(1)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <PillSelect label="operator" options={BIT_OPS} value={op} onChange={setOp} />
+          <VizField label="a (0–255)" value={a.text} onChange={a.setText} onCommit={a.commit} />
+          <VizField label="b (0–255)" value={b.text} onChange={b.setText} onCommit={b.commit} />
+        </>
+      }
+    >
+      <DpCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+function GcdViz() {
+  const a = useIntInput(48);
+  const b = useIntInput(18);
+  const steps = useMemo(() => gcdSteps(a.value, b.value), [a.value, b.value]);
+  const stepper = useStepper(steps);
+  return (
+    <VizPlayer
+      title="Euclid's algorithm — gcd(a, b)"
+      complexity={{ time: "O(log min(a, b))", space: "O(1)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField label="a" value={a.text} onChange={a.setText} onCommit={a.commit} />
+          <VizField label="b" value={b.text} onChange={b.setText} onCommit={b.commit} />
+        </>
+      }
+    >
+      <DpCanvas step={stepper.step} />
+    </VizPlayer>
+  );
+}
+
+function FastPowViz() {
+  const base = useIntInput(3);
+  const exp = useIntInput(13);
+  const steps = useMemo(() => fastPowSteps(base.value, exp.value), [base.value, exp.value]);
+  const stepper = useStepper(steps);
+  return (
+    <VizPlayer
+      title="Fast exponentiation — aⁿ by squaring"
+      complexity={{ time: "O(log n)", space: "O(1)" }}
+      stepper={stepper}
+      inputs={
+        <>
+          <VizField label="base (2–9)" value={base.text} onChange={base.setText} onCommit={base.commit} />
+          <VizField label="exponent (1–16)" value={exp.text} onChange={exp.setText} onCommit={exp.commit} />
         </>
       }
     >
