@@ -192,6 +192,95 @@ remembering = DP*. Park the thought; Level 3 builds on it.
 - **Python-specific:** `items[1:]` copies the list every call — elegant
   for learning, O(n²) in total; pass an index instead for real work.
 
+## Think it through
+
+Recursion clicks on self-similar data — where the structure itself nests.
+Run the three questions (base case, leap of faith, termination) on a problem
+that's genuinely recursive. Think before each reveal.
+
+<ThinkThrough
+  title="Sum an arbitrarily nested list"
+  difficulty="Beginner — the leap of faith"
+  problem="Sum every number in a list that may contain other lists, nested to any depth. data = [1, [2, [3, 4], 5]] → 15."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What makes a loop alone insufficient here?",
+      reveal: "A plain loop handles ONE level, but elements can themselves be lists, nested unpredictably deep — you can't write a fixed number of nested loops for 'any depth'. The structure is self-similar (a list of [numbers or lists]), which is the signal recursion fits. Edges: empty list → 0; a flat list with no nesting; a single number wrapped in lists."
+    },
+    {
+      label: "Take the leap of faith",
+      prompt: "For one element, what do I do — and where's the recursive call?",
+      reveal: "For each element: if it's a number, add it. If it's a list, assume a magic helper already returns the correct sum of that sublist, and add that. The magic helper IS this same function — that's the leap of faith: trust the recursive call, don't trace into it."
+    },
+    {
+      label: "Pin the base case & termination",
+      prompt: "What's the smallest input, and why does this always terminate?",
+      reveal: "The base case is an empty list: the loop body never runs, so it returns 0 — no explicit `if not data` needed, the for-loop handles it. Termination holds because every recursive call descends into a strictly shallower sublist, so depth can't grow forever."
+    },
+    {
+      label: "Code it",
+      prompt: "One loop, a type check, a recursive call on the list branch.",
+      reveal: "isinstance(item, list) decides number-vs-sublist; the recursive call sums the sublist.",
+      code: "def deep_sum(data):\n    total = 0\n    for item in data:\n        if isinstance(item, list):\n            total += deep_sum(item)   # leap of faith: trust it sums the sublist\n        else:\n            total += item             # a plain number\n    return total"
+    },
+    {
+      label: "Trace & cost",
+      prompt: "Cost, and trace [1, [2, [3, 4], 5]]?",
+      reveal: "O(total elements) time — each number is touched once. Stack depth = nesting depth (not list length), so it's safe unless data is thousands of levels deep. Trace: outer 1 + deep_sum([2,[3,4],5]) = 1 + (2 + deep_sum([3,4]) + 5) = 1 + (2 + 7 + 5) = 15. ✓ This is recursion's home turf — the iterative version needs a manual stack and reads worse."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Every correct recursive function must have:",
+    options: [
+      "A base case (answerable without recursing) AND a recursive case that moves strictly toward it",
+      "At least two recursive calls",
+      "A loop somewhere inside it",
+      "A global variable to track depth"
+    ],
+    answer: 0,
+    explain: "Without a reachable base case it recurses until the stack dies; without shrinking toward it, same result. Those two parts define every valid recursion."
+  },
+  {
+    q: "The 'leap of faith' for writing the recursive case means:",
+    options: [
+      "Assume the recursive call already works on the smaller input — don't trace into it",
+      "Trust that recursion works even without a base case",
+      "Mentally simulate every stack frame before coding",
+      "Believe recursion is always faster than a loop"
+    ],
+    answer: 0,
+    explain: "You only design one level: how to combine the (assumed-correct) answer for a smaller input with a bit of local work. Trying to hold five frames in your head is how beginners drown."
+  },
+  {
+    q: "Naive recursive fib(n) = fib(n-1) + fib(n-2) is exponential because:",
+    options: [
+      "The same subproblems are recomputed across branches — ~1.6ⁿ calls for only n distinct values",
+      "Each call allocates a large array",
+      "All recursion is inherently exponential",
+      "The base case returns the wrong value"
+    ],
+    answer: 0,
+    explain: "There are only n distinct subproblems but the call tree re-solves them combinatorially. Memoization caches each result, collapsing it to O(n) — the exact bridge to dynamic programming."
+  },
+  {
+    q: "Why does the recursive list-sum crash on a million-element flat list while a loop doesn't?",
+    options: [
+      "Each call adds a stack frame; ~1000+ deep hits Python's recursion limit — a stack overflow",
+      "Loops are simply faster, so they finish first",
+      "The list is too large to fit in memory",
+      "Slicing a list is illegal in Python"
+    ],
+    answer: 0,
+    explain: "Depth costs O(n) stack memory even with no heap allocation. For dangerous depths, convert to iteration with an explicit stack — mechanical and always possible."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="What happens in memory during recursion, and why does deep recursion crash?">
