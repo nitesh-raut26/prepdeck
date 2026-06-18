@@ -80,6 +80,95 @@ For "max concurrent intervals" (meeting rooms), sweep the sorted start/end event
 or use a min-heap of end times. Sort by **end** time for greedy
 "max non-overlapping intervals".
 
+## Think it through
+
+This chapter has two ideas — a heap for "current extreme of a changing set",
+and sort-then-sweep for intervals. One classic problem needs *both*. Reason
+through it before revealing.
+
+<ThinkThrough
+  title="Meeting Rooms II"
+  difficulty="Medium — LeetCode 253"
+  problem="Given meeting time intervals, return the minimum number of rooms so that no two overlapping meetings share a room. meetings = [[0,30],[5,10],[15,20]] → 2."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "Rephrase 'minimum rooms' as a counting question.",
+      reveal: "Minimum rooms = the maximum number of meetings happening at the SAME instant (peak concurrency). Edges: no meetings → 0; meetings that merely touch (one ends exactly as the next starts) don't overlap — decide that convention out loud."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Obvious solution and its cost?",
+      reveal: "For each meeting, count how many others overlap it, or scan every time point. O(n²) (or worse if you scan time). The waste: re-checking overlaps that a little ordering would make obvious. Both chapter tools — sorting and a heap — are about imposing order so you only compare against running state."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "Sort by start. As each meeting begins, what one fact decides 'new room or reuse'?",
+      reveal: "Whether the room that frees EARLIEST is free by now. So keep a min-heap of the END times of meetings currently holding a room. For each meeting in start order: if the smallest end time is ≤ this start, that room is free — pop it (reuse). Always push this meeting's end. The heap size is rooms-in-use; its peak is the answer. Sort imposes order; the heap tracks the earliest-freeing room in O(log n)."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why does returning len(ends) give the PEAK, not just the final, room count?",
+      reveal: "Each iteration pops at most once and pushes exactly once, so the heap size never decreases — it only holds steady or grows. Therefore its final size equals its maximum: the peak concurrency.",
+      code: "import heapq\n\ndef min_rooms(meetings):\n    if not meetings:\n        return 0\n    meetings.sort(key=lambda iv: iv[0])    # by start time\n    ends = []                              # min-heap of in-use end times\n    for s, e in meetings:\n        if ends and ends[0] <= s:          # earliest room is already free\n            heapq.heappop(ends)            # reuse that room\n        heapq.heappush(ends, e)            # this meeting takes a room\n    return len(ends)                       # size only grows = peak rooms"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and trace the example?",
+      reveal: "O(n log n) — the sort dominates; each heap op is O(log n). Trace [[0,30],[5,10],[15,20]]: (0,30) push → size 1; (5,10) 30 > 5, no free room, push → size 2; (15,20) 10 ≤ 15, reuse, push → size 2. Answer 2. This problem is the chapter in miniature: sort to sweep, heap to track the running extreme."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "To find the K LARGEST elements efficiently, you keep a:",
+    options: [
+      "Min-heap of size K — pop the smallest whenever size exceeds K; the K largest remain",
+      "Max-heap of size K",
+      "Sorted array of all n elements",
+      "Min-heap holding all n elements"
+    ],
+    answer: 0,
+    explain: "The top of a min-heap is the smallest of your current K — exactly the element to evict when a bigger one arrives. O(n log k) time, O(k) space, beating a full sort when k ≪ n."
+  },
+  {
+    q: "Why is a size-K heap the only top-K approach that works on a STREAM?",
+    options: [
+      "Sorting and quickselect need the whole dataset in memory at once; the heap processes one element at a time in O(k) space",
+      "The heap is asymptotically faster than both in all cases",
+      "Streams are guaranteed to arrive sorted",
+      "Quickselect also works incrementally on streams"
+    ],
+    answer: 0,
+    explain: "Online (streaming) means you can't hold everything. The heap keeps only the current best K, so memory stays O(k) no matter how long the stream is."
+  },
+  {
+    q: "Sorting is the first move on most interval problems. You sort by END time when you want to:",
+    options: [
+      "Greedily keep the most non-overlapping intervals (scheduling)",
+      "Merge overlapping intervals into blocks",
+      "Find the median of the intervals",
+      "Reverse the interval list"
+    ],
+    answer: 0,
+    explain: "Earliest-finishing-first is the classic greedy for max non-overlapping intervals. Sort by START when merging, so each new interval is compared to the block you're currently extending."
+  },
+  {
+    q: "Meeting Rooms II: the minimum number of rooms equals:",
+    options: [
+      "The maximum number of meetings overlapping at any single instant",
+      "The total number of meetings",
+      "The number of distinct start times",
+      "The duration of the longest meeting"
+    ],
+    answer: 0,
+    explain: "Peak concurrency is the bottleneck — you need exactly as many rooms as the most meetings ever running at once. The sort + min-heap sweep computes that peak in O(n log n)."
+  }
+]} />
+
 <QA q="Find the K largest in a huge stream — heap, sort, or quickselect?">
 
 For a stream you can't sort or quickselect (they need the whole array), so use a
