@@ -23,15 +23,27 @@ lean on it. The skill isn't memorizing five algorithms; it's the **decision tabl
 
 ## Dijkstra — the workhorse
 
-**When:** single-source shortest path on a weighted graph with **non-negative**
-edges — maps, routing, minimum-cost reachability.
+### Why We Need Dijkstra
+On a weighted graph (where edges have different costs, e.g., driving times between intersections), a standard BFS fails because BFS assumes every edge has a cost of `1` (hop count). If we explore level-by-level, we might choose a path with `1` hop that costs `10` over a path with `2` hops that costs `1 + 1 = 2`.
+To find the shortest path by *total weight*, we need Dijkstra.
 
-**How it works:** it's BFS with a **min-heap** instead of a plain queue. Always pull
-out the closest unsettled node, then *relax* its edges (lower a neighbour's distance
-if the path through this node is cheaper). It's **correct only because** weights are
-non-negative: once you pop a node, no later path can beat its distance — adding more
-non-negative edges can't get cheaper — so it's final. The `if d > dist...: continue`
-line skips stale heap entries from earlier, larger estimates.
+### How to Approach (Priority Queue + Relaxation)
+Dijkstra uses a **min-priority queue** to greedily select the next node with the minimum distance:
+1. **Initialize**: Set the distance to all nodes to infinity ($\infty$), and `dist[src] = 0`. Push `(0, src)` into the min-heap.
+2. **Process**: While the heap is not empty:
+   - Pop the node `u` with the smallest accumulated distance `d`.
+   - If `d > dist[u]`, skip it (this is a stale heap entry left from a previous, worse estimate).
+   - For each neighbor `v` connected to `u` with edge weight `w`:
+     - **Relaxation Step**: If `dist[u] + w < dist[v]`, we found a cheaper way to reach `v`. Update `dist[v] = dist[u] + w` and push `(dist[v], v)` into the heap.
+
+### Why Dijkstra Fails with Negative Weights
+Dijkstra is a greedy algorithm. Once it pops a node from the min-heap, it assumes its shortest path is final. This assumption holds only if all edge weights are **non-negative** (adding more edges can only increase or keep path weights same). If negative edges are present, a detour path popped later could have a negative weight that makes the total path cheaper, but Dijkstra will not reprocess the already settled node.
+
+### When to Use Dijkstra
+* Single-source shortest path on a weighted graph with **non-negative weights**.
+  - *LeetCode Link*: [LeetCode 743: Network Delay Time](https://leetcode.com/problems/network-delay-time/)
+* Grids where moving from cell to cell has varying costs (efforts).
+  - *LeetCode Link*: [LeetCode 1631: Path With Minimum Effort](https://leetcode.com/problems/path-with-minimum-effort/)
 
 ```python
 import heapq
@@ -53,15 +65,19 @@ def dijkstra(graph, src):           # graph: {u: [(v, w), ...]}
 
 ## Bellman-Ford — when edges go negative
 
-**When:** edges can be **negative** (Dijkstra's greedy assumption fails), or you
-must **detect a negative cycle**.
+### Why We Need Bellman-Ford
+If a weighted graph contains **negative edge weights**, Dijkstra's greedy choice property is broken and it can yield incorrect results. To solve shortest paths on graphs that might have negative edges, we need the **Bellman-Ford** algorithm. 
+Additionally, if a graph contains a **negative cycle** (a loop whose total weight is less than 0), we can loop through it infinitely to keep decreasing our path cost. Bellman-Ford can detect such cycles.
 
-**How it works:** just relax **every** edge, `V−1` times. The key fact: after round
-k, every shortest path using at most k edges is already correct — and a simple
-shortest path has at most V−1 edges, so V−1 rounds settle them all. Then one *extra*
-round that still improves means a **negative cycle** (you could loop it forever to
-drive the cost down). Slower than Dijkstra at O(V·E), but that's the price of
-handling negatives:
+### How to Approach (Relaxing All Edges V-1 times)
+Instead of using a min-heap to greedily select nodes, Bellman-Ford uses brute-force relaxation on all edges:
+1. **Initialize**: Set distance to all nodes to infinity ($\infty$), and `dist[src] = 0`.
+2. **Iterate $V-1$ times**: Relax **every single edge** in the graph. In iteration $i$, we guarantee that all shortest paths using at most $i$ edges are correctly computed. Since a simple path has at most $V-1$ edges, $V-1$ passes are sufficient.
+3. **Detect Negative Cycles**: Run a $V$-th pass. Relax all edges one more time. If any node's distance decreases, that path must contain a negative cycle $	o$ raise an error.
+
+### When to Use Bellman-Ford
+* Graphs with negative edge weights or when negative cycles must be detected.
+  - *LeetCode Link*: [LeetCode 787: Cheapest Flights Within K Stops](https://leetcode.com/problems/cheapest-flights-within-k-stops/) (where the $K$ stop limit maps perfectly to the $K+1$ iterations of Bellman-Ford).
 
 ```python
 def bellman_ford(edges, V, src):     # edges: [(u, v, w), ...]
