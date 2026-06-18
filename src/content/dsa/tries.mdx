@@ -6,6 +6,20 @@ difficulty: "Foundation"
 tags: ["trie", "strings", "prefix", "fundamentals"]
 ---
 
+## Why We Need a Trie & How to Think About It
+If you want to build a search autocomplete system that suggests words as you type, using a Hash Table or a List would require scanning every single word to check for matching prefixes. This is slow and uses massive redundant memory to store shared prefixes (e.g., storing "cat", "car", "card" separately).
+
+A **Trie (Prefix Tree)** is a specialized tree structure where **paths spell words**. Each node represents a single character, and nodes share common prefixes.
+For example, "car", "cat", and "card" all share the root path `c -> a`. This allows prefix search in $O(L)$ time (where $L$ is the length of the prefix) and optimizes storage by sharing prefix paths.
+
+### When to Use a Trie
+* **Prefix Matching**: Autocomplete systems, spelling check, or checking if any word starts with a specific prefix.
+  - *LeetCode Link*: [LeetCode 208: Implement Trie (Prefix Tree)](https://leetcode.com/problems/implement-trie-prefix-tree/)
+* **Word Searches**: Finding words in a grid where we want to prune paths early.
+  - *LeetCode Link*: [LeetCode 212: Word Search II](https://leetcode.com/problems/word-search-ii/)
+
+---
+
 ## The structure where paths spell words
 
 A **trie** (from re*trie*val, pronounced "try") is a tree for storing
