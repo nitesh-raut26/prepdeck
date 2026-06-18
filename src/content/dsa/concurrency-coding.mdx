@@ -348,3 +348,40 @@ the lower-numbered fork first). Other tactics: acquire all locks at once (no hol
 or use timeouts/try-lock to allow back-off.
 
 </QA>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Concurrency Coding"
+  tiers={[
+    {
+      label: "Foundational",
+      note: "single-primitive problems — understand the lock/condition variable pattern",
+      problems: [
+        { name: "Print in Order", lc: "print-in-order", difficulty: "Easy", trains: "Semaphore signaling — thread A signals thread B to proceed." },
+        { name: "Print FooBar Alternately", lc: "print-foobar-alternately", difficulty: "Medium", trains: "Two semaphores alternating — the simplest producer-consumer." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "the bounded-buffer and barrier problems",
+      problems: [
+        { name: "Print Zero Even Odd", lc: "print-zero-even-odd", difficulty: "Medium", trains: "Three-thread coordination — lock + condition variables." },
+        { name: "Building H2O", lc: "building-h2o", difficulty: "Medium", trains: "Barrier pattern — wait until 2 H + 1 O are ready before releasing." },
+        { name: "The Dining Philosophers", lc: "the-dining-philosophers", difficulty: "Medium", trains: "Deadlock avoidance via lock ordering — the Coffman conditions in practice." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "bounded readers-writers and traffic control",
+      problems: [
+        { name: "Traffic Light Controlled Intersection", lc: "traffic-light-controlled-intersection", difficulty: "Medium", trains: "Mutex-controlled state machine — concurrent access with a single lock." }
+      ]
+    }
+  ]}
+/>
+
+## Visualize producer–consumer thread synchronization
+
+<Visualizer algo="producer-consumer" />
+

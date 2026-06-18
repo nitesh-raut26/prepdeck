@@ -6,20 +6,31 @@ difficulty: "Checklist"
 tags: ["blind-75", "problem-list", "interview-prep"]
 ---
 
-## How to use this list
+## The Blind 75: learn 15 patterns, not 75 answers
 
-The **Blind 75** (a Facebook engineer's curated LeetCode list) endures
-because it's the minimal set covering nearly every pattern interviews
-draw from. Used wrong, it's 75 memorized solutions that evaporate under
-pressure. Used right, it's **~15 patterns, each seen from 3–6 angles** —
-this page groups it that way, with the one-line insight per problem.
+Imagine trying to learn chess by memorizing every famous game move-for-move. You'd do terribly against any player who deviated from those exact games. The right way is to learn **strategic patterns** — pin attacks, forks, endgame techniques — and then *recognize* when to apply them. The Blind 75 works the same way.
 
-Protocol per problem: attempt 25–30 min cold → if stuck, read *only the
-insight* here and try again → solved or not, say the approach out loud in
-one sentence → log it for re-attempt in a week
-(self-rate with the [problem bank](/dsa/problem-bank) flashcards, schedule
-via the [study plan](/dsa/study-plan)). Marking "solved" after reading a
-solution is the cardinal sin — re-derive, days later, or it didn't happen.
+> 🎯 **The insight:** The Blind 75 (a Facebook engineer's curated list) endures because it's the minimal set covering nearly every pattern interviews draw from. Used wrong, it's 75 memorized solutions that evaporate under pressure. Used right, it's **~15 patterns, each seen from 3–6 angles** — this page groups it that way, with the one-line insight per problem.
+
+**Protocol per problem:** attempt 25–30 min cold → if stuck, read *only the insight* here and try again → solved or not, say the approach out loud in one sentence → log it for re-attempt in a week.
+Marking "solved" after reading a solution is the cardinal sin — re-derive days later, or it didn't happen.
+
+## Quick reference — pattern to time complexity
+
+| Pattern | Typical complexity | Key data structure |
+|---|---|---|
+| Hash map | O(n) time, O(n) space | Hash table |
+| Two pointers | O(n) time, O(1) space | Sorted array |
+| Sliding window | O(n) time, O(k) space | Window + hash/set |
+| Stack | O(n) time, O(n) space | Stack |
+| Binary search | O(log n) time, O(1) space | Sorted array |
+| Linked list (fast/slow) | O(n) time, O(1) space | Pointers |
+| Tree recursion | O(n) time, O(h) space | Recursion stack |
+| BFS | O(V+E) time, O(V) space | Queue |
+| Heap | O(n log k) time, O(k) space | Priority queue |
+| Backtracking | O(2^n) worst | Recursion |
+| DP (1-D) | O(n) time, O(n) space | Array |
+| DP (2-D) | O(m·n) time, O(m·n) space | Matrix |
 
 ## Arrays & Hashing — [hash tables](/dsa/hash-tables), [arrays](/dsa/arrays-and-strings)
 
@@ -35,6 +46,58 @@ solution is the cardinal sin — re-derive, days later, or it didn't happen.
 | Valid Anagram | counting dict |
 | Longest Consecutive Sequence | set + only start counting at left edges (x−1 absent) |
 | Encode/Decode Strings | length-prefix framing — delimiters alone can't be safe |
+
+```python
+# Two Sum — the hash map template
+def two_sum(nums, target):
+    seen = {}
+    for i, x in enumerate(nums):
+        if target - x in seen:
+            return [seen[target - x], i]
+        seen[x] = i
+    return []
+
+# Maximum Subarray — Kadane's algorithm
+def max_subarray(nums):
+    curr_sum = max_sum = nums[0]
+    for n in nums[1:]:
+        curr_sum = max(n, curr_sum + n)  # reset if negative prefix
+        max_sum = max(max_sum, curr_sum)
+    return max_sum
+```
+
+```java
+// Two Sum in Java
+import java.util.HashMap;
+public class Solution {
+    public int[] twoSum(int[] nums, int target) {
+        HashMap<Integer, Integer> seen = new HashMap<>();
+        for (int i = 0; i < nums.length; i++) {
+            int partner = target - nums[i];
+            if (seen.containsKey(partner))
+                return new int[]{seen.get(partner), i};
+            seen.put(nums[i], i);
+        }
+        return new int[]{};
+    }
+}
+```
+
+```cpp
+// Two Sum in C++
+#include <unordered_map>
+#include <vector>
+using namespace std;
+vector<int> twoSum(vector<int>& nums, int target) {
+    unordered_map<int, int> seen;
+    for (int i = 0; i < (int)nums.size(); i++) {
+        int partner = target - nums[i];
+        if (seen.count(partner)) return {seen[partner], i};
+        seen[nums[i]] = i;
+    }
+    return {};
+}
+```
 
 ## Two Pointers — [doc](/dsa/two-pointers)
 
@@ -92,6 +155,45 @@ solution is the cardinal sin — re-derive, days later, or it didn't happen.
 | Construct from Preorder + Inorder | preorder[0] is root; inorder splits children |
 | Binary Tree Max Path Sum | post-order: best one-leg path up vs best arch through |
 | Serialize/Deserialize | preorder with null markers |
+
+```python
+# Tree max depth — the 3-line template every tree problem starts from
+def max_depth(root):
+    if not root:
+        return 0
+    return 1 + max(max_depth(root.left), max_depth(root.right))
+
+# Level order traversal — BFS queue
+from collections import deque
+def level_order(root):
+    if not root: return []
+    result, queue = [], deque([root])
+    while queue:
+        level = []
+        for _ in range(len(queue)):  # freeze current level size
+            node = queue.popleft()
+            level.append(node.val)
+            if node.left: queue.append(node.left)
+            if node.right: queue.append(node.right)
+        result.append(level)
+    return result
+```
+
+```java
+// Tree max depth — Java
+public int maxDepth(TreeNode root) {
+    if (root == null) return 0;
+    return 1 + Math.max(maxDepth(root.left), maxDepth(root.right));
+}
+```
+
+```cpp
+// Tree max depth — C++
+int maxDepth(TreeNode* root) {
+    if (!root) return 0;
+    return 1 + max(maxDepth(root->left), maxDepth(root->right));
+}
+```
 
 ## Tries — [doc](/dsa/tries)
 
@@ -169,6 +271,31 @@ intervals need greedy). Two groups per week with re-attempts is a realistic
 scheduling, then graduate to <a href="/dsa/mock-drills">mock drills</a>.
 </Callout>
 
+## Think it through
+
+<ThinkThrough
+  title="Pattern Speed Round: 3 Classic Problems"
+  difficulty="Foundation — name the pattern before looking"
+  problem="Time yourself: for each of the three problems below, name the pattern and state the time/space complexity BEFORE revealing. (1) 'Climb to the top of a staircase with 1 or 2 steps at a time — how many distinct ways?' (2) 'Given n courses with prerequisites, determine if you can finish all courses.' (3) 'Find the length of the longest increasing subsequence in an array.'"
+  stages={[
+    {
+      label: "Climbing Stairs",
+      prompt: "It's asking to count 'distinct ways' to reach a target. Choices compound. What does this remind you of?",
+      reveal: "DP — specifically Fibonacci! ways(n) = ways(n-1) + ways(n-2). To reach step n, you came from step n-1 (took 1 step) or step n-2 (took 2 steps). O(n) time, O(1) space with two variables."
+    },
+    {
+      label: "Course Schedule",
+      prompt: "Courses depend on other courses. What happens if course A requires B, which requires A?",
+      reveal: "That's a cycle in a directed graph → it's impossible! This is cycle detection = topological sort. Use Kahn's BFS algorithm: build in-degree array, process nodes with in-degree 0, decrement neighbors. If all nodes are processed → no cycle → feasible. O(V+E)."
+    },
+    {
+      label: "Longest Increasing Subsequence",
+      prompt: "You're looking for a subsequence — elements don't need to be contiguous. The word 'longest' + 'subsequence' is a classic DP signal. State the recurrence.",
+      reveal: "dp[i] = length of LIS ending at index i. Transition: dp[i] = 1 + max(dp[j]) for all j < i where arr[j] < arr[i]. O(n²). For O(n log n): use patience sorting — binary search each element into a 'tails' array that tracks the minimum possible ending element for each length."
+    }
+  ]}
+/>
+
 ## Interview perspective
 
 <QA q="You've 'done' the Blind 75 but blank in real interviews. What went wrong, and what's the fix?">
@@ -199,8 +326,90 @@ pattern-match step fast.
 
 </QA>
 
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Blind 75 Patterns"
+  tiers={[
+    {
+      label: "Must-do first",
+      note: "these 5 cover 3 patterns — your minimum viable set",
+      problems: [
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "Hash map complement lookup." },
+        { name: "Best Time to Buy and Sell Stock", lc: "best-time-to-buy-and-sell-stock", difficulty: "Easy", trains: "One-pass running min — window in disguise." },
+        { name: "Valid Parentheses", lc: "valid-parentheses", difficulty: "Easy", trains: "Stack — LIFO for nesting." },
+        { name: "Climbing Stairs", lc: "climbing-stairs", difficulty: "Easy", trains: "Fibonacci DP — entry 1-D DP." },
+        { name: "Maximum Subarray", lc: "maximum-subarray", difficulty: "Medium", trains: "Kadane's — reset when prefix goes negative." }
+      ]
+    },
+    {
+      label: "Core group",
+      note: "cover the heavy-hitter patterns",
+      problems: [
+        { name: "Coin Change", lc: "coin-change", difficulty: "Medium", trains: "Bottom-up DP — the greedy-fails demo." },
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "BFS/DFS flood fill — connected components." },
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "Sliding window." },
+        { name: "Reverse Linked List", lc: "reverse-linked-list", difficulty: "Easy", trains: "Three-pointer linked list template." },
+        { name: "Binary Tree Level Order Traversal", lc: "binary-tree-level-order-traversal", difficulty: "Medium", trains: "BFS on tree — queue + level size." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "compound and hard problems",
+      problems: [
+        { name: "Merge K Sorted Lists", lc: "merge-k-sorted-lists", difficulty: "Hard", trains: "Min-heap of k heads — O(N log k)." },
+        { name: "Word Search II", lc: "word-search-ii", difficulty: "Hard", trains: "Trie pruning + backtracking grid search." },
+        { name: "Find Median from Data Stream", lc: "find-median-from-data-stream", difficulty: "Hard", trains: "Two-heap balance trick." }
+      ]
+    }
+  ]}
+/>
+
 ## Practice
 
 The page *is* the practice. Track group-by-group; when all groups are
 green twice, you're ready for [mock drills](/dsa/mock-drills) — the last
 step before the real thing.
+
+## Check yourself — 75 problems, 15 patterns
+
+<Quiz questions={[
+  {
+    q: "The Blind 75's core value is teaching you to:",
+    options: [
+      "Recognize ~15 patterns from different angles, not memorize 75 specific solutions",
+      "Memorize the exact code for each of the 75 problems",
+      "Solve 75 problems as fast as possible by reading solutions",
+      "Only practice Easy and Medium LeetCode problems"
+    ],
+    answer: 0,
+    explain: "Pattern recognition is the skill. 'Two Sum' teaches the hash-map complement pattern; 'Group Anagrams' applies the same pattern with a different key. Learn the pattern, see it from multiple angles."
+  },
+  {
+    q: "You've read solutions to 50 Blind 75 problems and feel confident. But in a mock interview you blank. What happened?",
+    options: [
+      "Recognition memory (reading) doesn't transfer to retrieval (coding from blank). You need to re-derive problems cold.",
+      "50 problems isn't enough — you need all 75",
+      "You should have memorized more code",
+      "Mock interviews are harder than real ones"
+    ],
+    answer: 0,
+    explain: "Recognition memory = 'I remember seeing this.' Retrieval memory = 'I can produce this from nothing under pressure.' Only spaced re-derivation builds retrieval. Mark a problem done only after solving it cold 3+ days later."
+  },
+  {
+    q: "'Binary Tree Max Path Sum' — you can go left subtree only, right subtree only, or through root. Which traversal builds this?",
+    options: [
+      "Post-order — compute left and right subtree results first, then decide at the root",
+      "Pre-order — decide at root before visiting children",
+      "Level-order BFS — process level by level",
+      "In-order — left, root, right"
+    ],
+    answer: 0,
+    explain: "Post-order is the natural fit for problems where a node's answer depends on its children's answers. Compute max one-directional path from left (max(left, 0)) and right (max(right, 0)), then update the global max with left + root.val + right, and return the best single-direction path up to the parent."
+  }
+]} />
+
+## Visualize BFS level-order traversal
+
+<Visualizer algo="bfs-tree" />
+

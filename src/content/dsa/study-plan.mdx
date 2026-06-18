@@ -5,6 +5,12 @@ order: 1
 tags: ["complexity", "big-o", "patterns", "interview"]
 ---
 
+## Your GPS before writing a single line of code
+
+Imagine you're lost in a city and need to get somewhere fast. You wouldn't just start running in a random direction — you'd look at a map first, find your location, figure out the fastest route, and *then* move. DSA interviews are the same. **Big-O complexity is your map.** The constraint in the problem statement (n ≤ 10⁵) tells you exactly which "road" you're allowed to take before you've solved anything.
+
+> 🧭 **The navigator's reflex:** Before writing any code, read `n`. If n ≤ 10⁵ and time limit is 1 second, an O(n²) solution would need ~10¹⁰ operations — roughly 100 seconds. That's impossible. Your map says: take the O(n log n) road. This single reflex separates strong candidates from everyone else.
+
 ## What SDE2 DSA actually tests
 
 Not "do you know the trick" — it's: can you **recognize the pattern**, **state
@@ -12,30 +18,30 @@ the complexity**, **write clean code**, **handle edge cases**, and **communicate
 while doing it. Talk through the brute force, name the bottleneck, then optimize.
 A working O(n log n) you can explain beats a buggy O(n) you can't.
 
-## Big-O you must recognize on sight
+## Big-O complexity: cheat sheet
 
-| Complexity | Name | Typical source |
-|---|---|---|
-| O(1) | constant | hash lookup, array index |
-| O(log n) | logarithmic | binary search, balanced tree, heap push/pop |
-| O(n) | linear | single pass, two pointers |
-| O(n log n) | linearithmic | sorting, heap-based, divide & conquer |
-| O(n²) | quadratic | nested loops, naive pair comparison |
-| O(2ⁿ) | exponential | subsets, naive recursion without memo |
-| O(n!) | factorial | permutations |
+| Complexity | Name | Typical source | Example |
+|---|---|---|---|
+| O(1) | constant | hash lookup, array index | `dict[key]`, `arr[i]` |
+| O(log n) | logarithmic | binary search, balanced tree, heap push/pop | Binary search on sorted array |
+| O(n) | linear | single pass, two pointers | Finding max in array |
+| O(n log n) | linearithmic | sorting, heap-based, divide & conquer | Merge sort, heap sort |
+| O(n²) | quadratic | nested loops, naive pair comparison | Bubble sort, brute-force pairs |
+| O(2ⁿ) | exponential | subsets, naive recursion without memo | All subsets of array |
+| O(n!) | factorial | permutations | All arrangements of n items |
 
 ## The input-size → complexity trick
 
 The constraint tells you the target complexity before you've solved anything:
 
-| n up to | Likely target |
-|---|---|
-| ≤ 10–12 | O(n!) / O(2ⁿ) — backtracking/brute force is fine |
-| ≤ 20–25 | O(2ⁿ) bitmask DP |
-| ≤ 500 | O(n³) |
-| ≤ 5,000 | O(n²) |
-| ≤ 10⁶ | O(n) or O(n log n) |
-| ≥ 10⁸ | O(log n) or O(1) |
+| n up to | Likely target | Example algorithm |
+|---|---|---|
+| ≤ 10–12 | O(n!) / O(2ⁿ) — backtracking/brute force is fine | All permutations |
+| ≤ 20–25 | O(2ⁿ) bitmask DP | Bitmask DP over subsets |
+| ≤ 500 | O(n³) | Floyd-Warshall |
+| ≤ 5,000 | O(n²) | O(n²) DP |
+| ≤ 10⁶ | O(n) or O(n log n) | Sorting, BFS, sliding window |
+| ≥ 10⁸ | O(log n) or O(1) | Binary search, hash lookup |
 
 <Callout type="tip" title="Use the constraints out loud">
 "n is up to 10⁵, so an O(n²) ~10¹⁰ won't pass — I need O(n log n) or better."
@@ -44,18 +50,18 @@ Saying this signals maturity and narrows your options immediately.
 
 ## Pattern recognition — signal → technique
 
-| If you see… | Reach for |
-|---|---|
-| contiguous subarray/substring, "longest/at most K" | **Sliding window** |
-| sorted array, pair/triplet summing to target | **Two pointers** |
-| "search space", "minimum X that works", monotonic | **Binary search (on answer)** |
-| grid/graph, shortest path (unweighted), levels | **BFS** |
-| connectivity, all paths, cycles, components | **DFS / Union-Find** |
-| "number of ways", "min/max cost", overlapping subproblems | **DP** |
-| top/smallest K, streaming median, merge K lists | **Heap** |
-| all combinations/permutations/subsets | **Backtracking** |
-| next greater/smaller, matching brackets | **Monotonic stack** |
-| prefix aggregates, range sum | **Prefix sums** |
+| If you see… | Reach for | Why |
+|---|---|---|
+| contiguous subarray/substring, "longest/at most K" | **Sliding window** | Grow/shrink a range without re-scanning |
+| sorted array, pair/triplet summing to target | **Two pointers** | Move inward from both ends |
+| "search space", "minimum X that works", monotonic | **Binary search (on answer)** | Feasibility flips once → binary search the threshold |
+| grid/graph, shortest path (unweighted), levels | **BFS** | Level-by-level = shortest unweighted path |
+| connectivity, all paths, cycles, components | **DFS / Union-Find** | Explore all neighbors recursively or track groups |
+| "number of ways", "min/max cost", overlapping subproblems | **DP** | Sub-questions repeat → answer each once |
+| top/smallest K, streaming median, merge K lists | **Heap** | Always O(log k) access to current best |
+| all combinations/permutations/subsets | **Backtracking** | Choose → explore → un-choose |
+| next greater/smaller, matching brackets | **Monotonic stack** | LIFO matches nesting and recency |
+| prefix aggregates, range sum | **Prefix sums** | Precompute sums so any range is O(1) |
 
 ## How to communicate while coding
 
@@ -65,6 +71,65 @@ Saying this signals maturity and narrows your options immediately.
 3. Name the bottleneck and the pattern that removes it.
 4. Code, narrating invariants.
 5. Dry-run a small example; then state final time/space.
+
+## Complexity examples in code
+
+```python
+# O(n) — single pass, two-pointer style
+def two_sum_sorted(arr, target):
+    left, right = 0, len(arr) - 1
+    while left < right:
+        s = arr[left] + arr[right]
+        if s == target:
+            return [left, right]
+        elif s < target:
+            left += 1
+        else:
+            right -= 1
+    return []
+
+# O(n log n) — sort then linear scan
+def contains_duplicate(nums):
+    nums.sort()              # O(n log n)
+    for i in range(len(nums) - 1):   # O(n)
+        if nums[i] == nums[i + 1]:
+            return True
+    return False
+```
+
+```java
+// O(n) — hash map lookup
+import java.util.HashMap;
+
+public class TwoSum {
+    public int[] twoSum(int[] nums, int target) {
+        HashMap<Integer, Integer> seen = new HashMap<>();
+        for (int i = 0; i < nums.length; i++) {
+            int complement = target - nums[i];
+            if (seen.containsKey(complement)) {
+                return new int[]{seen.get(complement), i};
+            }
+            seen.put(nums[i], i);
+        }
+        return new int[]{};  // guaranteed to have solution
+    }
+}
+```
+
+```cpp
+// O(n log n) — sort + binary search
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+bool containsDuplicate(vector<int>& nums) {
+    sort(nums.begin(), nums.end());  // O(n log n)
+    for (int i = 0; i + 1 < (int)nums.size(); i++) {
+        if (nums[i] == nums[i + 1]) return true;
+    }
+    return false;
+}
+```
 
 ## Think it through
 
@@ -124,3 +189,95 @@ clearly-explained suboptimal solution plus an articulate optimization plan score
 far better than a half-finished clever attempt that doesn't run.
 
 </QA>
+
+<QA q="How do you read Big-O complexity from code?">
+
+Count loops and what they do. A single loop over n → O(n). Two nested loops both running to n → O(n²). Binary search or halving the search space each step → O(log n). Sorting a collection of n items → O(n log n). The key question: "is this inner loop re-doing work the outer loop already did?" If yes, that's the optimization opportunity.
+
+</QA>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Big-O and Patterns"
+  tiers={[
+    {
+      label: "Foundation",
+      note: "read complexity from code",
+      problems: [
+        { name: "Contains Duplicate", lc: "contains-duplicate", difficulty: "Easy", trains: "Hash set O(n) vs sort O(n log n) — understand the trade-off." },
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "Classic O(n²) → O(n) via hash map upgrade." }
+      ]
+    },
+    {
+      label: "Pattern recognition",
+      note: "map clues to techniques",
+      problems: [
+        { name: "Best Time to Buy and Sell Stock", lc: "best-time-to-buy-and-sell-stock", difficulty: "Easy", trains: "One pass, track running min — O(n) vs O(n²) brute force." },
+        { name: "Valid Anagram", lc: "valid-anagram", difficulty: "Easy", trains: "Count arrays or sorting — two O(n log n) vs O(n) approaches." },
+        { name: "Product of Array Except Self", lc: "product-of-array-except-self", difficulty: "Medium", trains: "Prefix + suffix passes — O(n) time O(1) space (beyond output)." }
+      ]
+    },
+    {
+      label: "Constraint reading",
+      note: "use n to pick your algorithm",
+      problems: [
+        { name: "Longest Consecutive Sequence", lc: "longest-consecutive-sequence", difficulty: "Medium", trains: "O(n) set-based vs O(n log n) sort — constraints demand O(n)." }
+      ]
+    }
+  ]}
+/>
+
+## Check yourself — pattern recognition speed test
+
+<Quiz questions={[
+  {
+    q: "n = 5,000. Which complexity classes are feasible (< 1 second)?",
+    options: [
+      "O(n²) and better — 5000² = 25M, comfortable; O(n³) = 125B, too slow",
+      "Only O(n log n) and better",
+      "All complexities including O(2^n)",
+      "Only O(n) and O(1)"
+    ],
+    answer: 0,
+    explain: "Rule of thumb: ~10⁸ ops/sec. n=5000, O(n²) = 25M — fine. O(n³) = 125B — too slow. So n ≤ 5,000 targets O(n²) algorithms like O(n²) DP."
+  },
+  {
+    q: "A problem says 'return all subsets'. What complexity do you expect?",
+    options: [
+      "O(2^n) — every subset must be generated, and there are 2^n of them",
+      "O(n log n) — similar to sorting",
+      "O(n²) — nested loops over elements",
+      "O(n) — single pass over elements"
+    ],
+    answer: 0,
+    explain: "Each element is either in or out of each subset → 2^n subsets total. If n ≤ 20, this is feasible (~1M). If n = 30, it's ~1B — too slow."
+  },
+  {
+    q: "You see: 'Find the longest contiguous subarray with sum ≤ K'. Which pattern?",
+    options: [
+      "Sliding window — 'longest subarray with condition' is the classic trigger phrase",
+      "Binary search on the answer",
+      "DP — subproblems repeat",
+      "Two pointers from both ends"
+    ],
+    answer: 0,
+    explain: "'Longest contiguous subarray/substring with condition' → sliding window. Grow right, shrink left when condition breaks. O(n) time."
+  },
+  {
+    q: "What's the 'talking out loud' sentence to say when you see n ≤ 10⁵?",
+    options: [
+      "'n is 10⁵, so O(n²) is 10¹⁰ — about 100 seconds, too slow. I need O(n log n) or better.'",
+      "'n is 10⁵, so any complexity works.'",
+      "'n is 10⁵, so I should use backtracking.'",
+      "'n is 10⁵, so I need O(n!) for completeness.'"
+    ],
+    answer: 0,
+    explain: "This sentence is the single highest-value thing you can say in the first minute of an interview. It proves you read the constraint, know the target complexity, and rule out slow approaches before coding."
+  }
+]} />
+
+## Visualize complexity growth
+
+<Visualizer algo="complexity-growth" />
+

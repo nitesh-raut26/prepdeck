@@ -6,6 +6,12 @@ difficulty: "Training"
 tags: ["mock-interview", "practice", "interview-prep"]
 ---
 
+## Why mock drills matter: the flight simulator analogy
+
+Pilots don't learn to fly in real planes from day one — they train in flight simulators. The simulator recreates the stress, the instruments, the edge cases, all without real consequences. Mock drills are **your flight simulator for coding interviews**. You might know every pattern cold, but performing under a clock, with someone watching, while narrating your thoughts — that's a completely different skill that only deliberate practice builds.
+
+> 🎮 **The rule:** Once you can consistently score ≥4/5 on 3 consecutive Format A drills, you're interview-ready on this axis. Most candidates who "know DSA" skip drills and discover this gap in real interviews. Don't be that candidate.
+
 ## The gap drills close
 
 Knowing the [patterns](/dsa/blind-75) and performing under observation are
@@ -14,6 +20,17 @@ typing, and recovery-from-stuck — none of which LeetCode-in-silence trains.
 Drills install those. The good news: the performance layer is *more*
 trainable than the algorithmic one, and it's where most prepared candidates
 actually fail.
+
+## Complexity & time budgets
+
+| UMPIRE phase | Time budget (35-min problem) | What you're proving |
+|---|---|---|
+| **U** — Understand | ~5 min | You won't code the wrong problem |
+| **M** — Match | ~3 min | Pattern recognition is trained |
+| **P** — Plan | ~5 min | You can reason before coding |
+| **I** — Implement | ~15 min | You code cleanly under pressure |
+| **R** — Review | ~5 min | You catch your own bugs |
+| **E** — Evaluate | ~2 min | You know your solution's cost |
 
 ## The protocol: UMPIRE
 
@@ -41,6 +58,97 @@ what keeps you calm when the problem is hostile:
 Time budget for a 35-minute problem: ~5 / 3 / 5 / 15 / 5 / 2. The most
 common self-sabotage is jumping U→I in ninety seconds; the second most
 common is polishing P forever and never finishing I.
+
+## Code: the patterns you'll use in drills
+
+The most common patterns you'll implement in drills — with the exact code structure:
+
+```python
+# Sliding window template — used in ~30% of medium problems
+def sliding_window(s, k):
+    window = {}
+    left = result = 0
+    for right, ch in enumerate(s):
+        window[ch] = window.get(ch, 0) + 1  # expand right
+        while len(window) > k:              # shrink until valid
+            window[s[left]] -= 1
+            if window[s[left]] == 0:
+                del window[s[left]]
+            left += 1
+        result = max(result, right - left + 1)
+    return result
+
+# BFS template — for all grid/graph shortest-path drills
+from collections import deque
+def bfs(grid, start):
+    rows, cols = len(grid), len(grid[0])
+    queue = deque([(start[0], start[1], 0)])  # (row, col, distance)
+    visited = {start}
+    while queue:
+        r, c, dist = queue.popleft()
+        for dr, dc in [(0,1),(1,0),(0,-1),(-1,0)]:  # 4-directional
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and (nr,nc) not in visited:
+                visited.add((nr, nc))
+                queue.append((nr, nc, dist + 1))
+```
+
+```java
+// BFS template in Java
+import java.util.*;
+
+public int bfs(int[][] grid, int[] start) {
+    int rows = grid.length, cols = grid[0].length;
+    Queue<int[]> queue = new LinkedList<>();
+    Set<String> visited = new HashSet<>();
+    queue.offer(new int[]{start[0], start[1], 0});
+    visited.add(start[0] + "," + start[1]);
+    int[][] dirs = {{0,1},{1,0},{0,-1},{-1,0}};
+    while (!queue.isEmpty()) {
+        int[] curr = queue.poll();
+        int r = curr[0], c = curr[1], dist = curr[2];
+        for (int[] dir : dirs) {
+            int nr = r + dir[0], nc = c + dir[1];
+            String key = nr + "," + nc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols
+                && !visited.contains(key)) {
+                visited.add(key);
+                queue.offer(new int[]{nr, nc, dist + 1});
+            }
+        }
+    }
+    return -1;  // unreachable
+}
+```
+
+```cpp
+// BFS template in C++
+#include <queue>
+#include <vector>
+#include <set>
+using namespace std;
+
+int bfs(vector<vector<int>>& grid, pair<int,int> start) {
+    int rows = grid.size(), cols = grid[0].size();
+    queue<tuple<int,int,int>> q;
+    set<pair<int,int>> visited;
+    q.push({start.first, start.second, 0});
+    visited.insert(start);
+    int dirs[4][2] = {{0,1},{1,0},{0,-1},{-1,0}};
+    while (!q.empty()) {
+        auto [r, c, dist] = q.front(); q.pop();
+        for (auto& d : dirs) {
+            int nr = r + d[0], nc = c + d[1];
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols
+                && !visited.count({nr, nc})) {
+                visited.insert({nr, nc});
+                q.push({nr, nc, dist + 1});
+            }
+        }
+    }
+    return -1;
+}
+```
 
 ## Drill formats
 
@@ -119,6 +227,42 @@ Memorize the ladder, climb it out loud:
   which rubric axis dipped, one fix for next time — doubles the value of
   the hour.
 
+## Think it through
+
+<ThinkThrough
+  title="UMPIRE on a Real Problem: Number of Islands"
+  difficulty="Medium — practice the protocol, not just the code"
+  problem="Given an m×n grid of '1's (land) and '0's (water), count the number of islands. An island is surrounded by water and formed by connecting adjacent lands horizontally or vertically."
+  stages={[
+    {
+      label: "U — Understand",
+      prompt: "Restate the problem. What are the constraints? What are the edge cases?",
+      reveal: "We're counting connected components of '1's in a grid. Constraints: grid size can be up to 300×300. Edge cases: all water (0 islands), all land (1 island), single cell, grid with disconnected land pieces that look connected diagonally (but aren't — we use 4-directional only). Ask: 'Is diagonal connectivity included?' — almost always no."
+    },
+    {
+      label: "M — Match",
+      prompt: "What pattern does 'connected regions in a grid' match?",
+      reveal: "Graph connectivity problem → BFS or DFS. Every land cell is a node; edges connect adjacent '1' cells. We want to count connected components. DFS is simpler to code; BFS is iterative (no stack overflow risk for huge grids)."
+    },
+    {
+      label: "P — Plan",
+      prompt: "State your approach in 3 sentences before writing code.",
+      reveal: "Scan every cell. When we hit an unvisited '1', increment count and flood-fill (mark visited) the entire island via BFS/DFS. Continue scanning; the count at the end is the answer. Time: O(m×n), Space: O(m×n) for the visited set (or O(min(m,n)) BFS queue)."
+    },
+    {
+      label: "I — Implement",
+      prompt: "Write the BFS version. What's the key implementation detail?",
+      reveal: "Mark a cell visited BEFORE adding to queue (not after popping) to prevent adding the same cell multiple times. Use a visited set or modify grid in-place ('1' → '0').",
+      code: "def num_islands(grid):\n    if not grid: return 0\n    rows, cols = len(grid), len(grid[0])\n    count = 0\n    for r in range(rows):\n        for c in range(cols):\n            if grid[r][c] == '1':\n                count += 1\n                # BFS flood fill\n                queue = deque([(r, c)])\n                grid[r][c] = '0'  # mark visited (in-place)\n                while queue:\n                    row, col = queue.popleft()\n                    for dr, dc in [(0,1),(1,0),(0,-1),(-1,0)]:\n                        nr, nc = row + dr, col + dc\n                        if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == '1':\n                            grid[nr][nc] = '0'\n                            queue.append((nr, nc))\n    return count"
+    },
+    {
+      label: "R — Review + E — Evaluate",
+      prompt: "Trace through a small example. Then state time/space.",
+      reveal: "Example: [['1','1','0'],['0','1','0'],['0','0','1']] → 2 islands. Trace: cell (0,0) triggers BFS, floods (0,1) and (1,1). Cell (2,2) triggers second BFS. Count = 2. Time: O(m×n) — each cell visited once. Space: O(m×n) worst case for queue (all-land grid). Trade-off: modifying input in-place saves a visited set but mutates the grid — mention this and ask if that's acceptable."
+    }
+  ]}
+/>
+
 ## Interview perspective
 
 <QA q="What does an interviewer's feedback form actually contain, and how should that change your practice?">
@@ -162,6 +306,40 @@ the last week is making existing knowledge *retrievable*, not adding more.
 
 </QA>
 
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Mock Drill Problems"
+  tiers={[
+    {
+      label: "Format A warm-up",
+      note: "well-structured mediums — practice the full UMPIRE protocol",
+      problems: [
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "Classic BFS/DFS flood fill — perfect UMPIRE practice." },
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "Sliding window — state window invariant while coding." },
+        { name: "Binary Tree Level Order Traversal", lc: "binary-tree-level-order-traversal", difficulty: "Medium", trains: "BFS on tree — narrate the level-size trick." }
+      ]
+    },
+    {
+      label: "Format B pressure set",
+      note: "mix of difficulties — practice pacing decisions",
+      problems: [
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "Bank it fast (< 10 min) — don't over-engineer the easy one." },
+        { name: "Coin Change", lc: "coin-change", difficulty: "Medium", trains: "DP — state the greedy trap before coding." },
+        { name: "Word Search", lc: "word-search", difficulty: "Medium", trains: "Grid backtracking — mark/unmark visited carefully." }
+      ]
+    },
+    {
+      label: "Format D — recovery reps",
+      note: "hard problems — practice the stuck-script, not the solution",
+      problems: [
+        { name: "Trapping Rain Water", lc: "trapping-rain-water", difficulty: "Hard", trains: "Practice the brute force → prefix/suffix → two-pointer progression out loud." },
+        { name: "Serialize and Deserialize Binary Tree", lc: "serialize-and-deserialize-binary-tree", difficulty: "Hard", trains: "Pre-order with null markers — reason about the encoding contract." }
+      ]
+    }
+  ]}
+/>
+
 ## Practice
 
 1. **Today:** one Format A drill, spoken, timed, scored. Note which UMPIRE
@@ -177,3 +355,46 @@ the last week is making existing knowledge *retrievable*, not adding more.
 
 That completes Level 4. From here the roadmap climbs the design ladder:
 [LLD](/lld/oop-and-solid) and [HLD](/hld/approach).
+
+## Check yourself — drill discipline
+
+<Quiz questions={[
+  {
+    q: "Which UMPIRE phase do most candidates skip, directly causing interview failures?",
+    options: [
+      "U (Understand) — jumping straight to code without confirming the problem and edge cases",
+      "I (Implement) — taking too long to write code",
+      "E (Evaluate) — forgetting to state complexity",
+      "R (Review) — not tracing through examples"
+    ],
+    answer: 0,
+    explain: "The most common failure: coding the wrong problem. 90 seconds of Understand prevents 30 minutes of wasted implementation. Ask: 'So if the input is [empty array], you'd expect [X]?' It also shows you think about edge cases — a senior signal."
+  },
+  {
+    q: "You're drilling alone. Should you narrate your thinking out loud?",
+    options: [
+      "Yes — narration is a motor skill. Silent practice doesn't build the habit needed under interview pressure.",
+      "No — narration slows you down and wastes time",
+      "Only in human mock interviews, not solo practice",
+      "Only when you're stuck"
+    ],
+    answer: 0,
+    explain: "Narration is graded independently from correctness in most rubrics. A candidate who narrates imperfect code with clear reasoning often scores higher than one who silently writes perfect code. Build the habit in solo drills, or it won't exist under pressure."
+  },
+  {
+    q: "Your approach collapses at minute 20 of a 35-minute problem. Best move?",
+    options: [
+      "Say so clearly, salvage what's true, and offer the brute-force working in 5 minutes",
+      "Stay silent and keep thinking until you find the right approach",
+      "Ask for a completely different problem",
+      "Start over from scratch without telling the interviewer"
+    ],
+    answer: 0,
+    explain: "A composed recovery is one of the strongest interview signals — 'production approaches collapse weekly; I watch what this person does under fire.' A working brute force + clear recovery reasoning often scores better than a half-finished optimal solution."
+  }
+]} />
+
+## Visualize the UMPIRE protocol timing
+
+<Visualizer algo="umpire-timer" />
+

@@ -6,6 +6,14 @@ difficulty: "Core pattern"
 tags: ["greedy", "intervals", "exchange-argument"]
 ---
 
+## The lightbulb moment: the Greedy Buffet
+
+Imagine a **buffet dinner** where you want to eat the maximum number of dishes, but each dish takes a different amount of time. You only have 2 hours. A greedy person grabs the dish that finishes **fastest** every single time. Why? Because finishing a fast dish wastes the least time, leaving maximum opportunity for more dishes afterward. That's the entire greedy insight: **choose what ends earliest (or costs least), so you leave maximum room for the future**.
+
+The danger: a greedy strategy only works when the "locally best" choice **never blocks a globally better outcome**. Like the buffet — it doesn't work if some dishes can only be eaten in a specific order (dependencies break greedy). Proving "it's safe to be greedy" is the whole skill.
+
+> 🧠 **Coin change trap:** With coins {1, 3, 4}, making 6 cents: greedy picks 4+1+1 = 3 coins. Optimal is 3+3 = 2 coins. Greedy **failed** because taking 4 blocked using two 3s. Same structure, different numbers — greedy can break. This is why you always test with a small example before trusting it!
+
 ## The pattern
 
 A **greedy algorithm** builds the solution one step at a time, always taking
@@ -28,6 +36,19 @@ Coin change is the canonical fence: with coins {1, 5, 10, 25}, greedy
 gives 4+1+1 (three coins); optimal is 3+3 (two). **Same problem, different
 data, greedy breaks** — which is why "would greedy work here?" must be
 followed by "why?".
+
+## Complexity at a glance
+
+| Problem | Time | Space | Key insight |
+|---|---|---|---|
+| Max non-overlapping meetings | O(n log n) | O(1) | Sort by end time |
+| Jump Game | O(n) | O(1) | Track farthest reachable index |
+| Jump Game II (min jumps) | O(n) | O(1) | BFS levels on reachable range |
+| Gas Station | O(n) | O(1) | Reset start when tank goes negative |
+| Fractional Knapsack | O(n log n) | O(1) | Sort by value/weight ratio |
+| Task Scheduler | O(n log n) | O(n) | Most-frequent task determines idle time |
+| Partition Labels | O(n) | O(1) | Last-occurrence map + cut greedily |
+| Candy distribution | O(n) | O(n) | Two passes — left then right constraints |
 
 ## Watch a correct greedy run
 
@@ -65,6 +86,46 @@ def max_meetings(intervals):
     return count
 ```
 
+```java
+import java.util.Arrays;
+
+public class MaxMeetings {
+    public static int maxMeetings(int[][] intervals) {
+        // Sort by END time — the greedy insight
+        Arrays.sort(intervals, (a, b) -> a[1] - b[1]);
+        int count = 0;
+        int freeAt = Integer.MIN_VALUE;
+        for (int[] interval : intervals) {
+            if (interval[0] >= freeAt) {   // doesn't overlap last pick
+                count++;
+                freeAt = interval[1];
+            }
+        }
+        return count;
+    }
+}
+```
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int maxMeetings(vector<pair<int,int>>& intervals) {
+    // Sort by END time — the greedy insight
+    sort(intervals.begin(), intervals.end(),
+         [](auto& a, auto& b){ return a.second < b.second; });
+    int count = 0, freeAt = INT_MIN;
+    for (auto& [start, end] : intervals) {
+        if (start >= freeAt) {    // doesn't overlap last pick
+            count++;
+            freeAt = end;
+        }
+    }
+    return count;
+}
+```
+
 Sorting by *start* time or by *duration* both fail (build a 3-interval
 counterexample for each — genuinely worth doing once). The pattern of the
 whole genre: **greedy = sort by the right key + one linear pass**; the
@@ -90,6 +151,28 @@ def can_jump(nums):                  # Jump Game: each value = max jump length
         if i > reach: return False   # gap we can never cross
         reach = max(reach, i + step) # greedily extend the frontier
     return True
+```
+
+```java
+public boolean canJump(int[] nums) {
+    int reach = 0;
+    for (int i = 0; i < nums.length; i++) {
+        if (i > reach) return false;       // gap we can never cross
+        reach = Math.max(reach, i + nums[i]); // extend frontier
+    }
+    return true;
+}
+```
+
+```cpp
+bool canJump(vector<int>& nums) {
+    int reach = 0;
+    for (int i = 0; i < (int)nums.size(); i++) {
+        if (i > reach) return false;                    // unreachable gap
+        reach = max(reach, i + nums[i]);                // extend frontier
+    }
+    return true;
+}
 ```
 
 Track the best frontier; never simulate individual paths. (Jump Game II —

@@ -6,17 +6,24 @@ difficulty: "Checklist"
 tags: ["company", "interview-prep", "problem-list", "roadmap"]
 ---
 
-## How to use this page
+## Prep for the exam you're actually taking
 
-Every loop runs the same **funnel** — a coding screen, then onsite rounds that add design:
+Imagine studying for an SAT by grinding calculus problems. You'd be working hard in completely the wrong direction. Every company's interview has a **distinct style** — Amazon tests leadership principles alongside DSA, Google goes deep on algorithmic analysis, Stripe cares about API design and correctness. Knowing *who asks what* lets you allocate your limited prep time with precision.
 
-1. **DSA round** — clear it with the [patterns](/dsa/how-to-think) and the
-   [Blind 75](/dsa/blind-75).
-2. **LLD round** (SDE-2+) — [OOP/SOLID](/lld/oop-and-solid), patterns, and the classics
-   ([LRU](/lld/lru-cache), [vending machine](/lld/vending-machine),
-   [tic-tac-toe](/lld/tic-tac-toe)).
-3. **HLD round** (SDE-2/3) — the [approach](/hld/approach) plus case studies
-   ([URL shortener](/hld/url-shortener), [feed](/hld/design-twitter), and friends).
+> 🎯 **The meta-strategy:** The patterns below are durable signals — each company's style and recurring question shapes. Specific questions rotate quickly, but *style* stays stable across years. Drill the pattern, not the trophy question.
+
+## The interview funnel — three rounds, increasing seniority
+
+| Level | DSA | LLD | HLD |
+|---|---|---|---|
+| **SDE-1 / New grad** | 90% of prep | Light (one OOP design) | None |
+| **SDE-2** | 50% — harder (medium-hard) | Full round required | Entry round |
+| **SDE-3 / Staff** | Still screens (stay warm) | Deep round | Dominates — trade-offs and ownership |
+
+Every loop runs the same **funnel**:
+1. **DSA round** — clear it with the [patterns](/dsa/how-to-think) and the [Blind 75](/dsa/blind-75).
+2. **LLD round** (SDE-2+) — [OOP/SOLID](/lld/oop-and-solid), patterns, and the classics ([LRU](/lld/lru-cache), [vending machine](/lld/vending-machine), [tic-tac-toe](/lld/tic-tac-toe)).
+3. **HLD round** (SDE-2/3) — the [approach](/hld/approach) plus case studies ([URL shortener](/hld/url-shortener), [feed](/hld/design-twitter), and friends).
 
 <Callout type="warn" title="On 'latest asked questions'">
 Specific questions rotate and leak quickly go stale; **patterns don't**. What follows is
@@ -25,13 +32,89 @@ through 2025–2026 — mapped to the pages that train them. Drill the pattern, 
 trophy question.
 </Callout>
 
-## By level — what each round expects
+## Company-specific complexity expectations
 
-- **SDE-1 / new grad:** DSA is ~everything. Easy–medium across arrays, strings, hashing,
-  trees, BFS/DFS, basic DP. LLD light (one OOP design), no HLD.
-- **SDE-2:** harder DSA (medium–hard), a full **LLD** round, and an entry **HLD** round.
-- **SDE-3 / Staff:** DSA still screens, but **HLD depth** and trade-off judgment dominate,
-  plus deep LLD and ownership/behavioral.
+| Company | DSA depth | Key focus areas |
+|---|---|---|
+| **Amazon** | Medium | LP alignment, graphs, heaps, DP |
+| **Google** | Medium-Hard, proof required | Algorithmic analysis, graph algorithms, DP patterns |
+| **Meta** | Medium (speed matters) | Arrays/strings, graphs, intervals |
+| **Microsoft** | Balanced | Fundamentals: linked lists, trees, strings, DP |
+| **Nvidia** | Hard (systems focus) | Concurrency, bit manipulation, C++ low-latency |
+| **Bloomberg/HFT** | Hard (speed + correctness) | Bit tricks, math, low-latency concurrency |
+| **Startups** | Medium (pragmatic) | Can you ship — breadth over exotic algorithms |
+
+## The canonical DSA patterns by company
+
+The same code template showing how a company-favorite problem looks in Python, Java, and C++:
+
+```python
+# Amazon favorite: BFS on a graph/grid (classic medium)
+from collections import deque
+
+def num_islands(grid):
+    if not grid: return 0
+    rows, cols = len(grid), len(grid[0])
+    count = 0
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == '1':
+                count += 1
+                queue = deque([(r, c)])
+                grid[r][c] = '0'
+                while queue:
+                    row, col = queue.popleft()
+                    for dr, dc in [(0,1),(1,0),(0,-1),(-1,0)]:
+                        nr, nc = row + dr, col + dc
+                        if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == '1':
+                            grid[nr][nc] = '0'
+                            queue.append((nr, nc))
+    return count
+
+# Google favorite: DP with optimization (LIS — O(n log n) patience sort)
+import bisect
+
+def length_of_lis(nums):
+    tails = []
+    for n in nums:
+        pos = bisect.bisect_left(tails, n)
+        if pos == len(tails):
+            tails.append(n)
+        else:
+            tails[pos] = n
+    return len(tails)
+```
+
+```java
+// Meta favorite: interval merge (speed-focused, must be fast and clean)
+import java.util.*;
+
+public int[][] merge(int[][] intervals) {
+    Arrays.sort(intervals, (a, b) -> a[0] - b[0]);  // sort by start
+    List<int[]> merged = new ArrayList<>();
+    for (int[] iv : intervals) {
+        if (merged.isEmpty() || merged.get(merged.size()-1)[1] < iv[0]) {
+            merged.add(iv);  // no overlap, add as new interval
+        } else {
+            merged.get(merged.size()-1)[1] =  // extend end
+                Math.max(merged.get(merged.size()-1)[1], iv[1]);
+        }
+    }
+    return merged.toArray(new int[0][]);
+}
+```
+
+```cpp
+// Microsoft favorite: validate BST (fundamentals + bounds trick)
+#include <climits>
+
+bool isValidBST(TreeNode* root, long low = LLONG_MIN, long high = LLONG_MAX) {
+    if (!root) return true;
+    if (root->val <= low || root->val >= high) return false;
+    return isValidBST(root->left, low, root->val)
+        && isValidBST(root->right, root->val, high);
+}
+```
 
 ## Big Tech
 
@@ -111,6 +194,36 @@ realistic [LLD](/lld/oop-and-solid), and a pragmatic [HLD](/hld/approach) about 
 product. Breadth ([backend](/backend/microservices), [databases](/databases/indexing),
 [caching](/backend/caching-strategies)) beats exotic algorithms.
 
+## Think it through
+
+<ThinkThrough
+  title="Company Prioritization Under Time Pressure"
+  difficulty="Strategy — apply this 4 weeks before your loop"
+  problem="You have 4 weeks before interviews at: Amazon (SDE-2) and Google (SDE-2). You can spend about 3 hours per day. How do you allocate your prep time across DSA, LLD, and HLD? And for DSA, which topics should you prioritize for each company specifically?"
+  stages={[
+    {
+      label: "Match level to rounds",
+      prompt: "SDE-2 at both companies means which rounds will you face?",
+      reveal: "SDE-2 = all three rounds: DSA (medium-hard), LLD (full round), and HLD (entry level). Budget roughly: 40% DSA, 30% LLD, 30% HLD. Don't neglect LLD and HLD — they're equally weighted at SDE-2."
+    },
+    {
+      label: "DSA priorities by company",
+      prompt: "Amazon vs Google — what's different about their DSA style?",
+      reveal: "Amazon: medium difficulty, broader patterns — focus on graphs/BFS-DFS, heaps, intervals, and basic DP. Google: harder, with analysis expected — practice DP patterns (Blind 75 advanced: coin change, LIS, edit distance), graph algorithms (Dijkstra, topological sort), backtracking, and tries. For Google, practice saying 'and this is O(n log n) because...' on every solution."
+    },
+    {
+      label: "LLD priorities",
+      prompt: "Both companies have LLD rounds. What to focus on?",
+      reveal: "Core LLD: OOP/SOLID principles, then the 4 classics — LRU Cache, Parking Lot, Vending Machine, and Tic-Tac-Toe. Amazon leans OOD (object-oriented design); Google sometimes asks concurrency-aware designs. Spend one week on LLD, doing all 4 classics and articulating design decisions."
+    },
+    {
+      label: "Week-by-week plan",
+      prompt: "Lay out 4 weeks concretely.",
+      reveal: "Week 1: Finish Blind 75 groups (Arrays, Two Pointers, Sliding Window, Trees, Graphs) + start LRU Cache. Week 2: DP and advanced graphs (for Google) + Parking Lot and Vending Machine LLD. Week 3: HLD — URL shortener, design Twitter feed. Week 4: Mock drills daily (Format B pressure sets), re-derive weak patterns cold. LP stories for Amazon throughout."
+    }
+  ]}
+/>
+
 <QA q="I have limited time before a loop — how do I prioritize across DSA, LLD, and HLD?">
 
 Match effort to the **round you'll actually get**, which depends on level. New grad / SDE-1:
@@ -133,3 +246,81 @@ pattern from a blank editor until you can re-derive it; that transfers to whatev
 you're actually handed.
 
 </QA>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Company-Style DSA"
+  tiers={[
+    {
+      label: "Amazon style — medium BFS/DP",
+      note: "medium problems at production-reasonable speed",
+      problems: [
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "BFS flood fill — classic Amazon medium." },
+        { name: "Merge Intervals", lc: "merge-intervals", difficulty: "Medium", trains: "Sort + sweep — interval family." },
+        { name: "Coin Change", lc: "coin-change", difficulty: "Medium", trains: "Bottom-up DP — the DP flagship." }
+      ]
+    },
+    {
+      label: "Google style — analysis + depth",
+      note: "medium-hard with expected proof of optimality",
+      problems: [
+        { name: "Longest Increasing Subsequence", lc: "longest-increasing-subsequence", difficulty: "Medium", trains: "O(n²) DP → O(n log n) patience sort. Google expects both." },
+        { name: "Course Schedule II", lc: "course-schedule-ii", difficulty: "Medium", trains: "Topological sort order — Kahn's BFS." },
+        { name: "Word Search II", lc: "word-search-ii", difficulty: "Hard", trains: "Trie pruning + DFS backtracking — Google loves tries." }
+      ]
+    },
+    {
+      label: "Meta style — speed on mediums",
+      note: "medium problems, must be clean and fast",
+      problems: [
+        { name: "3Sum", lc: "3sum", difficulty: "Medium", trains: "Sort + two-pointer — deduplication is the trap." },
+        { name: "Binary Search", lc: "binary-search", difficulty: "Easy", trains: "Get the template flawless — Meta expects these fast." },
+        { name: "Minimum Window Substring", lc: "minimum-window-substring", difficulty: "Hard", trains: "Sliding window with need/have counts." }
+      ]
+    }
+  ]}
+/>
+
+## Check yourself — company prep strategy
+
+<Quiz questions={[
+  {
+    q: "You're SDE-1 at a FAANG. Where should 90% of your prep time go?",
+    options: [
+      "DSA — Blind 75 patterns, all mediums, no design rounds at SDE-1",
+      "Equal split between DSA, LLD, and HLD",
+      "HLD — system design is what differentiates candidates",
+      "Behavioral/LP stories — culture fit is everything"
+    ],
+    answer: 0,
+    explain: "SDE-1 loops are almost pure DSA. LLD is light (maybe one OOP design). HLD is absent. Spending time on HLD/LLD at SDE-1 level is misdirected effort."
+  },
+  {
+    q: "Google expects 'now optimize it' after you code a solution. What should you always be prepared to do?",
+    options: [
+      "State both the current complexity and the next-level optimization — O(n²) DP → O(n log n) patience sort",
+      "Simply say the solution is already optimal",
+      "Ask the interviewer what optimization they want",
+      "Rewrite the entire solution from scratch"
+    ],
+    answer: 0,
+    explain: "Google interviews frequently have follow-ups: 'Can you do better?' You need to know the naive complexity, the optimized complexity, and the technique that bridges them. Practice this for every Blind 75 problem."
+  },
+  {
+    q: "Leaked 'recently asked' question lists — how should you use them?",
+    options: [
+      "As a distribution signal for company style — drill the underlying pattern, not the exact question",
+      "Memorize every leaked question word-for-word",
+      "Ignore them completely — they're never accurate",
+      "Use them as your primary study guide"
+    ],
+    answer: 0,
+    explain: "Questions rotate and interviewers probe with follow-ups that punish memorization. The durable signal is the pattern frequency and company style — which this page maps to training pages."
+  }
+]} />
+
+## Visualize the interview funnel by level
+
+<Visualizer algo="interview-funnel" />
+

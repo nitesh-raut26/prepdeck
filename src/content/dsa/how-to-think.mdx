@@ -254,3 +254,144 @@ land in the same sub-problem? If yes, a table collapses them; enumeration
 would redo them.
 
 </QA>
+
+## The same thinking in Java and C++
+
+The decoder and 7-step routine are language-agnostic. Here are the two canonical patterns from the ThinkThrough exercises above in Python, Java, and C++:
+
+```python
+# Two Sum — O(n) hash map, Python
+def two_sum(nums, target):
+    seen = {}                       # value -> index
+    for i, x in enumerate(nums):
+        if target - x in seen:      # partner already seen?
+            return [seen[target - x], i]
+        seen[x] = i                 # remember me for future partners
+    return []
+
+# Valid Parentheses — O(n) stack, Python
+def is_valid(s):
+    pairs = {')': '(', ']': '[', '}': '{'}
+    stack = []
+    for ch in s:
+        if ch in '([{':
+            stack.append(ch)            # new open business
+        else:
+            if not stack or stack[-1] != pairs[ch]:
+                return False            # fail 1 or 2
+            stack.pop()                 # matched — cross it off
+    return not stack                    # fail 3 if leftovers
+```
+
+```java
+// Two Sum in Java
+import java.util.HashMap;
+
+public class TwoSum {
+    public int[] twoSum(int[] nums, int target) {
+        HashMap<Integer, Integer> seen = new HashMap<>();  // value → index
+        for (int i = 0; i < nums.length; i++) {
+            int partner = target - nums[i];
+            if (seen.containsKey(partner)) {
+                return new int[]{seen.get(partner), i};
+            }
+            seen.put(nums[i], i);  // remember for future partners
+        }
+        return new int[]{};
+    }
+}
+
+// Valid Parentheses — O(n) stack, Java
+import java.util.Stack;
+
+public class ValidParentheses {
+    public boolean isValid(String s) {
+        Stack<Character> stack = new Stack<>();
+        for (char ch : s.toCharArray()) {
+            if (ch == '(' || ch == '[' || ch == '{') {
+                stack.push(ch);
+            } else {
+                if (stack.isEmpty()) return false;    // nothing to close
+                char top = stack.pop();
+                if (ch == ')' && top != '(') return false;
+                if (ch == ']' && top != '[') return false;
+                if (ch == '}' && top != '{') return false;
+            }
+        }
+        return stack.isEmpty();  // unmatched openers
+    }
+}
+```
+
+```cpp
+// Two Sum — O(n) hash map, C++
+#include <vector>
+#include <unordered_map>
+using namespace std;
+
+vector<int> twoSum(vector<int>& nums, int target) {
+    unordered_map<int, int> seen;  // value -> index
+    for (int i = 0; i < (int)nums.size(); i++) {
+        int partner = target - nums[i];
+        if (seen.count(partner)) {
+            return {seen[partner], i};
+        }
+        seen[nums[i]] = i;  // remember for future partners
+    }
+    return {};
+}
+
+// Valid Parentheses — O(n) stack, C++
+#include <stack>
+#include <string>
+
+bool isValid(string s) {
+    stack<char> stk;
+    for (char ch : s) {
+        if (ch == '(' || ch == '[' || ch == '{') {
+            stk.push(ch);
+        } else {
+            if (stk.empty()) return false;
+            char top = stk.top(); stk.pop();
+            if (ch == ')' && top != '(') return false;
+            if (ch == ']' && top != '[') return false;
+            if (ch == '}' && top != '{') return false;
+        }
+    }
+    return stk.empty();
+}
+```
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Pattern Recognition"
+  tiers={[
+    {
+      label: "Warm-up",
+      note: "one-clue problems — decoder fires cleanly",
+      problems: [
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "'Have I seen its partner?' → hash map. The most-drilled pattern transition: O(n²) → O(n)." },
+        { name: "Valid Parentheses", lc: "valid-parentheses", difficulty: "Easy", trains: "'Matching brackets / most recent first' → stack. LIFO is the whole idea." },
+        { name: "Best Time to Buy and Sell Stock", lc: "best-time-to-buy-and-sell-stock", difficulty: "Easy", trains: "Running minimum + one-pass — O(n) instead of O(n²) nested." }
+      ]
+    },
+    {
+      label: "Core",
+      note: "two-clue problems — decoder narrows to one pattern",
+      problems: [
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "'Longest substring with condition' → sliding window. Classic shrink-from-left." },
+        { name: "Coin Change", lc: "coin-change", difficulty: "Medium", trains: "'Minimum count / choices overlap' → DP. Greedy fails — build the table." },
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "'Connected components on a grid' → BFS/DFS flood fill." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "decoder + elimination — one clue rules a suspect out",
+      problems: [
+        { name: "3Sum", lc: "3sum", difficulty: "Medium", trains: "Sorted + triple → fix one, two-pointer the rest. Deduplication is the tricky part." },
+        { name: "Word Break", lc: "word-break", difficulty: "Medium", trains: "'Can string be formed from dictionary' + overlapping sub-problems → DP." }
+      ]
+    }
+  ]}
+/>

@@ -5,11 +5,11 @@ order: 27
 tags: ["problem-bank", "leetcode", "drills"]
 ---
 
-## How to use this
+## Your pattern gym — train recognition, not memorization
 
-For each card: **say your approach and its Big-O out loud before revealing.**
-Then mark "Knew it" or "Revise again". The goal is instant pattern recognition,
-not memorizing code.
+Think of this page as **flashcard training for your brain's pattern-recognition circuits**. A real interview isn't "write the code for Two Sum" — it's "here's a problem you've never seen; figure out which *type* of problem it is." These flashcards train *exactly* that skill: read the problem, say the approach, *then* reveal.
+
+> 🎯 **How to use:** For each card, **say your approach and its Big-O out loud before revealing.** Then mark "Knew it" or "Revise again". The goal is instant pattern recognition, not memorizing code.
 
 <Callout type="tip" title="Stuck on 'how would I even start?'">
 That's a trained skill, not a talent. Read
@@ -17,6 +17,63 @@ That's a trained skill, not a talent. Read
 you the clue → pattern decoder table and walks you through the questions to
 ask yourself on real problems. Then come back and drill.
 </Callout>
+
+## Complexity cheat-sheet for this bank
+
+| Pattern | Time | Space | Key data structure |
+|---|---|---|---|
+| Hash map lookup | O(1) avg | O(n) | Hash table |
+| Sliding window | O(n) | O(1)–O(k) | Two pointers + hash/set |
+| Binary search | O(log n) | O(1) | — |
+| Stack / monotonic | O(n) | O(n) | Stack |
+| BFS / DFS on graph | O(V+E) | O(V) | Queue / recursion |
+| Min/max heap | O(n log k) | O(k) | Heap |
+| DP (1-D) | O(n · states) | O(n) | Array |
+| Backtracking | O(n · n!) worst | O(n) stack | Recursion |
+
+## Code pattern references
+
+The key operations used across all problems below — in all three languages:
+
+```python
+# Core data structures
+from collections import defaultdict, deque
+import heapq
+
+seen = {}                            # hash map: O(1) lookup/insert
+stack = []                           # stack: append/pop
+queue = deque()                      # queue: appendleft/popleft
+min_heap = []                        # min-heap
+heapq.heappush(min_heap, val)        # O(log n)
+top = heapq.heappop(min_heap)        # O(log n)
+```
+
+```java
+import java.util.*;
+
+// Core data structures in Java
+Map<Integer, Integer> map = new HashMap<>();   // O(1) lookup
+Deque<Integer> stack = new ArrayDeque<>();     // stack: push/pop
+Queue<Integer> queue = new LinkedList<>();     // BFS queue
+PriorityQueue<Integer> minHeap = new PriorityQueue<>();  // min-heap
+minHeap.offer(val);  // O(log n)
+int top = minHeap.poll();  // O(log n)
+```
+
+```cpp
+#include <unordered_map>
+#include <stack>
+#include <queue>
+#include <vector>
+using namespace std;
+
+unordered_map<int, int> umap;   // O(1) average lookup
+stack<int> stk;                  // stack
+queue<int> bfsQ;                 // BFS queue
+priority_queue<int, vector<int>, greater<int>> minHeap;  // min-heap
+minHeap.push(val);               // O(log n)
+int top = minHeap.top(); minHeap.pop();  // O(log n)
+```
 
 ## Arrays, strings & hashing
 
@@ -219,3 +276,118 @@ Greedy: track the farthest reachable index; if the current index ever exceeds it
 return false; if reach ≥ last index, true. **O(n).**
 
 </QA>
+
+## Think it through
+
+Before revealing — what pattern does this problem belong to, and what's your Big-O?
+
+<ThinkThrough
+  title="Flash: Pattern Recognition Speed Test"
+  difficulty="Mixed — 5 problems in 5 minutes"
+  problem="For each of the five problems below, decide the pattern BEFORE looking at the answer. Time yourself. (1) 'Find the median from a data stream as numbers are added.' (2) 'Given a grid of 0s and 1s, find the largest connected region of 1s.' (3) 'Return all valid parentheses strings of length 2n.' (4) 'Minimum cost to connect all points in a 2D plane.' (5) 'Longest palindromic substring.'"
+  stages={[
+    {
+      label: "Problem 1: Median from stream",
+      prompt: "Numbers arrive one by one. You need the median at any point. What structure gives you both the lower and upper halves instantly?",
+      reveal: "Two heaps — max-heap for the lower half, min-heap for the upper half. Rebalance after each insertion so sizes differ by at most 1. Median is max-heap's top (odd total) or average of both tops (even). O(log n) insert, O(1) median."
+    },
+    {
+      label: "Problem 2: Largest connected region",
+      prompt: "Grid, connectivity, find regions — what pattern?",
+      reveal: "BFS or DFS flood fill. For each unvisited '1' cell, expand to all connected '1' neighbors (4-directional), mark visited, count cells. Track the max count across all floods. O(rows × cols)."
+    },
+    {
+      label: "Problem 3: All valid parentheses strings",
+      prompt: "'Return ALL valid strings' — what does 'all' always signal?",
+      reveal: "Backtracking. At each position, you can add '(' if opens_used < n, or ')' if closes_used < opens_used. When length = 2n, add to results. O(4^n / sqrt(n)) — the Catalan number count. Anytime you see 'all combinations/arrangements', think backtracking."
+    },
+    {
+      label: "Problem 4: Minimum cost to connect all points",
+      prompt: "Connect all nodes with minimum total edge weight — classic name for this?",
+      reveal: "Minimum Spanning Tree (MST). Use Prim's (greedy + min-heap, O(E log V)) or Kruskal's (sort edges + union-find, O(E log E)). Since it's a complete graph (every pair connected), Prim's with a heap is usually cleaner."
+    },
+    {
+      label: "Problem 5: Longest palindromic substring",
+      prompt: "Palindromes are symmetric. What's the O(n) insight instead of checking every substring?",
+      reveal: "Expand around centers. There are 2n-1 centers (each character, and each gap between characters). Expand outward while left == right. Track max. O(n) time, O(1) space. (Manacher's algorithm also gives O(n) but is harder to implement.)"
+    }
+  ]}
+/>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Problem Bank Patterns"
+  tiers={[
+    {
+      label: "Foundational",
+      note: "one pattern per problem, instant recognition",
+      problems: [
+        { name: "Two Sum", lc: "two-sum", difficulty: "Easy", trains: "Hash map complement lookup — the O(n²)→O(n) upgrade." },
+        { name: "Valid Parentheses", lc: "valid-parentheses", difficulty: "Easy", trains: "Stack — LIFO mirrors nesting." },
+        { name: "Climbing Stairs", lc: "climbing-stairs", difficulty: "Easy", trains: "1-D DP / Fibonacci — 'ways to reach' = DP fingerprint." }
+      ]
+    },
+    {
+      label: "Core flashcard set",
+      note: "medium problems where the pattern isn't immediately obvious",
+      problems: [
+        { name: "Longest Substring Without Repeating Characters", lc: "longest-substring-without-repeating-characters", difficulty: "Medium", trains: "Sliding window — expand right, shrink left on duplicate." },
+        { name: "Product of Array Except Self", lc: "product-of-array-except-self", difficulty: "Medium", trains: "Prefix × suffix pass, no division, O(1) extra." },
+        { name: "Meeting Rooms II", lc: "meeting-rooms-ii", difficulty: "Medium", trains: "Min-heap of end times — classic interval sweep." },
+        { name: "Course Schedule", lc: "course-schedule", difficulty: "Medium", trains: "Topological sort / cycle detection — Kahn's BFS." }
+      ]
+    },
+    {
+      label: "Stretch",
+      note: "compound patterns",
+      problems: [
+        { name: "Find Median from Data Stream", lc: "find-median-from-data-stream", difficulty: "Hard", trains: "Two-heap trick — always accessible median." },
+        { name: "Merge K Sorted Lists", lc: "merge-k-sorted-lists", difficulty: "Hard", trains: "Min-heap over k heads — O(N log k)." }
+      ]
+    }
+  ]}
+/>
+
+## Check yourself — instant pattern recognition
+
+<Quiz questions={[
+  {
+    q: "'Given a string, find the longest substring with at most 2 distinct characters.' Which pattern?",
+    options: [
+      "Sliding window — 'longest substring with condition' is the exact trigger",
+      "DP over all substrings",
+      "Hash map alone without a window",
+      "Binary search on the length"
+    ],
+    answer: 0,
+    explain: "The magic words: 'longest substring with at most K distinct...' → variable sliding window. Expand right, shrink left when distinct count exceeds 2. O(n) time, O(1) space (26 chars max)."
+  },
+  {
+    q: "For 'Kth largest element in a stream', which is correct?",
+    options: [
+      "Min-heap of size K — heap top is always the Kth largest",
+      "Max-heap of all elements — pop K times",
+      "Sort the stream each time — O(n log n) per insert",
+      "Binary search on sorted array"
+    ],
+    answer: 0,
+    explain: "Keep a min-heap of size K. When a new element arrives: push it, then if heap size > K, pop the smallest. The heap top is the Kth largest. O(log K) per insert vs O(n log n) for full sort."
+  },
+  {
+    q: "Two Sum with a SORTED array — which is more space-efficient than a hash map?",
+    options: [
+      "Two pointers — O(1) space vs O(n) for hash map, both O(n) time",
+      "Binary search for each element — O(n log n)",
+      "Still use a hash map — no benefit from sorted order",
+      "DP over prefix sums"
+    ],
+    answer: 0,
+    explain: "Sorted input → two pointers from both ends. If sum < target, move left right (increase sum). If sum > target, move right left (decrease sum). O(n) time, O(1) space."
+  }
+]} />
+
+## Visualize the hash map in action
+
+<Visualizer algo="hash-map" />
+

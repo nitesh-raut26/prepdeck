@@ -5,12 +5,130 @@ order: 31
 tags: ["applied", "complexity", "projects"]
 ---
 
+## "How does that work under the hood?" — the project interview trap
+
+Imagine you're a chef who lists "sous vide cooking" on your CV. When the interviewer asks "how does that work?", saying "I used a water bath" is a weak answer. A strong answer explains the physics: precise temperature control eliminates the guesswork of traditional cooking, because water transfers heat evenly and proteins denature at specific temperatures. Interviewers probe your projects the *same way* — they want to hear the **algorithm under the feature**, not just the library name.
+
+> 🔍 **The format for every project algorithm:** Idea → DSA primitive → Complexity → The one-paragraph answer. Memorize this structure and you'll never be caught off guard.
+
+## Algorithm complexity in your projects at a glance
+
+| Feature | Project | Primitive | Time | Space |
+|---|---|---|---|---|
+| City twin matching | LandAI | kNN / cosine similarity | O(n·d) brute, O(log n) with FAISS | O(n·d) index |
+| XGBoost inference | LandAI | Binary tree traversal (per tree) | O(#trees · depth) | O(model size) |
+| TF-IDF ranking | LandAI | Hash maps + sparse dot product | O(total tokens) build, O(nnz) per query | O(vocab size) |
+| Urban morphology | LandAI | Grid BFS/DFS (connected components) | O(pixels) | O(pixels) |
+| Moving average / EMA | StockVision | Sliding window aggregate | O(n) incremental | O(window size) |
+| DCF valuation | StockVision | Discounted sum (prefix product) | O(n) | O(1) |
+| Live price tick | StockStump | Hash map O(1) update | O(1) per tick | O(users) |
+| Leaderboard ranking | StockStump | Redis ZSET (skip list) | O(log n) update, O(log n + k) range read | O(users) |
+
 ## Why this matters
 
 When an interviewer says "you mentioned similarity search — how does that
 work?", they're testing whether you understand the algorithm under your own
 project. Each item below is: the idea → the DSA primitive → complexity → the
 one-paragraph answer.
+
+## Code: the primitives behind your projects
+
+```python
+# kNN cosine similarity — the core of LandAI city-twin matching
+import numpy as np
+
+def find_twin_cities(features: np.ndarray, query_idx: int, k: int = 5):
+    """
+    Brute-force cosine kNN: O(n * d) per query.
+    features: (n_cities, n_features), L2-normalized
+    Returns indices of k most similar cities (excluding self)
+    """
+    query = features[query_idx]                          # O(d)
+    scores = features @ query                            # O(n * d) — dot product = cosine on L2-normalized
+    scores[query_idx] = -1                               # exclude self
+    top_k = np.argpartition(scores, -k)[-k:]            # O(n) quickselect
+    return top_k[np.argsort(scores[top_k])[::-1]]       # sorted top-k
+
+# Sliding window EMA — the core of StockVision technical indicators
+def compute_ema(prices: list, window: int) -> list:
+    """Exponential moving average — O(n), O(1) incremental update"""
+    alpha = 2 / (window + 1)  # smoothing factor
+    ema = []
+    for i, price in enumerate(prices):
+        if i == 0:
+            ema.append(price)
+        else:
+            ema.append(alpha * price + (1 - alpha) * ema[-1])  # O(1) per step
+    return ema
+
+# Leaderboard update — skip list logic (conceptual, implemented via Redis ZSET)
+# Redis: ZADD leaderboard <score> <user_id>  → O(log n)
+# Redis: ZREVRANGE leaderboard 0 9           → O(log n + k) for top 10
+```
+
+```java
+// XGBoost-style tree traversal (simplified — what you explain in interviews)
+public class DecisionTree {
+    // Inference: walk from root to leaf — O(depth) per tree
+    public double predict(TreeNode root, double[] features) {
+        TreeNode current = root;
+        while (current.left != null || current.right != null) {
+            // At each node: check feature threshold and go left or right
+            if (features[current.featureIndex] <= current.threshold) {
+                current = current.left;
+            } else {
+                current = current.right;
+            }
+        }
+        return current.leafValue;  // leaf = prediction contribution
+    }
+    // Ensemble: sum of all trees' predictions — O(#trees * depth)
+    public double predictEnsemble(TreeNode[] trees, double[] features) {
+        double total = 0;
+        for (TreeNode tree : trees) {
+            total += predict(tree, features);  // each tree: O(depth)
+        }
+        return total;  // gradient boosting: sum of residual corrections
+    }
+}
+```
+
+```cpp
+// Grid BFS for urban morphology — same as "Number of Islands"
+// Used in LandAI's morphological analysis of urban footprint grids
+#include <vector>
+#include <queue>
+using namespace std;
+
+int countConnectedComponents(vector<vector<int>>& grid) {
+    int rows = grid.size(), cols = grid[0].size();
+    int count = 0;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] == 1) {  // unvisited land cell
+                count++;
+                // BFS flood fill — O(pixels) total across all components
+                queue<pair<int,int>> q;
+                q.push({r, c});
+                grid[r][c] = 0;  // mark visited
+                int dirs[4][2] = {{0,1},{1,0},{0,-1},{-1,0}};
+                while (!q.empty()) {
+                    auto [row, col] = q.front(); q.pop();
+                    for (auto& d : dirs) {
+                        int nr = row + d[0], nc = col + d[1];
+                        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols
+                            && grid[nr][nc] == 1) {
+                            grid[nr][nc] = 0;
+                            q.push({nr, nc});
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return count;
+}
+```
 
 ## Cosine-similarity twin matching (LandAI)
 
@@ -74,6 +192,36 @@ a FAISS HNSW index for sub-linear queries at a million." That single sentence
 shows you know the primitive, the cost, and the upgrade path.
 </Callout>
 
+## Think it through
+
+<ThinkThrough
+  title="Explaining your project algorithm under pressure"
+  difficulty="Interview prep — practice the structure"
+  problem="An interviewer asks: 'You built a real-time stock leaderboard. When a user makes a trade and their score changes, how does the leaderboard stay up to date efficiently? Walk me through the data structure choice and its complexity.'"
+  stages={[
+    {
+      label: "Naive approach first",
+      prompt: "What's the simplest possible implementation, and why is it too slow for real-time?",
+      reveal: "Store all user scores in a list. On every trade: update the user's score (O(1)), then re-sort the entire list (O(n log n)) to get the leaderboard. For 10,000 active users making trades every second, that's 10,000 × O(n log n) sorts per second — completely infeasible."
+    },
+    {
+      label: "Identify the bottleneck",
+      prompt: "Which operation is the bottleneck and what property do we need?",
+      reveal: "The bottleneck is the O(n log n) re-sort on every score update. We need a data structure that: (1) updates a score in O(log n), and (2) retrieves top-k or a specific user's rank in O(log n + k). This is exactly the 'ordered set' or 'sorted set' problem."
+    },
+    {
+      label: "The right data structure",
+      prompt: "What data structure gives O(log n) update and O(log n + k) range read?",
+      reveal: "Redis ZSET (Sorted Set), backed by a skip list. A skip list is a probabilistic data structure with multiple levels of linked lists — insert/delete/search are all O(log n) expected. Redis ZADD updates a score in O(log n); ZREVRANGE gets top-k in O(log n + k). The key insight: we never re-sort; the skip list maintains sorted order incrementally."
+    },
+    {
+      label: "State the full answer",
+      prompt: "Give the complete interview answer with complexity.",
+      reveal: "Each trade triggers: ZADD leaderboard <new_score> <user_id> — O(log n). To display the top 10: ZREVRANGE leaderboard 0 9 — O(log n + 10). User's rank: ZREVRANK leaderboard <user_id> — O(log n). Total for n users: O(log n) per update vs O(n log n) for re-sorting. At scale (1M users), this turns 20-second re-sorts into millisecond updates."
+    }
+  ]}
+/>
+
 <QA q="You used 'similarity search' in LandAI. What algorithm is that, and what's its complexity?">
 
 It's k-nearest-neighbours by cosine similarity: I L2-normalize each city's
@@ -107,3 +255,79 @@ tree models) so the forecast comes with its top positive/negative drivers rather
 than being a black box.
 
 </QA>
+
+## Practice — climb the ladder
+
+<PracticeLadder
+  topic="Applied Algorithms from Projects"
+  tiers={[
+    {
+      label: "Foundation",
+      note: "understand the DSA primitive under each feature",
+      problems: [
+        { name: "Number of Islands", lc: "number-of-islands", difficulty: "Medium", trains: "BFS flood fill — same primitive as LandAI urban morphology grid analysis." },
+        { name: "Sliding Window Maximum", lc: "sliding-window-maximum", difficulty: "Hard", trains: "Sliding window aggregate — same as StockVision's rolling indicators." }
+      ]
+    },
+    {
+      label: "Core primitives",
+      note: "the data structures behind your production features",
+      problems: [
+        { name: "Top K Frequent Elements", lc: "top-k-frequent-elements", difficulty: "Medium", trains: "Quickselect / heap — same as kNN top-k in similarity search." },
+        { name: "Design Twitter", lc: "design-twitter", difficulty: "Medium", trains: "Heap of sorted streams — similar to leaderboard's sorted-set requirement." },
+        { name: "Kth Largest Element in an Array", lc: "kth-largest-element-in-an-array", difficulty: "Medium", trains: "Quickselect / heap — the primitive behind argpartition in kNN." }
+      ]
+    },
+    {
+      label: "Explain at scale",
+      note: "upgrade from O(brute) to production-ready",
+      problems: [
+        { name: "Find Median from Data Stream", lc: "find-median-from-data-stream", difficulty: "Hard", trains: "Two-heap trick — streaming aggregation, same class as rolling indicators." },
+        { name: "LRU Cache", lc: "lru-cache", difficulty: "Medium", trains: "HashMap + doubly-linked list — O(1) operations, same pattern as Redis sorted sets." }
+      ]
+    }
+  ]}
+/>
+
+## Visualize kNN similarity search
+
+<Visualizer algo="knn-search" />
+
+## Check yourself — algorithms in your projects
+
+<Quiz questions={[
+  {
+    q: "Your leaderboard re-sorts all users on every trade. What's wrong and what's the fix?",
+    options: [
+      "Re-sorting is O(n log n) per update — too slow. Fix: Redis ZSET (skip list) gives O(log n) update and O(log n + k) range read.",
+      "Re-sorting is O(n²) per update — fix: sort only once at the end of the day",
+      "Re-sorting is correct — there's no faster alternative for ordered data",
+      "Fix: use a hash map to track scores and sort only when displaying"
+    ],
+    answer: 0,
+    explain: "O(n log n) per update is fine for small n but fails at scale. A skip list (Redis ZSET) maintains sorted order incrementally — O(log n) insert/delete — turning a 20-second re-sort at 1M users into a millisecond operation."
+  },
+  {
+    q: "LandAI uses cosine similarity to find 'twin cities'. At 116 cities it's O(n·d) brute force. What would you do with 1 million cities?",
+    options: [
+      "Use an approximate nearest neighbor index (FAISS HNSW) — O(log n) queries, trading a tiny recall loss for massive speed gain",
+      "Still brute force — hardware is fast enough",
+      "Use binary search on the sorted similarity scores",
+      "Sort all cities by one feature and two-pointer the search"
+    ],
+    answer: 0,
+    explain: "At 1M cities × 100 features: brute force = 100M operations per query. HNSW index: ~O(log n) ≈ 20 operations per query. The FAISS HNSW algorithm builds a hierarchical graph where each layer is sparser, enabling logarithmic-time approximate nearest neighbor search."
+  },
+  {
+    q: "What DSA primitive is used in the morphological analysis of urban footprint grids in LandAI?",
+    options: [
+      "Grid BFS/DFS — 'connected components' on a 2D grid is the same as 'number of islands'",
+      "Binary search on pixel values",
+      "Heap-based priority queue for pixel sorting",
+      "Trie for prefix matching of city names"
+    ],
+    answer: 0,
+    explain: "Urban morphology = measure connected land regions (compactness, fragmentation). That's exactly the 'number of islands' BFS/DFS flood fill problem on a grid. O(pixels) time, same algorithm, different domain."
+  }
+]} />
+
