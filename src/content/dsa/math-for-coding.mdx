@@ -27,6 +27,11 @@ def lcm(a, b):
 GCD shows up in "reduce a fraction", "can I tile/reach with steps p and q" (reachable iff
 the target is a multiple of `gcd(p, q)`), and string-period problems.
 
+Watch the descent: each row replaces `(a, b)` with `(b, a mod b)`, and the
+numbers shrink startlingly fast — that's the O(log n) right there.
+
+<Visualizer algo="gcd" />
+
 ## Modular arithmetic — the `1e9+7` convention
 
 Counting answers blow past 64 bits, so problems ask for the result **mod a large prime**
@@ -58,6 +63,12 @@ def fast_pow(x, n, mod=None):
 ```
 
 (Python's built-in `pow(x, n, mod)` already does this — but interviewers ask you to derive it.)
+
+Step through the bits of the exponent: the base squares every row, and only
+gets folded into the result where the exponent bit is 1 — `O(log n)` rows
+instead of `n` multiplications.
+
+<Visualizer algo="fast-power" />
 
 ## Primes — sieve & primality
 
