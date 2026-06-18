@@ -66,6 +66,46 @@ Saying this signals maturity and narrows your options immediately.
 4. Code, narrating invariants.
 5. Dry-run a small example; then state final time/space.
 
+## Think it through
+
+Before solving anything, interviewers expect two instant reflexes: read the
+complexity of code you're looking at, and read the *target* complexity off
+the constraints. Practise both before revealing.
+
+<ThinkThrough
+  title="Read the complexity, then the constraint"
+  difficulty="Foundation — the reflex every round tests"
+  problem="Two quick judgments. (a) What's the time complexity of a loop where, for each i, you compare a[i] against every LATER element j? (b) If the problem says n ≤ 10⁵ with a 1-second limit, what complexity must your final solution hit?"
+  stages={[
+    {
+      label: "Count the work (part a)",
+      prompt: "The inner loop shrinks each time — how many comparisons total?",
+      reveal: "The outer loop runs n times; the inner runs n−1, then n−2, …, down to 1 — about n(n−1)/2 pairs. Drop the constant and it's O(n²). This is the 'all pairs / nested loop' shape — recognise it on sight.",
+      code: "for i in range(n):\n    for j in range(i + 1, n):     # inner shrinks: n-1, n-2, ..., 1\n        check(a[i], a[j])        # ~ n(n-1)/2 pairs  ->  O(n^2)"
+    },
+    {
+      label: "Read the constraint backwards (part b)",
+      prompt: "Rule of thumb: ~10⁸ simple operations per second. Plug in n = 10⁵.",
+      reveal: "O(n²) at n = 10⁵ is 10¹⁰ operations ≈ 100 seconds — far too slow. O(n log n) is about 1.7 × 10⁶ — comfortable. So the target is O(n log n) or O(n). The constraint TOLD you the required complexity before you solved anything — that's the trick the input-size table encodes."
+    },
+    {
+      label: "From target to technique",
+      prompt: "You must drop from O(n²) to O(n log n) / O(n). What does that point you toward?",
+      reveal: "Ask 'what's the inner loop doing, and what removes it?' Re-scanning later elements for a pair/condition → sort + two pointers, or a hash map (trade O(n) memory for O(1) lookups instead of the inner scan), or a sliding window for contiguous ranges. The pattern-recognition table maps the clue to the tool; the constraint already told you a tool is needed."
+    },
+    {
+      label: "Say it out loud",
+      prompt: "What's the sentence that earns marks before you write code?",
+      reveal: "'n is up to 10⁵, so O(n²) ≈ 10¹⁰ won't pass in a second — I need O(n log n) or better, which means a sort/two-pointer or hashing approach rather than the nested-loop brute force.' Naming the brute force, its cost, the bottleneck, and the target class is the communication the round is grading."
+    },
+    {
+      label: "The takeaway",
+      prompt: "Why is this a reflex worth drilling?",
+      reveal: "Big-O isn't bookkeeping you do at the end — it's a planning tool you use at the start. Read n first; it picks your algorithm class before you write a line, turning a blank-page panic into a narrowed search. Every later chapter assumes you do this automatically."
+    }
+  ]}
+/>
+
 <QA q="The array has n ≤ 100,000 and the time limit is 1 second. What complexity should you aim for?">
 
 Roughly O(n log n) or better. A rule of thumb is ~10⁸ simple operations per
