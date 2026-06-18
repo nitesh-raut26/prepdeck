@@ -103,6 +103,30 @@ for (int i = 0; i < m; i++) {
 
 ## Part 2 — BFS (Breadth-First Search)
 
+### Why We Need BFS & How it Works
+When searching a graph, if we want to find the **shortest path** (the minimum number of steps) in an unweighted network (where every edge has the same cost, like a grid map or a friend connection network), we need an algorithm that explores nodes **level by level**, radiating outward like ripples on a pond.
+
+If we used DFS, we might wander deep down a single path, finding a valid route, but it could be a long detour. BFS guarantees that **the first time we visit a node, we have found the absolute shortest path to it**.
+
+### How to Approach (The Queue Mechanism)
+BFS uses a **First-In, First-Out (FIFO) queue** to manage the frontier of exploration:
+1. **Initialize**: Push the starting node into the queue and mark it `visited`. Set its distance to `0`.
+2. **Process**: While the queue is not empty:
+   - Pop the front node.
+   - Iterate through its neighbors.
+   - For each **unvisited** neighbor:
+     - Mark it `visited` immediately (doing this **on enqueue** is crucial to prevent the same node from being pushed multiple times).
+     - Calculate its distance: `dist[neighbor] = dist[node] + 1`.
+     - Push the neighbor into the queue.
+
+### When to Use BFS
+* **Shortest Path / Minimum Hops**: Finding the shortest route on a map, grid, or unweighted network.
+  - *LeetCode Link*: [LeetCode 1091: Shortest Path in Binary Matrix](https://leetcode.com/problems/shortest-path-in-binary-matrix/)
+* **Minimum Moves to Solve a Game**: E.g., sliding puzzle solvers or string transformation challenges.
+  - *LeetCode Link*: [LeetCode 127: Word Ladder](https://leetcode.com/problems/word-ladder/)
+* **Multi-Source Shortest Path**: Finding the distance from multiple sources simultaneously.
+  - *LeetCode Link*: [LeetCode 994: Rotting Oranges](https://leetcode.com/problems/rotting-oranges/)
+
 ### Watch BFS run
 
 Before the code: watch the queue drive the traversal. Visited nodes turn
@@ -110,8 +134,6 @@ green, the frontier waits in amber, and the highlighted edges form the BFS
 tree — shortest paths by hop count. Try different start nodes.
 
 <Visualizer algo="bfs" />
-
-BFS explores nodes **level by level** using a queue. The first time you reach a node = **shortest path** (fewest edges).
 
 <Callout type="warn" title="The #1 BFS Bug — Mark visited on ENQUEUE, not dequeue">
 Always mark a node visited when you add it to the queue. If you mark on dequeue, the same node enters the queue multiple times — wrong distances and potential infinite loops.
@@ -395,14 +417,32 @@ vector<vector<int>> bfsGrid(vector<vector<char>>& grid, int sr, int sc) {
 
 ## Part 3 — DFS (Depth-First Search)
 
+### Why We Need DFS & How it Works
+Unlike BFS, which explores nodes layer by layer, **DFS (Depth-First Search)** dives as deep as possible down a single branch before backtracking. Think of it as exploring a maze by walking forward until you hit a dead end, then taking one step back to check other paths.
+
+We need DFS when we want to **fully explore paths**, check for connectivity (e.g., "is there any path between A and B?"), search for cycles, or do exhaustive searches where the shortest path is not the objective.
+
+### How to Approach (The Stack / Recursion Mechanism)
+DFS uses a **Last-In, First-Out (LIFO) stack**, which is naturally managed by the computer's **recursion call stack**:
+1. **Initialize**: Start at a node, mark it as `visited`.
+2. **Recurse**: For each unvisited neighbor, recursively call DFS on it.
+3. **Backtrack**: When a node has no unvisited neighbors left, the function returns, "backtracking" to the previous node to check its remaining neighbors.
+
+### When to Use DFS
+* **Connected Components**: Finding how many disconnected islands or sub-networks exist.
+  - *LeetCode Link*: [LeetCode 200: Number of Islands](https://leetcode.com/problems/number-of-islands/)
+* **All Paths / Exhaustive Search**: Finding all possible routes from start to finish.
+  - *LeetCode Link*: [LeetCode 797: All Paths From Source to Target](https://leetcode.com/problems/all-paths-from-source-to-target/)
+* **Solving Mazes / Word Searches**: Backtracking search in grids.
+  - *LeetCode Link*: [LeetCode 79: Word Search](https://leetcode.com/problems/word-search/)
+* **Cycle Detection / Topological Sorting**: Finding topological orders of tasks.
+
 ### Watch DFS run
 
 Same graph, same start node as BFS above — but a stack instead of a queue.
 Compare the shapes: long tendrils instead of expanding rings.
 
 <Visualizer algo="dfs" />
-
-DFS dives as deep as possible before backtracking. Natural fit for: connectivity, all paths, cycle detection, topological order, SCCs, bridges.
 
 ### DFS recursive
 
@@ -536,17 +576,25 @@ vector<int> dfsIterative(vector<vector<int>>& adj, int start, int n) {
 
 ## Part 4 — Cycle Detection
 
-### Cycle in an undirected graph
+### Why and When We Need Cycle Detection
+Cycle detection answers the question: **"Are there circular loops in this network?"**
+* **Undirected Cycle Detection**: Used to verify if a graph is a tree (a tree is connected and has no cycles) or to find redundant edges.
+  - *LeetCode Link*: [LeetCode 261: Graph Valid Tree](https://leetcode.com/problems/graph-valid-tree/)
+* **Directed Cycle Detection**: Crucial for scheduling tasks (deadlocks), compiler build dependencies (circular imports), or job execution orders.
+  - *LeetCode Link*: [LeetCode 207: Course Schedule](https://leetcode.com/problems/course-schedule/)
 
-**Why you'd ask:** "is this graph a tree?", "does adding these edges create a
-loop?", redundant-connection problems — all of them reduce to *does a cycle
-exist?*
+---
 
-**The intuition:** DFS the graph, and for each node remember the **parent** you
-arrived from. If you ever reach a node that's already visited **and it isn't your
-parent**, you've found a *second* route to it — that's a cycle. The "not the
-parent" exclusion is the whole subtlety: in an undirected graph the edge back to
-your parent is just the edge you walked in on, not a real loop.
+### Cycle in an Undirected Graph (DFS + Parent Check)
+
+#### How to Approach
+In an undirected graph, an edge connects two nodes in both directions ($u \leftrightarrow v$). If we search neighbor lists blindly, when we are at node $v$, we will see node $u$ (our predecessor) as a neighbor. This is **not a cycle**; it is just the edge we walked in on.
+
+To detect real cycles, we must pass a `parent` variable along our traversal:
+1. Perform DFS from the starting node.
+2. For each neighbor:
+   - If the neighbor is **unvisited**, recursively run DFS, passing the current node as the new parent.
+   - If the neighbor is **already visited** and is **NOT our parent**, we have found a second way to reach this node. This represents a loop $	o$ **Cycle detected!**
 
 ```python
 def has_cycle_undirected(adj, n):
@@ -601,24 +649,25 @@ bool hasCycleUndirected(vector<vector<int>>& adj, int n) {
 }
 ```
 
-### Cycle in a directed graph (3-colour DFS)
+### Cycle in a Directed Graph (DFS + 3-Coloring)
 
-In a **directed** graph the parent trick breaks — direction matters, so you must
-detect an edge that loops back to a node **still on your current path**, not just
-any visited node. Three colours track exactly that:
+#### Why the Parent Check Fails
+In a directed graph, edges have directions ($u 	o v$ does not mean $v 	o u$). Just because we visit a node that has already been visited doesn't mean there is a cycle. For example, in a diamond-shaped DAG ($A 	o B 	o D$, and $A 	o C 	o D$), we can visit $D$ twice, but there is no cycle!
+A cycle only exists if we find a **back edge** — an edge that points back to an ancestor node that is **still on our active recursion stack**.
 
-- **White (0)** — unvisited.
-- **Gray (1)** — currently being explored: it's on the active DFS path, its
-  recursion hasn't returned yet.
-- **Black (2)** — fully finished, done and dusted.
+#### How to Approach (The 3-Color Scheme)
+We track exploration states using three status states (colors):
+1. **White (0)**: Unvisited.
+2. **Gray (1)**: In-progress. The node is currently on the active recursion path (we are exploring its children).
+3. **Black (2)**: Fully processed. We have finished exploring this node and all of its descendants.
 
-During the DFS, hitting a **gray** neighbour means it's an ancestor still open on
-your path → a *back edge* → a cycle. A **black** neighbour is harmless — it
-finished on an earlier branch and isn't on your current path.
-
-**Reach for it when** you need to catch deadlocks, dependency/build cycles, or
-answer "can this ordering even exist?" — which is the gateway to topological
-sort, next.
+#### Algorithm Steps:
+- Start DFS on a White node and color it **Gray**.
+- Explore its neighbors:
+  - If a neighbor is **Gray**, we have hit an active ancestor $	o$ **Cycle detected!**
+  - If a neighbor is **White**, recursively explore it.
+  - If a neighbor is **Black**, ignore it (it belongs to a fully processed branch).
+- Once all neighbors are explored, mark the current node **Black** and return.
 
 ```python
 def has_cycle_directed(adj, n):
@@ -678,29 +727,31 @@ bool hasCycleDirected(vector<vector<int>>& adj, int n) {
 
 ## Part 5 — Topological Sort (DAGs)
 
-A **topological sort** is an ordering of a directed graph's nodes so every edge
-points *forward* — for every edge u→v, u comes before v. Read it as: "what order
-can I do these tasks in, respecting every dependency?"
+### Why We Need Topological Sort
+Imagine you are installing package dependencies or choosing the order to take college courses. If course A is a prerequisite for course B, you must take A before B.
+A **topological sort** is a linear ordering of vertices in a directed graph such that for every directed edge $u 	o v$, node $u$ comes before $v$ in the ordering.
 
-**When you need it:** course prerequisites, build systems (which files compile
-first), job/task scheduling, spreadsheet recalculation, package install order.
-The tell is **"do A before B"** constraints between items.
-
-It only exists if the graph is a **DAG** (directed and acyclic) — a cycle is a
-circular dependency (A needs B needs A), which can't be ordered at all. So
-topological sort and directed-cycle detection are two sides of the same coin.
+### Constraints & Invariants
+* A topological sort is only possible if the graph is a **DAG (Directed Acyclic Graph)**. If there is a cycle (e.g., A depends on B, B depends on C, and C depends on A), no valid order can exist.
+* The sort is **not unique**. A graph can have multiple valid topological orders (e.g. if A and B have no prerequisites, you can take A first or B first).
 
 ### Kahn's Algorithm (BFS-based — preferred)
 
-**The intuition:** a node's **in-degree** is how many prerequisites it still has.
-Begin with every node of in-degree 0 (nothing is blocking it). "Finishing" a node
-removes it as a prerequisite from its neighbours — decrement their in-degrees, and
-any neighbour that drops to 0 is now unblocked, so enqueue it. Repeat until the
-queue empties.
+#### How to Approach
+Kahn's algorithm uses a greedy BFS approach by tracking **in-degrees** (the number of incoming edges to a node, which represents the number of active dependencies/prerequisites):
+1. **Calculate In-degrees**: Count the incoming edges for each node.
+2. **Find Starting Frontier**: Push all nodes with in-degree `0` (no prerequisites) into a queue.
+3. **Process**: While the queue is not empty:
+   - Pop a node and append it to our sorted order list.
+   - For each neighbor of this node (nodes that depend on it):
+     - Decrement their in-degree by `1` (simulates satisfying the dependency).
+     - If a neighbor's in-degree drops to `0`, push it to the queue (it is now unblocked).
+4. **Cycle Verification**: If the sorted list contains all $V$ vertices, we have a valid sort. If it is shorter, some nodes are stuck in a dependency loop $	o$ **a cycle exists**.
 
-If you output all n nodes, that order is a valid topological sort. If some nodes
-never reach in-degree 0, they're trapped in a cycle — which is why
-`len(order) == n` doubles as a cycle check.
+#### When to Use Topological Sort
+* Dependency resolution (package managers, build order).
+* Task scheduling under prerequisites constraints.
+  - *LeetCode Link*: [LeetCode 210: Course Schedule II](https://leetcode.com/problems/course-schedule-ii/)
 
 ```python
 from collections import deque
@@ -755,11 +806,17 @@ vector<int> topoKahn(vector<vector<int>>& adj, int n) {
 
 ### Course Schedule (LeetCode 207)
 
-This is topological sort with one twist: you don't need the *order*, just whether
-a valid one **exists**. Model each prerequisite `[a, b]` as an edge b→a ("take b
-before a"), run Kahn's algorithm, and count how many courses you manage to take.
-If a cycle blocks some of them, the count falls short of `numCourses` → return
-false. The full step-by-step reasoning is in the **Think it through** below.
+#### Why and How to Approach
+In the **Course Schedule** problem, we are given a number of courses and a list of prerequisites. For example, `[0, 1]` means to take course `0`, you must first take course `1`. This is a classic dependency problem.
+
+We can model this as a Directed Graph:
+* **Nodes**: The courses (labeled `0` to `numCourses - 1`).
+* **Edges**: A prerequisite `[a, b]` represents a directed edge `b -> a` (course `b` must be taken before course `a`).
+* **Objective**: Determine if it is possible to finish all courses. This is equivalent to checking if the directed graph contains **no cycles** (i.e. is it a DAG?).
+
+We can solve this using either **Kahn's Algorithm (BFS)** or **3-Color Cycle Detection (DFS)**. Since Kahn's algorithm naturally counts how many courses we are able to take without getting stuck, we can just check if our completed course count equals `numCourses`.
+
+Let's look at the implementations:
 
 ```python
 def can_finish(numCourses, prerequisites):
