@@ -100,6 +100,46 @@ are the *aggregate* ones — **count distinct** elements over an unbounded strea
 (→ HyperLogLog) or **top-K frequent** items (→ Count-Min + a heap) — where exact
 state is unbounded and a sketch is the only way to fit memory.
 
+## Think it through
+
+The chapter's whole mindset is *"what do I actually need to keep?"* — and no
+algorithm embodies it like Boyer–Moore, which finds a majority element in a
+single counter. Reason it out before revealing.
+
+<ThinkThrough
+  title="Majority Element (Boyer–Moore vote)"
+  difficulty="Easy — LeetCode 169"
+  problem="One value appears MORE than n/2 times. Find it in O(1) extra memory and a single pass. [2,2,1,1,1,2,2] → 2."
+  stages={[
+    {
+      label: "Restate & the easy solutions",
+      prompt: "What works if memory is free — and why is it disallowed here?",
+      reveal: "A frequency hash map (O(n) space) or sorting and taking the middle element (O(n log n)) both solve it. But the streaming constraint forbids storing counts — we need O(1) extra memory and one pass. So the question becomes: what single fact about the past is enough?"
+    },
+    {
+      label: "The cancellation insight",
+      prompt: "What happens if you pair up each majority element with a different non-majority one and cancel both?",
+      reveal: "Because the majority appears MORE than n/2 times, it outnumbers everything else combined. So if every majority element cancels one non-majority element, the majority can never be fully cancelled — at least one survives. That means you only need to track a single 'candidate' and a running balance, not real counts."
+    },
+    {
+      label: "The algorithm",
+      prompt: "Turn 'cancel pairs' into a one-counter sweep.",
+      reveal: "Keep a candidate and a count. When count is 0, adopt the current element as the candidate. Then add 1 if the element equals the candidate, else subtract 1 (a cancellation). Whatever candidate survives the pass is the majority — guaranteed if one exists (verify with a second pass if 'majority' isn't promised)."
+    },
+    {
+      label: "Code it",
+      prompt: "One candidate, one counter, one pass.",
+      reveal: "count hitting 0 means the candidate has been fully cancelled out by other values, so the next element starts fresh.",
+      code: "def majority_element(nums):\n    candidate, count = None, 0\n    for x in nums:\n        if count == 0:\n            candidate = x          # adopt a fresh candidate\n        count += 1 if x == candidate else -1   # vote for, or cancel\n    return candidate               # the > n/2 element (verify in a 2nd pass if unsure)"
+    },
+    {
+      label: "Why it works & cost",
+      prompt: "Cost, and the one-line proof?",
+      reveal: "O(n) time, O(1) space — one pass, two variables. Proof: non-majority elements number fewer than n/2, so they can cancel fewer than n/2 majority elements; with more than n/2 majority elements, some always survive. This 'keep one variable, let the rest cancel' move is the purest example of the streaming question — never store what you can summarise."
+    }
+  ]}
+/>
+
 <QA q="Find the Kth largest element in a never-ending stream, with limited memory. How?">
 
 Keep a **min-heap of size K**. Push the first K elements; for each later element,
