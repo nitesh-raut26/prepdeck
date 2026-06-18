@@ -6,6 +6,20 @@ difficulty: "Core pattern"
 tags: ["heap", "priority-queue", "intervals", "sorting"]
 ---
 
+## Why We Need a Heap (Priority Queue)
+In many problems, you need to repeatedly access the smallest or largest element in a dynamically changing set of numbers (e.g., finding the K closest points in a stream of incoming data). If you sort the set every time, it costs $O(n \log n)$ per insert. 
+A **Heap** solves this by keeping the elements in a special binary tree structure that lets us insert and remove the extreme element in **$O(\log n)$** time, and peek at it in **$O(1)$** time.
+
+### When to Use a Heap
+* **Top-K Elements**: Finding the $K$ largest, smallest, or closest elements in a stream.
+  - *LeetCode Link*: [LeetCode 703: Kth Largest Element in a Stream](https://leetcode.com/problems/kth-largest-element-in-a-stream/)
+* **Merging sorted streams**: E.g., merging $K$ sorted linked lists.
+  - *LeetCode Link*: [LeetCode 23: Merge k Sorted Lists](https://leetcode.com/problems/merge-k-sorted-lists/)
+* **Running Extremes**: Finding the median of a streaming dataset.
+  - *LeetCode Link*: [LeetCode 295: Find Median from Data Stream](https://leetcode.com/problems/find-median-from-data-stream/)
+
+---
+
 ## Heap = priority queue
 
 A binary heap gives **O(log n)** push/pop and **O(1)** peek of the min (or max).
