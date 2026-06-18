@@ -306,6 +306,335 @@ for epoch in range(1, 101):
 
 ---
 
+## Bayes' Theorem — The Foundation of Probabilistic Reasoning
+
+Bayes' theorem is one of the most important equations in ML and data science. It tells you how to **update your belief when you get new evidence**.
+
+```
+Bayes' Theorem:
+
+   P(A | B) = P(B | A) × P(A)
+              ─────────────────
+                    P(B)
+
+Read: "The probability of A given B equals
+       the probability of B given A, times the prior probability of A,
+       divided by the probability of B."
+```
+
+**The three parts explained**:
+- **P(A)** = Prior probability — what you believed *before* seeing any evidence
+- **P(B | A)** = Likelihood — how probable is the evidence if A is true?
+- **P(A | B)** = Posterior — what you now believe *after* seeing the evidence
+
+**Real ML example — Spam Filter**:
+```
+Prior:              P(spam) = 0.10          (10% of emails are spam)
+Likelihood:         P(word "lottery" | spam) = 0.80   (80% of spam contains "lottery")
+P(word "lottery"):  P("lottery") = 0.05    (5% of all emails contain "lottery")
+
+Posterior:
+P(spam | "lottery") = (0.80 × 0.10) / 0.05 = 0.08 / 0.05 = 1.6 → normalized: high!
+
+→ Seeing "lottery" updates our belief from 10% to 80% spam probability.
+```
+
+**Where it appears in ML**:
+- **Naive Bayes classifier** — assumes features are conditionally independent given the class
+- **Bayesian optimization** — finds the best hyperparameters by modeling the unknown function
+- **Probabilistic models** — any model that outputs a probability is applying Bayes implicitly
+- **A/B testing** — Bayesian A/B testing updates belief about which variant is better
+
+```python
+# Naive Bayes from scratch — text spam classification
+def naive_bayes_predict(word_in_email: bool, p_spam=0.10, p_word_given_spam=0.80, p_word_given_ham=0.01) -> float:
+    """
+    Apply Bayes theorem to compute P(spam | word_present).
+    """
+    p_word = (p_word_given_spam * p_spam) + (p_word_given_ham * (1 - p_spam))
+    p_spam_given_word = (p_word_given_spam * p_spam) / p_word
+    return p_spam_given_word
+
+print(f"P(spam | 'lottery' in email): {naive_bayes_predict(True):.3f}")  # ~0.615
+print(f"P(spam | no 'lottery'): close to prior 10%")
+```
+
+---
+
+## Information Theory — Entropy and Information Gain
+
+**Entropy** measures **uncertainty / disorder** in a dataset. It's the math behind Decision Trees splitting decisions.
+
+```
+Entropy H(S) = -Σ pᵢ × log₂(pᵢ)
+
+Where pᵢ = proportion of class i in the dataset S.
+
+Examples:
+  Pure node:  100% cats     → H = -(1.0 × log₂(1.0)) = 0.0   (no uncertainty!)
+  Coin flip:  50% cats, 50% dogs → H = -(0.5 × log₂(0.5) + 0.5 × log₂(0.5)) = 1.0
+  3 classes equal: H = -(3 × 0.333 × log₂(0.333)) = 1.585
+```
+
+**Entropy = 0** means a perfect, pure leaf node in a Decision Tree. **Higher entropy = more impurity = worse split**.
+
+**Information Gain** = how much entropy a split *reduces*:
+```
+Information Gain = H(parent) - Σ (|child| / |parent|) × H(child)
+
+Decision trees pick the feature and threshold that maximizes Information Gain.
+→ This is the mathematical reason trees split the way they do.
+```
+
+```python
+import math
+
+def entropy(labels: list) -> float:
+    """Calculate Shannon entropy of a list of class labels."""
+    if not labels:
+        return 0.0
+    total = len(labels)
+    counts = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    return -sum((count/total) * math.log2(count/total) for count in counts.values())
+
+def information_gain(parent: list, left_child: list, right_child: list) -> float:
+    """How much entropy is reduced by this split?"""
+    n = len(parent)
+    weighted_child_entropy = (len(left_child)/n) * entropy(left_child) + \
+                              (len(right_child)/n) * entropy(right_child)
+    return entropy(parent) - weighted_child_entropy
+
+# Example: split customers (churns=1, stays=0)
+parent = [1, 1, 0, 0, 0, 0, 1, 0]            # mixed — H = 1.0
+left   = [1, 1, 1]                             # mostly churns
+right  = [0, 0, 0, 0, 0]                       # mostly stays
+
+print(f"Parent entropy:     {entropy(parent):.4f}")       # 1.0
+print(f"Left entropy:       {entropy(left):.4f}")         # 0.918
+print(f"Right entropy:      {entropy(right):.4f}")        # 0.0
+print(f"Information Gain:   {information_gain(parent, left, right):.4f}")  # 0.549
+```
+
+---
+
+## Key Probability Distributions
+
+Every ML model works with specific probability distributions. Know these:
+
+| Distribution | Shape | Parameters | Used for |
+|---|---|---|---|
+| **Bernoulli** | 0 or 1 | p (prob of 1) | Single coin flip, binary classification |
+| **Binomial** | Count of successes | n, p | Number of spam emails in n messages |
+| **Normal / Gaussian** | Bell curve | μ (mean), σ (std) | Measurement errors, natural phenomena, weight init |
+| **Uniform** | Flat | a, b | Random sampling, weight initialization baseline |
+| **Exponential** | Decaying tail | λ (rate) | Time between events (server requests, clicks) |
+| **Categorical** | K discrete outcomes | p₁...pₖ | Next-token prediction, class labels |
+
+```python
+import numpy as np
+
+# --- Normal Distribution ---
+mu, sigma = 0, 1
+samples = np.random.normal(mu, sigma, 10000)
+print(f"Mean: {samples.mean():.3f}, Std: {samples.std():.3f}")  # ~0, ~1
+
+# --- Binomial Distribution ---
+# 100 email, each has P(spam)=0.1 — how many spam?
+spam_counts = np.random.binomial(n=100, p=0.1, size=5000)
+print(f"Expected spam: {spam_counts.mean():.1f} (should be ≈10)")
+
+# --- Why weights are initialized from Normal? ---
+# He initialization for ReLU networks: mean=0, std=sqrt(2/n_inputs)
+n_inputs = 512
+weights = np.random.normal(0, np.sqrt(2/n_inputs), (512, 256))
+print(f"Weight std: {weights.std():.4f}")  # ~0.0625
+```
+
+---
+
+## Central Limit Theorem (CLT) — Why Statistics Works
+
+The **Central Limit Theorem** is the reason you can trust sample means, run A/B tests, and use the Normal distribution even when underlying data isn't normal.
+
+```
+CLT states:
+  The distribution of SAMPLE MEANS approaches a Normal distribution
+  as the sample size increases — regardless of the original distribution.
+
+  If you take many samples of size n from ANY distribution:
+    Mean of samples → N(μ, σ²/n)    (Normal with same mean, smaller variance)
+
+Why it matters:
+  - You can compute confidence intervals on any metric
+  - You can run hypothesis tests even on non-normal data
+  - Error bars on ML evaluation metrics are valid
+```
+
+```python
+import numpy as np
+import random
+
+# Original distribution: wildly skewed exponential (NOT normal)
+population = np.random.exponential(scale=2.0, size=100_000)
+print(f"Population mean: {population.mean():.3f}, Skew: very right-skewed")
+
+# Take 10,000 samples of size 50 — compute each sample mean
+sample_means = []
+for _ in range(10_000):
+    sample = np.random.choice(population, size=50, replace=False)
+    sample_means.append(sample.mean())
+
+sample_means = np.array(sample_means)
+print(f"Sample means mean: {sample_means.mean():.3f}")  # ≈ 2.0 (population mean)
+print(f"Sample means std:  {sample_means.std():.4f}")   # ≈ σ/√50
+# → The distribution of sample means IS approximately Normal — that's CLT!
+```
+
+---
+
+## Hypothesis Testing — How ML Experiments Are Validated
+
+Every A/B test, model comparison, and statistical claim uses hypothesis testing. Interviewers ask about this for ML Engineer and Data Scientist roles.
+
+```
+The Process:
+  1. Null Hypothesis (H₀): "The new model is no better than the old model"
+  2. Alternative (H₁): "The new model IS better"
+  3. Collect data: run experiment, collect results
+  4. Compute p-value: probability of observing this data IF H₀ is true
+  5. Decision:
+       p-value < 0.05 → reject H₀ → statistically significant improvement
+       p-value ≥ 0.05 → fail to reject H₀ → not enough evidence
+
+p-value intuition:
+  p = 0.03 means: "If the model was actually not better,
+  there's only a 3% chance we'd see this big of a difference by luck."
+  → Low p → the improvement is unlikely to be random → ship it.
+```
+
+**Type I and Type II Errors** (critical for interviews):
+```
+Type I Error (False Positive):  Conclude model is better when it isn't
+                                  → Significance level α = 0.05 = allowed Type I rate
+
+Type II Error (False Negative): Conclude model is no better when it actually is
+                                  → Power = 1 - β = probability of detecting a real effect
+
+The trade-off:
+  Tighter threshold (α=0.01) → fewer Type I errors, more Type II errors
+  Loose threshold (α=0.10) → more Type I errors, fewer Type II errors
+```
+
+```python
+from scipy import stats
+import numpy as np
+
+# --- T-test: comparing two model's accuracy scores across 5 runs ---
+model_a_scores = [0.842, 0.851, 0.838, 0.845, 0.849]
+model_b_scores = [0.861, 0.874, 0.869, 0.878, 0.865]
+
+t_stat, p_value = stats.ttest_ind(model_a_scores, model_b_scores)
+print(f"t-statistic: {t_stat:.3f}")
+print(f"p-value: {p_value:.4f}")
+
+if p_value < 0.05:
+    print("✅ Model B is significantly better (p < 0.05)")
+else:
+    print("❌ No statistically significant difference — don't ship on hype")
+```
+
+**Interview answer template**: When someone says "Model B is 0.5% better," ask:
+1. Is that statistically significant (what's the p-value)?
+2. Was the test set held out and only evaluated once?
+3. Across how many seeds or time periods?
+
+---
+
+## Eigenvalues, SVD, and PCA — The Math Behind Dimensionality Reduction
+
+**Eigenvalues** and **Singular Value Decomposition (SVD)** are the math behind PCA, recommendation systems, and embedding compression. The intuition before the math:
+
+```
+Eigenvector intuition:
+  Most data "stretches" in some preferred directions.
+  For a dataset of heights and weights, the main stretch direction is
+  "both height and weight increase together" (they're correlated).
+
+  An eigenvector is that "preferred stretch direction."
+  Its eigenvalue measures HOW MUCH the data stretches in that direction.
+
+PCA (Principal Component Analysis):
+  Step 1: Center the data (subtract mean)
+  Step 2: Compute the covariance matrix
+  Step 3: Find eigenvectors (the principal components)
+  Step 4: Sort by eigenvalue — larger eigenvalue = more variance explained
+  Step 5: Project data onto the top k eigenvectors → compressed representation
+```
+
+```python
+import numpy as np
+
+# --- PCA from scratch ---
+def pca_from_scratch(X: np.ndarray, n_components: int) -> tuple:
+    """
+    Principal Component Analysis without sklearn.
+    X: (n_samples, n_features)
+    Returns: (transformed data, explained_variance_ratio)
+    """
+    # 1. Center the data
+    X_centered = X - X.mean(axis=0)
+    
+    # 2. Compute covariance matrix
+    cov_matrix = np.cov(X_centered, rowvar=False)
+    
+    # 3. Eigendecomposition — find principal directions
+    eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+    
+    # 4. Sort by eigenvalue (descending — largest variance first)
+    sorted_idx = np.argsort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[sorted_idx]
+    eigenvectors = eigenvectors[:, sorted_idx]
+    
+    # 5. Select top k components
+    components = eigenvectors[:, :n_components]
+    
+    # 6. Project data
+    X_reduced = X_centered @ components
+    
+    # 7. Explained variance ratio
+    explained_variance_ratio = eigenvalues[:n_components] / eigenvalues.sum()
+    
+    return X_reduced, explained_variance_ratio
+
+# Create sample data: 2D clusters (like height/weight in 4D feature space)
+np.random.seed(42)
+X = np.random.randn(200, 4)  # 200 samples, 4 features
+X[:, 1] = X[:, 0] * 0.8 + np.random.randn(200) * 0.2  # make feature 0 and 1 correlated
+
+X_reduced, evr = pca_from_scratch(X, n_components=2)
+print(f"Original shape: {X.shape}")          # (200, 4)
+print(f"Reduced shape:  {X_reduced.shape}")  # (200, 2)
+print(f"Variance explained by PC1: {evr[0]:.1%}")
+print(f"Variance explained by PC2: {evr[1]:.1%}")
+print(f"Total variance explained:  {evr.sum():.1%}")
+
+# Verify using sklearn
+from sklearn.decomposition import PCA
+pca = PCA(n_components=2)
+X_sk = pca.fit_transform(X)
+print(f"\nsklearn PCA variance ratios: {pca.explained_variance_ratio_}")
+```
+
+**Where SVD/PCA appears in interviews**:
+- "How would you compress a 512-dimensional embedding?" → PCA
+- "How does collaborative filtering work?" → SVD on user-item matrix
+- "How do you visualize high-dimensional data?" → PCA to 2D, then t-SNE/UMAP
+- "What's the curse of dimensionality?" → PCA as the fix
+
+---
+
 ## Interactive Quiz
 
 <Quiz questions={[
@@ -350,13 +679,10 @@ for epoch in range(1, 101):
    scores 1.0 and the perpendicular pair 0. Then do it in NumPy and
    feel the [vector-DB query](/aiml/vector-databases) you just ran.
 2. **Gradient descent parameter test:** Run the Python code above with learning rates `0.0001`, `0.01`, and `1.0`. Verify which one underfits, which converges, and which diverges.
-3. **Distribution feel:** simulate 10,000 coin-flip batches of 100 in
-   Python; histogram the heads-counts and meet the bell curve. Then
-   compute how often a *fair* coin gives ≥60 heads — your first
-   significance intuition.
-4. **Baseline audit:** for any dataset you've touched, compute the
-   majority-class baseline before any model. Make it a permanent
-   habit.
+3. **Bayes spam filter**: Implement a two-word Naive Bayes spam classifier. If P(spam)=0.2, P("free"|spam)=0.9, P("free"|ham)=0.01 — what's P(spam|"free")? Then chain a second word.
+4. **Entropy lab**: Implement the `entropy()` function above. Calculate the entropy of a perfectly balanced 3-class dataset vs. one with 80%/10%/10% split. Why does the balanced set have higher entropy?
+5. **PCA lab**: Run the PCA from-scratch implementation above. Try `n_components=3`. How much cumulative variance do 3 components explain? Compare with sklearn's output.
+6. **Hypothesis testing**: Run the t-test code on model scores. Change the scores so they're very close together — observe when the p-value exceeds 0.05. That's when you "can't claim improvement."
 
 Next: [Classical ML](/aiml/classical-ml) — the algorithms these four
 ideas power, and why they still beat deep learning on most tables.

@@ -171,6 +171,424 @@ in *embedding* space — k-means over
 [text embeddings](/aiml/vector-databases) — is how you find themes
 in a million documents today.
 
+---
+
+## KNN — K-Nearest Neighbors: The Simplest Classifier
+
+KNN is the purest beginner algorithm: **"find the K most similar training examples and take a vote."** No model is fitted; prediction is the algorithm itself.
+
+```
+Predicting the class of a new point:
+  1. Compute distance to every training point (usually Euclidean distance)
+  2. Find the K nearest neighbors
+  3. Return the majority class (classification) or mean value (regression)
+
+Example — K=3:
+  New customer: [age=28, salary=55000]
+  Neighbor 1:   [age=27, salary=52000] → label: "stays"
+  Neighbor 2:   [age=30, salary=58000] → label: "stays"
+  Neighbor 3:   [age=26, salary=48000] → label: "churns"
+  Vote: 2 "stays" > 1 "churns" → predict "stays"
+```
+
+```python
+import numpy as np
+from collections import Counter
+from typing import List
+
+class KNNClassifier:
+    """K-Nearest Neighbors from scratch."""
+
+    def __init__(self, k: int = 3):
+        self.k = k
+        self.X_train = None
+        self.y_train = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        # KNN has no training — just memorize the data
+        self.X_train = X
+        self.y_train = y
+
+    def _euclidean_distance(self, a: np.ndarray, b: np.ndarray) -> float:
+        return np.sqrt(np.sum((a - b) ** 2))
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return np.array([self._predict_single(x) for x in X])
+
+    def _predict_single(self, x: np.ndarray) -> int:
+        # Compute distance to every training point
+        distances = [self._euclidean_distance(x, x_train) for x_train in self.X_train]
+        # Get indices of K nearest neighbors
+        k_nearest_indices = np.argsort(distances)[:self.k]
+        # Get their labels
+        k_nearest_labels = self.y_train[k_nearest_indices]
+        # Return majority vote
+        most_common = Counter(k_nearest_labels).most_common(1)
+        return most_common[0][0]
+
+# Quick demo
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+X, y = make_classification(n_samples=300, n_features=4, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+
+# CRITICAL: KNN needs feature scaling — distances are meaningless otherwise!
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test  = scaler.transform(X_test)
+
+knn = KNNClassifier(k=5)
+knn.fit(X_train, y_train)
+preds = knn.predict(X_test)
+accuracy = (preds == y_test).mean()
+print(f"KNN (k=5) accuracy: {accuracy:.3f}")
+```
+
+**KNN's key properties**:
+- ✅ No training time — lazy learner
+- ✅ Naturally handles multi-class
+- ✅ Good baseline; easy to explain
+- ❌ Slow at prediction — O(n×d) per query
+- ❌ Fails in high dimensions (curse of dimensionality)
+- ❌ **Must scale features** — salary (₹50,000) dominates age (30) otherwise
+
+**When to use**: small datasets, quick baselines, anomaly detection, recommendation fallback.
+
+---
+
+## SVM — Support Vector Machines: Maximum Margin Classifier
+
+SVM finds the **decision boundary that maximizes the margin** — the gap between the two classes. It doesn't just find *a* line that separates classes; it finds the *best* line.
+
+```
+Intuition:
+
+  Class A: ●  ●  ●        Class B: ○  ○  ○
+
+  Bad boundary:  passes close to some points → fragile
+  SVM boundary:  maximum distance from the nearest points of each class
+
+  The "support vectors" are the data points closest to the boundary.
+  Only these points define the boundary — all others are irrelevant.
+```
+
+**The Kernel Trick** — handling non-linear data:
+
+```
+If data isn't linearly separable in the current space:
+  → project it into a higher-dimensional space where it IS separable
+  → the kernel function computes this projection implicitly (without
+     actually computing the high-dimensional coordinates)
+
+Common kernels:
+  Linear:   good for text, high-dimensional data
+  RBF/Gaussian: good for non-linear tabular data (most common default)
+  Polynomial: for polynomial decision boundaries
+```
+
+```python
+from sklearn.svm import SVC
+from sklearn.datasets import make_moons
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+
+# Non-linearly separable data (two interleaved crescents)
+X, y = make_moons(n_samples=500, noise=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+
+# SVM REQUIRES scaling (it's distance-based internally)
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test  = scaler.transform(X_test)
+
+# Linear SVM — for linearly separable data
+svm_linear = SVC(kernel='linear', C=1.0)
+svm_linear.fit(X_train, y_train)
+print("Linear SVM:", svm_linear.score(X_test, y_test))
+
+# RBF SVM — for non-linear data (default, usually wins)
+svm_rbf = SVC(kernel='rbf', C=1.0, gamma='scale')
+svm_rbf.fit(X_train, y_train)
+print("RBF SVM:", svm_rbf.score(X_test, y_test))
+print(classification_report(y_test, svm_rbf.predict(X_test)))
+
+# Key hyperparameters:
+# C: regularization — small C = wide margin (more errors allowed)
+#                     large C = narrow margin (fewer training errors, may overfit)
+# gamma (RBF only): how far each training point's influence reaches
+#                   small gamma = smooth boundary, large gamma = wiggly (overfit)
+```
+
+**SVM interview summary**:
+- Best for: small/medium datasets, text classification (linear kernel), non-linear patterns (RBF)
+- Requires: **feature scaling always**
+- Weakness: slow on large datasets (>100K rows), not probabilistic by default
+- The "C" hyperparameter is the bias-variance dial: low C = high bias, high C = high variance
+
+---
+
+## Naive Bayes — Probabilistic Text Classification
+
+Naive Bayes applies [Bayes' Theorem](/aiml/math-foundations) with one bold assumption: **features are independent given the class**. It's "naive" because that's almost never true — yet it works surprisingly well for text.
+
+```
+For spam detection:
+  P(spam | "lottery", "free", "click") ∝ P(spam) × P("lottery"|spam) × P("free"|spam) × P("click"|spam)
+
+  The "naive" independence assumption means:
+  P("lottery" AND "free" | spam) = P("lottery"|spam) × P("free"|spam)
+  (ignoring that these words co-occur together in real spam)
+
+  Despite this, Naive Bayes dominates email spam filters because:
+  - Extremely fast (no iteration, just counting word frequencies)
+  - Works well with few training examples
+  - Handles high-dimensional text (50,000 vocab) naturally
+```
+
+```python
+from sklearn.naive_bayes import MultinomialNB, GaussianNB
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.pipeline import Pipeline
+
+# --- Text classification example ---
+emails = [
+    "Win a free lottery prize now click here",    # spam
+    "Get free money fast no effort required",      # spam
+    "Hi John, can we meet tomorrow for the project review?",  # ham
+    "The quarterly report is attached please review",  # ham
+    "Congratulations! You have been selected for a prize",    # spam
+]
+labels = [1, 1, 0, 0, 1]  # 1=spam, 0=ham
+
+# Pipeline: text → bag-of-words counts → Naive Bayes
+pipeline = Pipeline([
+    ('vectorizer', CountVectorizer()),       # convert text to word counts
+    ('classifier', MultinomialNB(alpha=1.0)) # alpha=1 is Laplace smoothing
+])
+
+pipeline.fit(emails, labels)
+
+# Test on new emails
+test_emails = ["You won a free prize!", "Meeting at 3pm tomorrow"]
+predictions = pipeline.predict(test_emails)
+print(f"'free prize' → {'spam' if predictions[0] else 'ham'}")  # spam
+print(f"'meeting'   → {'spam' if predictions[1] else 'ham'}")   # ham
+
+# --- Gaussian NB for continuous features ---
+# When features are continuous (not word counts), use GaussianNB
+from sklearn.datasets import load_iris
+X, y = load_iris(return_X_y=True)
+gnb = GaussianNB()
+gnb.fit(X[:120], y[:120])
+print(f"Gaussian NB accuracy: {gnb.score(X[120:], y[120:]):.3f}")
+```
+
+**When Naive Bayes wins**:
+- Text classification (spam, sentiment, topic detection)
+- Very small training sets (with few features)
+- When you need a fast probabilistic baseline
+- Real-time filtering (microsecond predictions)
+
+---
+
+## Feature Scaling — When and Why to Scale
+
+Not all algorithms need scaling. Getting this wrong costs you accuracy or wastes compute.
+
+```
+Algorithms that NEED scaling:      Algorithms that DON'T need scaling:
+  KNN (distance-based)               Decision Trees (threshold-based splits)
+  SVM (margin maximization)          Random Forest
+  Logistic Regression                XGBoost / LightGBM
+  Neural Networks                    Naive Bayes (probabilistic)
+  PCA (variance-based)               Gradient Boosting
+
+Rule of thumb: any algorithm that computes distances or uses gradient
+               descent needs scaling. Tree-based models don't.
+```
+
+```python
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+
+X = [[1000, 1], [2000, 2], [3000, 3], [4000, 4]]  # salary (large) + experience (small)
+
+# StandardScaler: (x - mean) / std → mean=0, std=1
+# Best for: neural networks, logistic regression, SVM
+std_scaler = StandardScaler()
+X_std = std_scaler.fit_transform(X)
+print("StandardScaler:\n", X_std)
+
+# MinMaxScaler: (x - min) / (max - min) → range [0, 1]
+# Best for: when you need bounded features, image pixels (0-255 → 0-1)
+mm_scaler = MinMaxScaler()
+X_mm = mm_scaler.fit_transform(X)
+print("\nMinMaxScaler:\n", X_mm)
+
+# RobustScaler: (x - median) / IQR → robust to outliers
+# Best for: data with extreme outliers (salaries, prices, click counts)
+rb_scaler = RobustScaler()
+X_rb = rb_scaler.fit_transform(X)
+print("\nRobustScaler:\n", X_rb)
+
+# GOLDEN RULE: Always fit on training data only, transform both!
+# scaler.fit_transform(X_train)  ← fit AND transform
+# scaler.transform(X_test)       ← ONLY transform (no fit)
+```
+
+---
+
+## k-Fold Cross-Validation — Reliable Model Evaluation
+
+A single train/test split gives you one evaluation — maybe you got lucky or unlucky with the split. **k-Fold CV** gives you k evaluations on k different splits and averages them.
+
+```
+k=5 Fold CV:
+
+  Full dataset: [████████████████████████████████████████]
+
+  Fold 1: [TEST |  TRAIN  |  TRAIN  |  TRAIN  |  TRAIN  ]  → score_1
+  Fold 2: [ TRAIN  | TEST |  TRAIN  |  TRAIN  |  TRAIN  ]  → score_2
+  Fold 3: [ TRAIN  |  TRAIN  | TEST |  TRAIN  |  TRAIN  ]  → score_3
+  Fold 4: [ TRAIN  |  TRAIN  |  TRAIN  | TEST |  TRAIN  ]  → score_4
+  Fold 5: [ TRAIN  |  TRAIN  |  TRAIN  |  TRAIN  | TEST ]  → score_5
+
+  Final score = mean(score_1 ... score_5)
+  Variance    = std(score_1 ... score_5)  ← shows stability!
+```
+
+```python
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import load_breast_cancer
+import numpy as np
+
+X, y = load_breast_cancer(return_X_y=True)
+
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+# 5-Fold cross-validation
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+# StratifiedKFold ensures class proportions are preserved in each fold
+# (critical for imbalanced datasets!)
+
+scores = cross_val_score(model, X, y, cv=cv, scoring='f1')
+
+print(f"F1 scores per fold: {scores.round(3)}")
+print(f"Mean F1:  {scores.mean():.4f}")
+print(f"Std F1:   {scores.std():.4f}")  # low std = stable model
+
+# Rule of thumb:
+# std < 0.02 → very stable, trust the mean
+# std > 0.05 → high variance, model may be sensitive to data splits
+```
+
+---
+
+## Hyperparameter Tuning — GridSearchCV and RandomizedSearchCV
+
+Model hyperparameters (like `max_depth`, `n_estimators`, `C`) are settings you choose **before** training. Tuning them systematically beats guessing.
+
+```python
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import load_breast_cancer
+import numpy as np
+
+X, y = load_breast_cancer(return_X_y=True)
+
+# --- Grid Search: exhaustive (try every combination) ---
+# Good when search space is small
+param_grid = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [None, 5, 10],
+    'min_samples_split': [2, 5]
+}
+# 3 × 3 × 2 = 18 combinations × 5 folds = 90 model fits
+
+grid_search = GridSearchCV(
+    RandomForestClassifier(random_state=42),
+    param_grid,
+    cv=5,
+    scoring='f1',
+    n_jobs=-1,    # use all CPU cores
+    verbose=1
+)
+grid_search.fit(X, y)
+print(f"Best params: {grid_search.best_params_}")
+print(f"Best F1:     {grid_search.best_score_:.4f}")
+
+# --- Randomized Search: sample randomly (good for large spaces) ---
+from scipy.stats import randint, uniform
+
+param_distributions = {
+    'n_estimators': randint(50, 500),
+    'max_depth': [None, 3, 5, 10, 20],
+    'min_samples_split': randint(2, 20),
+    'max_features': uniform(0.3, 0.7)
+}
+
+random_search = RandomizedSearchCV(
+    RandomForestClassifier(random_state=42),
+    param_distributions,
+    n_iter=30,       # try 30 random combinations (not all)
+    cv=5,
+    scoring='f1',
+    random_state=42,
+    n_jobs=-1
+)
+random_search.fit(X, y)
+print(f"\nBest params (random): {random_search.best_params_}")
+print(f"Best F1 (random):     {random_search.best_score_:.4f}")
+
+# Use the best model for final evaluation on held-out test set
+best_model = random_search.best_estimator_
+```
+
+---
+
+## Algorithm Selection Flowchart — The Interview Decision Tree
+
+When asked "which model would you use?", walk this decision tree:
+
+```
+START: What kind of problem is it?
+│
+├── SUPERVISED (have labels)
+│   │
+│   ├── CLASSIFICATION (predict category)
+│   │   │
+│   │   ├── Is the data TABULAR (named columns)?
+│   │   │   ├── Small dataset (<10K rows)?  → Logistic Regression or SVM
+│   │   │   └── Large dataset?
+│   │   │       ├── Need explainability?   → Random Forest (+ SHAP values)
+│   │   │       └── Max accuracy?          → XGBoost / LightGBM
+│   │   │
+│   │   ├── Is the data TEXT?              → Naive Bayes (baseline) or Transformer
+│   │   └── Is the data IMAGE/AUDIO?       → CNN or Vision Transformer
+│   │
+│   └── REGRESSION (predict number)
+│       ├── Simple, need explainability?   → Linear Regression
+│       ├── Non-linear tabular?            → XGBoost or Random Forest
+│       └── Complex patterns?             → Neural Network
+│
+├── UNSUPERVISED (no labels)
+│   ├── Find groups?                       → K-means (round clusters) or DBSCAN
+│   ├── Reduce dimensions?                 → PCA (linear) or UMAP (non-linear)
+│   └── Detect anomalies?                 → Isolation Forest or Autoencoder
+│
+└── Always: start with a BASELINE
+    → majority-class / mean / last-value
+    → then simplest model (Logistic Regression / Linear Regression)
+    → complexity only if baseline clearly fails
+```
+
+**The interview one-liner**: *"I'd start with the simplest model that fits the data type and problem shape, measure it against a baseline, then add complexity only when the gap justifies the cost in training time and explainability."*
+
+---
+
 ## Evaluation — the discipline that is the actual lesson
 
 ### Overfitting and the split
@@ -386,5 +804,7 @@ choose.
    [word-frequency vectors](/programming/collections) from Level 1 or
    embeddings of 100 news headlines; inspect the groups; change k and
    watch meaning shift.
+
+Tooling prerequisite: [NumPy & Pandas for ML](/aiml/numpy-pandas) — master DataFrame preprocessing and NumPy array operations before implementing any of the above exercises.
 
 Next: [Neural Networks](/aiml/neural-networks) — what happens when the features must be learned too.

@@ -492,6 +492,276 @@ Overfitting is when the network memorizes training data (achieves very low train
 
 </QA>
 
+---
+
+## Optimizers — How Gradient Descent Actually Works in Practice
+
+The raw gradient update rule (w = w - lr × gradient) is just vanilla SGD. Modern networks use smarter optimizers:
+
+```
+SGD (Stochastic Gradient Descent):
+  w ← w - α × ∂L/∂w
+  Simple but slow — takes many steps, sensitive to learning rate.
+  Works well with learning rate schedules and momentum.
+
+SGD with Momentum:
+  v ← β × v + ∂L/∂w      (accumulate velocity)
+  w ← w - α × v
+  β=0.9 is common. Like a ball rolling downhill — builds speed in consistent
+  directions, dampens oscillations. Much faster than plain SGD.
+
+Adam (Adaptive Moment Estimation):
+  m ← β₁ × m + (1-β₁) × ∂L/∂w     (1st moment: mean gradient)
+  v ← β₂ × v + (1-β₂) × (∂L/∂w)²  (2nd moment: mean squared gradient)
+  w ← w - α × m̂ / (√v̂ + ε)
+
+  β₁=0.9, β₂=0.999, ε=1e-8 by default
+  Adapts learning rate per parameter — sparse features get bigger updates.
+  Default choice for most deep learning tasks. Rarely fails.
+
+RMSProp:
+  v ← β × v + (1-β) × (∂L/∂w)²
+  w ← w - α × ∂L/∂w / (√v + ε)
+  Good for RNNs. Precursor to Adam.
+```
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+model = nn.Sequential(
+    nn.Linear(128, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+# Optimizer choices and when to use each:
+optimizer_sgd   = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+optimizer_adam  = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
+optimizer_adamw = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
+# AdamW = Adam + proper L2 regularization — the default for transformer fine-tuning
+
+# Learning rate schedule: reduce lr when validation loss plateaus
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer_adam, mode='min', factor=0.5, patience=3)
+
+# Training loop
+for epoch in range(10):
+    train_loss = train_one_epoch(model, optimizer_adam)     # your training function
+    val_loss   = evaluate(model)
+    scheduler.step(val_loss)    # halves lr if val_loss doesn't improve for 3 epochs
+    print(f"Epoch {epoch}: train={train_loss:.4f}, val={val_loss:.4f}, lr={scheduler.get_last_lr()[0]:.6f}")
+```
+
+**Interview quick guide**:
+| Optimizer | When to use |
+|---|---|
+| SGD + momentum | Image classifiers (ResNet, VGG). More stable final performance. |
+| Adam | Default for everything else — transformers, MLPs, early experiments. |
+| AdamW | Fine-tuning LLMs, BERT, GPT. Adam + correct weight decay. |
+| RMSProp | RNN/LSTM training. |
+
+---
+
+## Weight Initialization — Why Starting Values Matter
+
+Randomly initializing weights poorly causes gradients to vanish or explode before training even begins. The goal: keep activation and gradient variance roughly constant across layers.
+
+```
+The problem with random Normal(0, 1) initialization in deep networks:
+  Layer 1 output: variance ≈ n × 1.0 (grows with width n)
+  → After 10 layers: exponential explosion or collapse of signal
+
+Xavier / Glorot Initialization (for Sigmoid/Tanh):
+  std = sqrt(2 / (fan_in + fan_out))
+  → designed so signal variance stays ~1.0 through sigmoid/tanh activations
+
+He Initialization (for ReLU):
+  std = sqrt(2 / fan_in)
+  → designed so variance stays ~1.0 through ReLU (which zeros half the values)
+  → PyTorch default for nn.Linear layers when followed by ReLU
+```
+
+```python
+import torch
+import torch.nn as nn
+
+# Manual initialization
+def initialize_layer(layer: nn.Linear, activation: str = 'relu') -> None:
+    if activation == 'relu':
+        # He initialization: best for ReLU networks
+        nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
+    elif activation in ('sigmoid', 'tanh'):
+        # Xavier initialization: best for sigmoid/tanh networks
+        nn.init.xavier_uniform_(layer.weight)
+    nn.init.zeros_(layer.bias)  # biases start at 0
+
+model = nn.Sequential(
+    nn.Linear(512, 256),
+    nn.ReLU(),
+    nn.Linear(256, 128),
+    nn.ReLU(),
+    nn.Linear(128, 10)
+)
+
+# Initialize all Linear layers with He init
+for layer in model:
+    if isinstance(layer, nn.Linear):
+        initialize_layer(layer, activation='relu')
+
+# Verify: check output variance after initialization
+x = torch.randn(100, 512)
+with torch.no_grad():
+    out = model(x)
+    print(f"Output std: {out.std().item():.4f}")  # should be near 1.0 with good init
+```
+
+---
+
+## Batch Normalization — Stabilizing Deep Networks
+
+Without Batch Norm, deeper networks (>10 layers) are notoriously hard to train — activations drift and gradients vanish. Batch Norm normalizes activations within each mini-batch.
+
+```
+For each mini-batch B = {x₁, x₂, ..., xₘ}:
+
+  1. Mean:      μ_B = (1/m) Σ xᵢ
+  2. Variance:  σ²_B = (1/m) Σ (xᵢ - μ_B)²
+  3. Normalize: x̂ᵢ = (xᵢ - μ_B) / √(σ²_B + ε)
+  4. Scale:     y = γ × x̂ᵢ + β    (γ, β are learned per feature)
+
+Benefits:
+  → Each layer receives roughly zero-mean, unit-variance activations
+  → Allows higher learning rates (training is more stable)
+  → Acts as light regularization (noise from batch statistics)
+  → Reduces sensitivity to weight initialization
+
+Where to place it:
+  Common pattern: Linear → BatchNorm → Activation → Dropout
+  (Some papers prefer: Linear → Activation → BatchNorm — both work)
+```
+
+```python
+import torch
+import torch.nn as nn
+
+# MLP with Batch Normalization
+class MLPWithBatchNorm(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),   # normalize after linear, before activation
+            nn.ReLU(),
+            nn.Dropout(0.3),
+
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+
+            nn.Linear(hidden_dim // 2, output_dim)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x)
+
+model = MLPWithBatchNorm(input_dim=128, hidden_dim=256, output_dim=10)
+
+# CRITICAL: BatchNorm behaves differently in train vs eval mode!
+model.train()   # uses batch statistics (mean, std of current batch)
+model.eval()    # uses running statistics accumulated during training
+# Always call model.eval() during validation and inference!
+```
+
+---
+
+## Transfer Learning — The Most Practical Skill in Deep Learning
+
+Training from scratch requires millions of labeled examples. **Transfer learning** lets you take a model pre-trained on a large dataset (ImageNet, web text) and adapt it to your specific task with far less data.
+
+```
+The Concept:
+  A model trained on ImageNet (1.2M images, 1000 classes) has learned:
+  - Layer 1: edge detectors
+  - Layer 2: texture patterns
+  - Layer 3: part detectors (wheels, faces, wings)
+  - Layer 4: object recognizers
+
+  For your medical imaging task, layers 1-3 are immediately useful!
+  Only the final "head" needs to be learned from your data.
+
+Three transfer learning strategies:
+  1. Feature extraction:  Freeze ALL pre-trained weights, train only the new head
+                          → fastest, best when your dataset is small (<1000 examples)
+  2. Fine-tuning:        Unfreeze top N layers + train the head
+                          → better results, needs more data (~5K+ examples)
+  3. Full fine-tuning:   Train all layers at a very low learning rate
+                          → best results, needs lots of data and compute
+```
+
+```python
+import torch
+import torch.nn as nn
+import torchvision.models as models
+
+# Load a pre-trained ResNet-50 (trained on ImageNet)
+model = models.resnet50(pretrained=True)
+
+# Strategy 1: Feature extraction — freeze everything except the final layer
+for param in model.parameters():
+    param.requires_grad = False    # freeze all layers
+
+# Replace the final layer for your task (e.g., 2-class binary classification)
+num_features = model.fc.in_features          # 2048 for ResNet-50
+model.fc = nn.Linear(num_features, 2)        # your new head (trainable)
+
+# Only the new head is trainable
+trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+total_params = sum(p.numel() for p in model.parameters())
+print(f"Trainable: {trainable_params:,} / Total: {total_params:,}")  # ~4K / 25M
+
+# Strategy 2: Fine-tuning — unfreeze top layers (layer4 + head)
+for name, param in model.named_parameters():
+    if 'layer4' in name or 'fc' in name:
+        param.requires_grad = True     # unfreeze top ResNet block + head
+
+# Use a smaller learning rate for pre-trained layers to preserve what they learned
+optimizer = torch.optim.AdamW([
+    {'params': model.layer4.parameters(), 'lr': 1e-5},   # smaller lr for pretrained
+    {'params': model.fc.parameters(),     'lr': 1e-3},   # larger lr for new head
+])
+```
+
+**Transfer learning in NLP** (identical concept):
+```python
+from transformers import AutoModel, AutoTokenizer
+import torch.nn as nn
+
+# Load BERT pre-trained on 3.3B words
+bert = AutoModel.from_pretrained('bert-base-uncased')
+
+# Freeze BERT, add classification head
+for param in bert.parameters():
+    param.requires_grad = False
+
+class TextClassifier(nn.Module):
+    def __init__(self, bert, num_classes):
+        super().__init__()
+        self.bert = bert
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(768, num_classes)  # 768 = BERT hidden size
+        )
+
+    def forward(self, input_ids, attention_mask):
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        cls_token = outputs.last_hidden_state[:, 0, :]  # [CLS] token
+        return self.classifier(cls_token)
+```
+
+
+
 ## Interactive Quiz
 
 <Quiz questions={[

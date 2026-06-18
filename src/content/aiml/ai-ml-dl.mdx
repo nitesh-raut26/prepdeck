@@ -375,6 +375,183 @@ for feat, imp in sorted(zip(features, model.feature_importances_), key=lambda x:
 
 ---
 
+## Data Science, ML, and AI Roles — Know the Difference
+
+One of the most common interview mistakes is confusing these roles. Here's what each actually does:
+
+| Role | Day-to-day work | Skills | Tools |
+|---|---|---|---|
+| **Data Analyst** | Querying data, building dashboards, answering business questions | SQL, Excel, BI tools | Tableau, Power BI, SQL |
+| **Data Scientist** | EDA, feature engineering, classical ML models, A/B testing | Python, stats, ML | Pandas, sklearn, Jupyter |
+| **ML Engineer** | Production ML pipelines, model serving, MLOps, scaling | Software engineering + ML | Docker, MLflow, PyTorch |
+| **AI Engineer** | LLM applications, RAG, agents, prompt engineering | LLM APIs, NLP, infrastructure | LangChain, OpenAI, vector DBs |
+| **Research Scientist** | Novel algorithms, papers, improving model architecture | Deep math, PyTorch, CUDA | JAX, custom CUDA, academic tools |
+
+```
+Career ladder analogy:
+
+  Data Analyst → answers "what happened?"
+  Data Scientist → answers "why did it happen and what will happen?"
+  ML Engineer → answers "how do we deploy and scale that prediction?"
+  AI Engineer → answers "how do we build applications powered by foundation models?"
+
+Most entry-level DS/ML roles require:
+  ✓ Python + Pandas + NumPy (data manipulation)
+  ✓ SQL (data querying — often more important than ML!)
+  ✓ Classical ML (sklearn: logistic regression, trees, cross-validation)
+  ✓ Statistics (hypothesis testing, A/B testing, distributions)
+  ✓ Communication (presenting findings to non-technical stakeholders)
+```
+
+---
+
+## Feature Types — The Taxonomy Every DS Must Know
+
+Every dataset is made of features. Understanding feature types determines how you preprocess, encode, and model them.
+
+```
+NUMERICAL FEATURES (numbers that have magnitude):
+  Continuous:  age=28.5, salary=72000.0, temperature=98.6
+               → can be any decimal value
+               → use StandardScaler or MinMaxScaler before distance models
+  Discrete:    num_children=2, purchases_this_month=5
+               → whole numbers only
+
+CATEGORICAL FEATURES (labels, no inherent ordering):
+  Nominal:  city="Mumbai", department="Engineering", color="red"
+            → no order between values
+            → encode with One-Hot Encoding (pd.get_dummies)
+  Ordinal:  education="Bachelor" < "Master" < "PhD"
+            → has meaningful order
+            → encode with LabelEncoder or map to integers manually
+
+BOOLEAN FEATURES:
+  is_subscriber=True, has_paid=False
+  → often used directly as 0/1
+
+TEMPORAL FEATURES:
+  signup_date, last_login, created_at
+  → extract: hour_of_day, day_of_week, is_weekend, days_since_event
+  → never feed raw timestamps to models
+
+TEXT FEATURES:
+  reviews, descriptions, support tickets
+  → TF-IDF, bag of words, or transformer embeddings
+
+IMAGE / AUDIO / VIDEO:
+  → pixel arrays, spectrograms, frame tensors
+  → require CNNs or pre-trained feature extractors
+```
+
+```python
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+
+# Sample data with mixed feature types
+data = pd.DataFrame({
+    "age":          [25, 30, 35, 28],              # numerical continuous
+    "salary":       [50000, 75000, 90000, 60000],  # numerical continuous
+    "num_products": [2, 5, 8, 1],                  # numerical discrete
+    "city":         ["Mumbai", "Delhi", "Pune", "Mumbai"],  # categorical nominal
+    "education":    ["Bachelor", "Master", "PhD", "Bachelor"],  # categorical ordinal
+    "joined":       ["2020-01-15", "2019-03-22", "2018-07-01", "2022-05-20"],  # temporal
+})
+
+# --- Feature engineering pipeline ---
+# 1. Parse dates and extract useful features
+data["joined"] = pd.to_datetime(data["joined"])
+data["tenure_days"] = (pd.Timestamp.now() - data["joined"]).dt.days
+data["join_year"] = data["joined"].dt.year
+
+# 2. Encode categorical: nominal → one-hot
+data = pd.get_dummies(data, columns=["city"], prefix="city")
+
+# 3. Encode ordinal: education has meaningful order
+edu_map = {"Bachelor": 0, "Master": 1, "PhD": 2}
+data["education_level"] = data["education"].map(edu_map)
+data = data.drop(columns=["education", "joined"])
+
+print(data.columns.tolist())
+# All features are now numeric → ready for any ML model!
+```
+
+---
+
+## Exploratory Data Analysis (EDA) — The Step Everyone Skips
+
+EDA is what separates data scientists from script runners. You must understand your data before modeling. Here's the 5-step EDA workflow:
+
+```
+Step 1: Load and inspect
+  df.head(), df.info(), df.describe(), df.shape
+
+Step 2: Missing value analysis
+  df.isnull().sum(), visualize with heatmap
+
+Step 3: Univariate analysis (one variable at a time)
+  Numerical: histogram, box plot → check for skew and outliers
+  Categorical: bar chart, value_counts()
+
+Step 4: Bivariate analysis (variable vs target)
+  Numerical vs target: scatter plot, correlation coefficient
+  Categorical vs target: grouped bar chart, crosstab
+
+Step 5: Multivariate analysis
+  Correlation matrix (heatmap), pairplot
+  Feature importance from a quick Random Forest
+```
+
+```python
+import pandas as pd
+import numpy as np
+
+# Minimal EDA checklist (works on any dataset)
+def quick_eda(df: pd.DataFrame, target: str = None):
+    print("=" * 50)
+    print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+    print("=" * 50)
+
+    # Missing values
+    missing = df.isnull().sum()
+    missing_pct = (missing / len(df) * 100).round(1)
+    missing_report = pd.DataFrame({"missing_count": missing, "missing_pct": missing_pct})
+    missing_report = missing_report[missing_report["missing_count"] > 0]
+    if not missing_report.empty:
+        print("\n📊 MISSING VALUES:")
+        print(missing_report.sort_values("missing_pct", ascending=False))
+    else:
+        print("\n✅ No missing values")
+
+    # Numerical summary
+    numerical_cols = df.select_dtypes(include=np.number).columns.tolist()
+    print(f"\n📈 NUMERICAL FEATURES ({len(numerical_cols)}): {numerical_cols}")
+    print(df[numerical_cols].describe().round(2))
+
+    # Categorical summary
+    categorical_cols = df.select_dtypes(include=object).columns.tolist()
+    print(f"\n📝 CATEGORICAL FEATURES ({len(categorical_cols)}): {categorical_cols}")
+    for col in categorical_cols:
+        print(f"\n  {col} — {df[col].nunique()} unique values:")
+        print(f"  {df[col].value_counts().head(5).to_dict()}")
+
+    # Target distribution
+    if target and target in df.columns:
+        print(f"\n🎯 TARGET: {target}")
+        print(df[target].value_counts(normalize=True).round(3))
+
+# Example usage
+from sklearn.datasets import load_breast_cancer
+data = load_breast_cancer()
+df = pd.DataFrame(data.data, columns=data.feature_names)
+df["target"] = data.target
+quick_eda(df, target="target")
+```
+
+---
+
+
 ## Common Interview Questions
 
 <QA q="What's the difference between AI, ML, and deep learning?">
@@ -439,5 +616,7 @@ Overfitting is when a model performs well on training data but poorly on new (un
 1. **Beginner**: Using scikit-learn, train a logistic regression model to classify Iris flowers. Evaluate with precision, recall, and F1 score.
 2. **Core**: Compare Random Forest, SVM, and Gradient Boosting on a tabular dataset. Plot learning curves to diagnose overfitting.
 3. **Advanced**: Build a complete ML pipeline — data preprocessing, feature engineering, model selection with cross-validation, hyperparameter tuning with GridSearchCV, and final test set evaluation.
+
+Tooling: Before any model, master [NumPy & Pandas for ML](/aiml/numpy-pandas) — the two libraries every ML pipeline starts with.
 
 Next: [Math Foundations](/aiml/math-foundations) — the minimal math required to understand ML models.

@@ -1,0 +1,607 @@
+---
+title: "NumPy & Pandas for Machine Learning"
+summary: "The two libraries every ML engineer reaches for first — NumPy for fast numerical arrays, Pandas for structured data manipulation. Learn them from zero, use them confidently in every ML pipeline."
+order: 13
+difficulty: "Foundation"
+tags: ["numpy", "pandas", "data-manipulation", "machine-learning", "python", "arrays", "dataframes"]
+---
+
+## Starting from Zero — A Physical Intuition
+
+Before any code, build a mental model of what these libraries actually are:
+
+*   **NumPy Arrays as a Spreadsheet of Numbers**: Imagine a perfectly organized grid of numbers — no text, no mixed types, just pure numbers arranged in rows and columns. Every cell in the same grid is the same type. This makes computations blazing fast because the computer can process every cell together in a single hardware instruction. That's a NumPy array.
+
+*   **Pandas DataFrames as a Smart Spreadsheet**: Now imagine a spreadsheet where each column can have a different type (numbers, text, dates, booleans) and every row and column has a name. You can filter rows with plain English-like queries, group rows by a category, and merge two spreadsheets together just like SQL. That's a Pandas DataFrame.
+
+*   **Why Both?**: NumPy is the fast engine — ML models only understand numbers and need raw speed. Pandas is the smart loader — real-world data comes messy in CSV/Excel/SQL form and needs cleaning, joining, and exploration first. Every ML workflow starts with Pandas and ends with NumPy.
+
+```
+Real World Data (CSV/SQL/Excel)
+         ↓  Pandas  (explore, clean, transform)
+Clean DataFrame
+         ↓  .values or .to_numpy()
+NumPy Array
+         ↓  scikit-learn / TensorFlow / PyTorch
+Trained Model
+```
+
+---
+
+## Part 1 — NumPy: The Engine of Numerical ML
+
+### Why NumPy Exists
+
+Pure Python lists are flexible but slow. A Python `for` loop runs one element at a time in interpreted code. NumPy arrays store data in contiguous memory blocks (like C) and apply operations to the **entire array at once** using vectorized SIMD CPU instructions. The speedup is typically **100× to 1000×** for numerical computation.
+
+```python
+import numpy as np
+import time
+
+# Python list approach
+python_list = list(range(1_000_000))
+start = time.time()
+result = [x * 2 for x in python_list]
+print(f"Python list: {time.time() - start:.3f}s")   # ~0.100s
+
+# NumPy approach
+numpy_array = np.arange(1_000_000)
+start = time.time()
+result = numpy_array * 2                             # No loop needed!
+print(f"NumPy array: {time.time() - start:.3f}s")   # ~0.002s — 50x faster
+```
+
+### Creating Arrays — Every Way You'll Need
+
+```python
+import numpy as np
+
+# --- From Python data ---
+arr1 = np.array([1, 2, 3, 4, 5])                    # 1D array, shape (5,)
+arr2 = np.array([[1, 2, 3], [4, 5, 6]])             # 2D array, shape (2, 3)
+
+# --- Ranges ---
+arr3 = np.arange(0, 10, 2)                          # [0, 2, 4, 6, 8]
+arr4 = np.linspace(0, 1, 5)                         # [0.0, 0.25, 0.5, 0.75, 1.0]
+
+# --- Pre-filled ---
+zeros  = np.zeros((3, 4))                            # 3 rows, 4 cols of 0.0
+ones   = np.ones((2, 2))                             # [[1., 1.], [1., 1.]]
+eye    = np.eye(3)                                   # 3×3 identity matrix
+rand   = np.random.rand(3, 3)                        # uniform random [0, 1)
+randn  = np.random.randn(100)                        # 100 standard-normal samples
+
+# --- Shape inspection ---
+print(arr2.shape)   # (2, 3)  ← rows, cols
+print(arr2.dtype)   # int64
+print(arr2.size)    # 6  ← total elements
+print(arr2.ndim)    # 2  ← number of dimensions
+```
+
+### Indexing and Slicing — How to Select Data
+
+```python
+arr = np.array([[10, 20, 30],
+                [40, 50, 60],
+                [70, 80, 90]])
+
+# Basic indexing (row, col)
+print(arr[0, 2])       # 30  — first row, third column
+print(arr[-1, -1])     # 90  — last row, last column
+
+# Slicing (like Python but in 2D)
+print(arr[0, :])       # [10, 20, 30]  — entire first row
+print(arr[:, 1])       # [20, 50, 80]  — entire second column
+print(arr[0:2, 1:3])   # [[20, 30], [50, 60]] — top-right 2×2 block
+
+# Boolean indexing — the ML workhorse
+mask = arr > 40
+print(arr[mask])       # [50, 60, 70, 80, 90]  — all values > 40
+
+# Fancy indexing — select specific rows
+rows_wanted = [0, 2]
+print(arr[rows_wanted])  # [[10, 20, 30], [70, 80, 90]]
+```
+
+### Mathematical Operations — The Heart of NumPy
+
+```python
+a = np.array([1, 2, 3, 4])
+b = np.array([10, 20, 30, 40])
+
+# Element-wise operations (no loops needed!)
+print(a + b)            # [11, 22, 33, 44]
+print(a * b)            # [10, 40, 90, 160]
+print(a ** 2)           # [1, 4, 9, 16]
+print(np.sqrt(a))       # [1., 1.41, 1.73, 2.]
+print(np.log(a))        # natural log of each element
+
+# Dot product (critical for ML!)
+print(np.dot(a, b))     # 1×10 + 2×20 + 3×30 + 4×40 = 300
+# Or equivalently:
+print(a @ b)            # 300 (@ is matrix multiplication operator)
+
+# Aggregations
+print(np.sum(a))        # 10
+print(np.mean(a))       # 2.5
+print(np.std(a))        # standard deviation
+print(np.max(a), np.min(a))   # 4, 1
+
+# Axis-wise aggregations on 2D arrays
+matrix = np.array([[1, 2, 3],
+                   [4, 5, 6]])
+print(np.sum(matrix, axis=0))  # [5, 7, 9] — sum down columns
+print(np.sum(matrix, axis=1))  # [6, 15]   — sum across rows
+```
+
+### Reshaping — Critical for ML Model Inputs
+
+```python
+arr = np.arange(12)          # [0, 1, 2, ..., 11]
+
+# Reshape to 2D
+m = arr.reshape(3, 4)        # 3 rows, 4 cols
+m = arr.reshape(4, 3)        # 4 rows, 3 cols
+m = arr.reshape(2, 2, 3)     # 3D — 2 groups of 2×3 matrices
+
+# -1 means "figure out this dimension automatically"
+m = arr.reshape(-1, 3)       # (4, 3) — NumPy computes 4 for you
+m = arr.reshape(3, -1)       # (3, 4)
+
+# Flatten — turn any shape back to 1D
+print(m.flatten())           # [0, 1, 2, ..., 11]
+
+# Transposing (swap rows and columns)
+m = np.array([[1, 2, 3], [4, 5, 6]])
+print(m.T)                   # [[1, 4], [2, 5], [3, 6]] — shape (3, 2)
+```
+
+### Broadcasting — NumPy's Superpower
+
+Broadcasting allows NumPy to operate on arrays of different shapes without copying data:
+
+```python
+# Normalize a dataset: subtract mean, divide by std
+# Without broadcasting, you'd need a loop
+data = np.array([[1.0, 2.0, 3.0],
+                 [4.0, 5.0, 6.0],
+                 [7.0, 8.0, 9.0]])   # shape (3, 3)
+
+column_means = np.mean(data, axis=0)   # shape (3,) — one mean per column
+column_stds  = np.std(data, axis=0)    # shape (3,)
+
+# Broadcasting: (3,3) - (3,) → NumPy "broadcasts" (3,) to (3,3) automatically!
+normalized = (data - column_means) / column_stds
+# This is Z-score normalization — used EVERYWHERE in ML preprocessing!
+
+print(normalized)
+# Each column now has mean ≈ 0 and std ≈ 1
+```
+
+### Real ML Use: Implementing Common Operations from Scratch
+
+```python
+import numpy as np
+
+# ----- Cosine Similarity (used in RAG, NLP, recommendation systems) -----
+def cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
+    """Measure the angle between two vectors. 1.0 = identical, 0.0 = perpendicular."""
+    dot_product = np.dot(vec_a, vec_b)
+    norm_a = np.linalg.norm(vec_a)    # ||a|| — Euclidean length
+    norm_b = np.linalg.norm(vec_b)
+    return dot_product / (norm_a * norm_b)
+
+v1 = np.array([1.0, 2.0, 3.0])
+v2 = np.array([1.0, 2.0, 3.0])   # identical
+v3 = np.array([3.0, -1.0, 0.0])  # different
+
+print(f"Identical vectors: {cosine_similarity(v1, v2):.4f}")   # 1.0000
+print(f"Different vectors: {cosine_similarity(v1, v3):.4f}")   # 0.2673
+
+# ----- Softmax (used in neural network output layers) -----
+def softmax(x: np.ndarray) -> np.ndarray:
+    """Convert raw scores to probabilities that sum to 1."""
+    # Subtract max for numerical stability (prevents overflow)
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
+
+logits = np.array([2.0, 1.0, 0.1])
+probs = softmax(logits)
+print(f"Probabilities: {probs}")         # [0.659, 0.242, 0.099]
+print(f"Sum: {probs.sum():.4f}")         # 1.0000
+
+# ----- Mean Squared Error Loss -----
+def mse_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """The loss function linear regression minimizes."""
+    return np.mean((y_true - y_pred) ** 2)
+
+y_true = np.array([3.0, -0.5, 2.0, 7.0])
+y_pred = np.array([2.5,  0.0, 2.0, 8.0])
+print(f"MSE: {mse_loss(y_true, y_pred):.4f}")   # 0.3750
+```
+
+---
+
+## Part 2 — Pandas: The Smart Data Loader
+
+### Why Pandas Exists
+
+Real-world data is messy: CSVs with missing values, columns with mixed types, dates as strings, multiple tables that need joining. Pandas provides a **DataFrame** — a table with labelled rows and columns — along with hundreds of operations for reading, cleaning, transforming, and analyzing this data before feeding it to ML models.
+
+```python
+import pandas as pd
+
+# Every ML project starts with one of these:
+df = pd.read_csv("data.csv")              # CSV files
+df = pd.read_excel("data.xlsx")          # Excel files
+df = pd.read_json("data.json")           # JSON
+df = pd.read_sql("SELECT * FROM users", conn)  # SQL databases
+df = pd.read_parquet("data.parquet")    # Parquet (big data)
+```
+
+### Creating and Inspecting DataFrames
+
+```python
+import pandas as pd
+
+# Creating a DataFrame manually (great for experiments)
+data = {
+    "name":   ["Alice", "Bob", "Carol", "Dave", "Eve"],
+    "age":    [25, 30, 35, None, 28],         # None = missing value
+    "salary": [50000, 75000, 90000, 65000, 80000],
+    "dept":   ["Eng", "Eng", "HR", "Finance", "Eng"],
+    "joined": ["2020-01-15", "2019-03-22", "2018-07-01", "2021-11-10", "2022-05-20"],
+}
+df = pd.DataFrame(data)
+
+# ===== First 5 commands every data scientist runs =====
+print(df.head())            # first 5 rows — visual check
+print(df.tail(3))           # last 3 rows
+print(df.shape)             # (5, 5) — rows × columns
+print(df.dtypes)            # data type of each column
+print(df.info())            # concise summary (non-nulls, dtypes, memory)
+print(df.describe())        # count, mean, std, min, 25%, 50%, 75%, max for numerics
+```
+
+### Selecting Data — iloc vs loc
+
+This is the most confusing thing for beginners. Memorize the rule:
+
+```python
+# loc  → label-based  (use column NAMES, row LABELS)
+# iloc → integer-based (use row/col NUMBERS, 0-indexed)
+
+# --- loc examples ---
+print(df.loc[0])                       # row with index label 0
+print(df.loc[0:2])                     # rows 0, 1, 2 (INCLUSIVE on both ends!)
+print(df.loc[0, "name"])               # "Alice" — row 0, column "name"
+print(df.loc[:, ["name", "salary"]])   # all rows, specific columns
+print(df.loc[df["dept"] == "Eng"])     # boolean filter — only Eng rows
+
+# --- iloc examples ---
+print(df.iloc[0])                      # first row (by position)
+print(df.iloc[0:2])                    # rows 0, 1 (exclusive on right, like Python!)
+print(df.iloc[0, 1])                   # row 0, column 1 → 25 (age)
+print(df.iloc[:, [0, 2]])              # all rows, columns at positions 0 and 2
+
+# --- Shorthand column access ---
+print(df["name"])                      # Series — one column
+print(df[["name", "salary"]])          # DataFrame — multiple columns
+print(df.name)                         # Same as df["name"] — works for simple names
+```
+
+### Handling Missing Values — The Most Common Real-World Task
+
+```python
+# Inspect missing data
+print(df.isnull())           # True/False for each cell
+print(df.isnull().sum())     # count of missing per column
+print(df.isnull().sum() / len(df) * 100)  # % missing per column
+
+# Strategy 1: Drop rows with any missing value
+df_clean = df.dropna()
+
+# Strategy 2: Drop columns with too many missing values
+df_clean = df.dropna(axis=1, thresh=4)   # keep col only if 4+ non-null values
+
+# Strategy 3: Fill with a fixed value
+df["age"] = df["age"].fillna(0)
+
+# Strategy 4: Fill with mean (most common for ML!)
+df["age"] = df["age"].fillna(df["age"].mean())
+
+# Strategy 5: Fill with median (better for skewed data)
+df["age"] = df["age"].fillna(df["age"].median())
+
+# Strategy 6: Forward fill (great for time-series)
+df["age"] = df["age"].fillna(method="ffill")
+```
+
+### Filtering and Querying Data
+
+```python
+# Boolean filters (the main way)
+eng_staff = df[df["dept"] == "Eng"]
+high_earners = df[df["salary"] > 70000]
+young_eng = df[(df["dept"] == "Eng") & (df["age"] < 30)]   # & for AND
+senior_or_rich = df[(df["age"] > 32) | (df["salary"] > 80000)]  # | for OR
+
+# .query() — more readable for complex conditions
+high_earners = df.query("salary > 70000 and dept == 'Eng'")
+
+# .isin() — filter by list of values
+tech_depts = df[df["dept"].isin(["Eng", "Finance"])]
+
+# .between() — range filter
+mid_earners = df[df["salary"].between(60000, 80000)]
+```
+
+### Adding and Transforming Columns — Feature Engineering
+
+```python
+# Add new columns (feature engineering — critical for ML!)
+df["salary_k"] = df["salary"] / 1000                    # salary in thousands
+df["senior"] = df["age"] > 30                           # boolean feature
+df["age_squared"] = df["age"] ** 2                      # polynomial feature
+
+# Apply a function to a column
+df["name_length"] = df["name"].apply(len)
+df["salary_band"] = df["salary"].apply(
+    lambda x: "high" if x > 80000 else "mid" if x > 60000 else "low"
+)
+
+# Apply to multiple columns at once
+df["annual_tax"] = df.apply(
+    lambda row: row["salary"] * 0.3 if row["age"] > 28 else row["salary"] * 0.2,
+    axis=1   # axis=1 means "apply row-by-row"
+)
+
+# String operations on text columns
+df["dept_lower"] = df["dept"].str.lower()
+df["name_upper"] = df["name"].str.upper()
+df["has_a"] = df["name"].str.contains("a", case=False)
+```
+
+### Grouping and Aggregation — Understanding Your Data
+
+```python
+# groupby is the SQL GROUP BY equivalent
+dept_stats = df.groupby("dept")["salary"].mean()
+print(dept_stats)
+# dept
+# Eng        68333.333
+# Finance    65000.000
+# HR         90000.000
+
+# Multiple aggregations at once
+dept_summary = df.groupby("dept").agg(
+    avg_salary  = ("salary", "mean"),
+    max_salary  = ("salary", "max"),
+    headcount   = ("name", "count"),
+    avg_age     = ("age", "mean")
+)
+print(dept_summary)
+
+# value_counts — most useful one-liner in Pandas
+print(df["dept"].value_counts())          # count of each department
+print(df["dept"].value_counts(normalize=True))  # as percentages
+```
+
+### Encoding Categorical Features for ML
+
+ML models only understand numbers. Here's how to convert text categories:
+
+```python
+# One-Hot Encoding: "dept" → separate 0/1 columns per category
+# This is what you MUST do before passing data to sklearn
+df_encoded = pd.get_dummies(df, columns=["dept"], prefix="dept")
+print(df_encoded.columns.tolist())
+# ['name', 'age', 'salary', 'joined', 'dept_Eng', 'dept_Finance', 'dept_HR']
+# Each dept_ column is 0 or 1
+
+# Label Encoding: "dept" → integer (for tree models)
+from sklearn.preprocessing import LabelEncoder
+le = LabelEncoder()
+df["dept_code"] = le.fit_transform(df["dept"])
+# Eng → 0, Finance → 1, HR → 2
+```
+
+### The Full Preprocessing Pipeline — From Raw CSV to Model-Ready NumPy
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+# ===== Step 1: Load =====
+df = pd.read_csv("employees.csv")
+print(f"Loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+print(df.isnull().sum())
+
+# ===== Step 2: Explore =====
+print(df.describe())
+print(df["dept"].value_counts())
+
+# ===== Step 3: Clean =====
+df["age"] = df["age"].fillna(df["age"].median())         # fill missing age
+df = df.dropna(subset=["salary"])                        # drop if salary missing
+
+# ===== Step 4: Feature Engineering =====
+df["salary_log"] = np.log1p(df["salary"])               # log transform (reduces skew)
+df["seniority"] = df["age"] - 22                        # years since typical grad age
+df["joined"] = pd.to_datetime(df["joined"])             # parse dates
+df["tenure_days"] = (pd.Timestamp.now() - df["joined"]).dt.days
+
+# ===== Step 5: Encode Categoricals =====
+df = pd.get_dummies(df, columns=["dept"], drop_first=True)  # drop_first avoids dummy trap
+
+# ===== Step 6: Define Features and Target =====
+target = "high_performer"     # assume this column is our binary target
+feature_cols = [c for c in df.columns if c not in [target, "name", "joined"]]
+X = df[feature_cols].values   # → NumPy array  (use .to_numpy() alternatively)
+y = df[target].values         # → NumPy array
+
+# ===== Step 7: Split =====
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# ===== Step 8: Scale (AFTER splitting — never before!) =====
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)    # fit on train only
+X_test  = scaler.transform(X_test)         # apply same transform to test
+
+print(f"Train: {X_train.shape}, Test: {X_test.shape}")
+# Your data is now ready for any sklearn model
+```
+
+---
+
+## Key Interview Concepts
+
+### NumPy vs Python Lists — When and Why
+
+```
+Feature             Python List         NumPy Array
+------              -----------         -----------
+Types               Mixed OK            Single type only
+Speed               Slow (interpreted)  Fast (C-level, vectorized)
+Memory              More (pointers)     Less (contiguous)
+Multi-dimensional   Nested lists        Native n-dimensional
+Math operations     Manual loops        Element-wise automatic
+ML compatibility    ✗ (not accepted)    ✓ (standard input)
+
+Use Python lists for:  Heterogeneous data, small collections, appending
+Use NumPy arrays for:  Numerical computation, ML features, matrix ops
+```
+
+### Pandas .loc vs .iloc — Never Get Confused Again
+
+```
+df.loc[row_label, col_name]     # Labels  — df.loc[0, "name"]   — right boundary INCLUDED
+df.iloc[row_pos,  col_pos]      # Integers — df.iloc[0, 1]      — right boundary EXCLUDED
+
+Mental model:
+loc  → dictionary-style lookup by name
+iloc → list-style lookup by position
+```
+
+### Data Leakage in Preprocessing — The #1 Mistake
+
+```python
+# ❌ WRONG — data leakage!
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)           # uses ALL data including test
+X_train, X_test = train_test_split(X_scaled)
+
+# ✓ CORRECT — fit only on training data
+X_train, X_test = train_test_split(X)
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)      # fit AND transform train
+X_test  = scaler.transform(X_test)           # ONLY transform test (no fit!)
+```
+
+Why? `fit_transform` computes the mean and std of the data. If you compute mean/std on ALL data (including test), the test set has secretly influenced the training process. That's cheating — it inflates performance metrics and misleads you about real-world performance.
+
+---
+
+<ThinkThrough
+  title="NumPy & Pandas in the ML Pipeline"
+  difficulty="Data Engineering Fundamentals"
+  problem="You receive a raw CSV file with 50,000 rows of customer transaction data. Columns: customer_id (string), amount (float, 2% missing), category (string), timestamp (string), is_fraud (0/1 target). Design the complete preprocessing pipeline before feeding to a fraud classifier."
+  stages={[
+    {
+      label: "Parse and inspect raw data",
+      prompt: "What are the first 4 operations you run on any new CSV file, and why?",
+      reveal: "1) df.head() — visually check the data looks as expected. 2) df.info() — see dtypes and non-null counts (spot missing values). 3) df.describe() — see distributions (min, max, mean, std) to spot outliers. 4) df.isnull().sum() — quantify missing values per column. These four steps tell you 80% of what's wrong before any preprocessing."
+    },
+    {
+      label: "Handle the missing 'amount' values",
+      prompt: "amount is missing for 2% of rows. Should you drop those rows, fill with mean, or fill with median? Explain your reasoning for fraud detection.",
+      reveal: "Use median, not mean. Fraud amounts are likely skewed (a few very large fraudulent transactions pull the mean high). The median is robust to outliers — it represents the typical transaction amount. You must compute the median ONLY on the training set and apply that same value to fill missing amounts in the test set. Never compute the median on the full dataset before splitting."
+    },
+    {
+      label: "Encode 'category' and parse 'timestamp'",
+      prompt: "How do you convert the 'category' column (e.g., 'groceries', 'online', 'ATM') to a format a model can use? What useful features can you extract from 'timestamp'?",
+      reveal: "For 'category': use pd.get_dummies() (one-hot encoding) if using logistic regression or neural networks (no ordinal relationship to assume). Use LabelEncoder only for tree models which handle integer codes natively. For 'timestamp': parse with pd.to_datetime() and extract: hour_of_day (fraud concentrates at night), day_of_week, is_weekend, days_since_last_transaction (velocity feature). These engineered time features are often more predictive than the raw timestamp."
+    }
+  ]}
+/>
+
+---
+
+## Common Interview Questions
+
+<QA q="What is the difference between a NumPy array and a Python list?">
+
+A Python list is a general-purpose container: it can hold elements of mixed types (integers, strings, objects) but processes them one at a time in interpreted Python. A NumPy array is a homogeneous, contiguous block of memory of a single numeric type, enabling vectorized C-level operations across the entire array simultaneously. For ML: NumPy arrays are 100–1000× faster for numerical computation, use less memory, support multi-dimensional (n-D) indexing natively, and are the standard input format for every ML library (scikit-learn, TensorFlow, PyTorch all require arrays, not lists).
+
+</QA>
+
+<QA q="What is broadcasting in NumPy and give a real ML example?">
+
+Broadcasting is NumPy's ability to perform operations between arrays of different shapes by conceptually "stretching" the smaller array to match the larger one — without actually copying any data. The rule: two dimensions are compatible if they are equal or one of them is 1. Real ML example: normalizing a dataset matrix of shape (10000, 30) by subtracting the column means (shape (30,)). NumPy broadcasts the (30,) mean vector across all 10,000 rows, equivalent to subtracting a replicated (10000, 30) matrix but using zero extra memory. This is Z-score normalization: `X_normalized = (X - X.mean(axis=0)) / X.std(axis=0)`.
+
+</QA>
+
+<QA q="What is the difference between df.loc and df.iloc?">
+
+Both select data from a DataFrame but they use different indexing systems. `df.loc[row, col]` uses label-based indexing — you specify row index labels and column names as strings. The right boundary is inclusive. `df.iloc[row, col]` uses integer position-based indexing — you specify row and column positions as integers (0-based). The right boundary is exclusive (Python-style). A common gotcha: if your DataFrame index is integers (like 0,1,2,3...), `df.loc[0:2]` returns rows 0, 1, 2 (3 rows) but `df.iloc[0:2]` returns rows 0, 1 (2 rows). For ML pipelines, use `.values` or `.to_numpy()` at the end to get a plain NumPy array.
+
+</QA>
+
+<QA q="Why must you fit the scaler on training data only and not on the full dataset?">
+
+This is data leakage prevention. StandardScaler's `fit()` computes the mean and standard deviation of the data. If you `fit` on the full dataset before splitting, the computed statistics incorporate information from the test set. When the model later sees test data that has been transformed using these "contaminated" statistics, it has already seen (in a subtle mathematical sense) the test set during training. This inflates evaluation metrics, giving falsely optimistic performance estimates. The correct procedure: split first, then `fit_transform(X_train)` to compute statistics only from training data, then `transform(X_test)` to apply the same transform with training statistics to the test set.
+
+</QA>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "You have a NumPy array of shape (100, 20) representing 100 data samples with 20 features each. You compute the column-wise mean, getting shape (20,). When you write `X - mean`, NumPy performs this operation without error. What mechanism makes this work?",
+    options: [
+      "NumPy automatically converts the mean to a Python list and loops over rows.",
+      "NumPy broadcasting — it conceptually stretches the (20,) mean to shape (100, 20) by repeating it across rows, then subtracts element-wise, all without copying data.",
+      "NumPy randomly samples 20 rows from X to match the shape of the mean."
+    ],
+    answer: "NumPy broadcasting — it conceptually stretches the (20,) mean to shape (100, 20) by repeating it across rows, then subtracts element-wise, all without copying data.",
+    explanation: "Broadcasting is the rule that shapes are compatible if dimensions are equal or one of them is 1. (100,20) - (20,) → the (20,) is treated as (1,20) → broadcast to (100,20). This is how Z-score normalization is written without any loops."
+  },
+  {
+    question: "A junior engineer preprocesses a dataset: they first call StandardScaler().fit_transform(X) on the full dataset, then split into train/test. What is the problem?",
+    options: [
+      "StandardScaler cannot handle float data types and will throw an error.",
+      "This causes data leakage — the scaler's mean and std are computed using test set data, so test set statistics secretly influence the training process, giving falsely optimistic evaluation results.",
+      "The split must happen before loading data, not after scaling."
+    ],
+    answer: "This causes data leakage — the scaler's mean and std are computed using test set data, so test set statistics secretly influence the training process, giving falsely optimistic evaluation results.",
+    explanation: "Fit the scaler on training data only (fit_transform on X_train), then use .transform() (not fit_transform) on X_test. This ensures test data is preprocessed using only information the model would have in a real deployment scenario."
+  },
+  {
+    question: "You have a Pandas DataFrame with a column 'city' containing values: 'Mumbai', 'Delhi', 'Pune', 'Mumbai', 'Delhi'. You run pd.get_dummies(df, columns=['city']). How many new columns are created, and why might you pass drop_first=True?",
+    options: [
+      "1 new column; drop_first=True removes duplicate city names.",
+      "3 new columns (city_Mumbai, city_Delhi, city_Pune); drop_first=True removes one column to avoid the dummy variable trap — where one column is perfectly predictable from the others, creating multicollinearity.",
+      "2 new columns; drop_first=True sorts the cities alphabetically."
+    ],
+    answer: "3 new columns (city_Mumbai, city_Delhi, city_Pune); drop_first=True removes one column to avoid the dummy variable trap — where one column is perfectly predictable from the others, creating multicollinearity.",
+    explanation: "One-hot encoding creates one column per unique value (3 cities → 3 columns). But if you know city_Mumbai=0 and city_Delhi=0, you can always infer city_Pune=1. This redundancy (multicollinearity) is the dummy variable trap. drop_first=True drops one column, keeping only 2 columns to represent 3 categories without redundancy."
+  }
+]} />
+
+---
+
+## Practice Exercises
+
+1. **NumPy Basics (30 min)**: Create a random (100, 5) array. Compute mean and std per column. Normalize it using broadcasting. Verify mean ≈ 0 and std ≈ 1 after normalization.
+
+2. **Pandas Exploration (45 min)**: Load the [Titanic dataset](https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv) with `pd.read_csv()`. Run `head()`, `info()`, `describe()`, `isnull().sum()`. Answer: which column has the most missing values?
+
+3. **Full Preprocessing Pipeline (1 hour)**: On the Titanic dataset: fill missing `Age` with median (train-only!), fill missing `Embarked` with mode, one-hot encode `Sex` and `Embarked`, drop `Name`/`Ticket`/`Cabin`. Convert to NumPy and train a `RandomForestClassifier`. Report accuracy on a held-out test split.
+
+4. **Interview Simulation**: Implement `cosine_similarity(a, b)` using only NumPy (no sklearn). Test with identical, perpendicular, and opposite vectors. Explain what the output means in the context of text embedding similarity search.
+
+Next: [Classical ML](/aiml/classical-ml) — algorithms that use these arrays to learn patterns from data.
