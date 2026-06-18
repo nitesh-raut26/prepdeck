@@ -201,6 +201,95 @@ replacing an n² loop-in-loop with something smarter.
   path flat. (This is also a code-review comment you'll receive in your
   first job.)
 
+## Think it through
+
+Most beginner programs are an accumulator loop plus a condition. Build the
+most common one from scratch — and meet the bug that bites everyone once.
+Answer each prompt before revealing.
+
+<ThinkThrough
+  title="Find the largest number in a list"
+  difficulty="Beginner — accumulator + condition"
+  problem="Return the largest number in a list using a single loop (no built-in max). nums = [12, -4, 9, -1, 0, 7] → 12. Now also think about [-5, -2, -9]."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What am I tracking, and which input quietly breaks a naive version?",
+      reveal: "I track a running 'best so far' and update it whenever I see something bigger. The input that bites: all-negative lists. If I initialize best = 0, then [-5,-2,-9] wrongly returns 0 — because 0 was never in the list. And an empty list has no answer at all."
+    },
+    {
+      label: "The accumulator shape",
+      prompt: "What's the loop body — and the one decision that fixes the negatives bug?",
+      reveal: "For each number, compare it to best and update if larger. The fix: don't seed best with 0 — seed it with a REAL element (the first one), then loop over the rest. Now the starting point is always a value that's actually in the list, so negatives are handled for free."
+    },
+    {
+      label: "Handle the empty case first",
+      prompt: "Before the loop, what about an empty list?",
+      reveal: "There's no maximum of nothing — guard it at the top with an early return or a raised error (a guard clause keeps the happy path flat). Decide the contract out loud rather than letting it crash on nums[0]."
+    },
+    {
+      label: "Code it",
+      prompt: "Guard, seed from the first element, loop the rest, compare-and-update.",
+      reveal: "Each element is examined once; best only ever moves up.",
+      code: "def largest(nums):\n    if not nums:                 # empty → nothing to return\n        raise ValueError('empty list')\n    best = nums[0]               # seed from a REAL element, not 0\n    for x in nums[1:]:\n        if x > best:             # found a bigger one → update\n            best = x\n    return best"
+    },
+    {
+      label: "Trace & cost",
+      prompt: "Cost, and trace the all-negatives case?",
+      reveal: "O(n) time, O(1) space — one pass. Trace [-5,-2,-9]: best starts at -5; -2 > -5 → best = -2; -9 > -2? no. Returns -2 ✓ (not 0). This 'seed from real data, then fold the rest' shape is the same accumulator behind sum, count, and — at Level 3 — dynamic programming."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In an if / elif / elif chain, which branch runs?",
+    options: [
+      "The first one whose condition is true; the rest are skipped",
+      "Every branch whose condition is true",
+      "The last branch whose condition is true",
+      "Whichever has the most specific condition, regardless of order"
+    ],
+    answer: 0,
+    explain: "First-true-wins is exactly why FizzBuzz must test % 15 before % 3 — otherwise 15 matches % 3 first and 'FizzBuzz' becomes unreachable. Order your conditions most-specific-first."
+  },
+  {
+    q: "Why does `user is not None and user.is_admin` NOT crash when user is None?",
+    options: [
+      "Short-circuit evaluation: `and` stops at the first false operand, so user.is_admin is never reached",
+      "Python ignores attribute errors inside conditions",
+      "None secretly has an is_admin attribute",
+      "The order of the two operands makes no difference"
+    ],
+    answer: 0,
+    explain: "The check guards the dangerous access. Reverse the order and it crashes — short-circuiting is a correctness tool, not just a performance trick."
+  },
+  {
+    q: "In Python, `for i in range(1, 6)` prints which numbers?",
+    options: [
+      "1, 2, 3, 4, 5 — the end of the range is exclusive",
+      "1, 2, 3, 4, 5, 6",
+      "0, 1, 2, 3, 4, 5",
+      "1 through 6 inclusive"
+    ],
+    answer: 0,
+    explain: "range's stop is exclusive — the #1 off-by-one source. The Java/C++ mirror is `i <= 5` vs `i < 5`: know your loop's ends before you trust it."
+  },
+  {
+    q: "A loop nested inside another loop, each over n items, does roughly how much work?",
+    options: [
+      "About n × n = n² steps — nesting multiplies work",
+      "About 2n steps",
+      "About n log n steps",
+      "About n steps"
+    ],
+    answer: 0,
+    explain: "Each outer step triggers a full inner pass: n² total, written O(n²). Much of DSA is the craft of replacing a loop-in-loop with something cheaper."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="FizzBuzz: print 1–100, but 'Fizz' for multiples of 3, 'Buzz' for 5, 'FizzBuzz' for both. Why is the order of checks the famous trap?">
