@@ -162,6 +162,95 @@ diff what grew" is the universal production recipe.
   `unique_ptr` plus a raw `delete`. Decide ownership *first*; the smart
   pointer type documents the decision.
 
+## Think it through
+
+The most counter-intuitive fact on this page: garbage-collected languages
+still leak. Reason through why — and how to fix it — before revealing. This
+is a top production bug in Java and Python.
+
+<ThinkThrough
+  title="The cache that leaks despite GC"
+  difficulty="Beginner — reachability"
+  problem="A Python (or Java) service's memory climbs for days until it crashes with out-of-memory — even though garbage collection is running fine. The hot path is a module-level cache that stores every request's result. Why doesn't GC save it?"
+  stages={[
+    {
+      label: "State the paradox",
+      prompt: "GC frees memory. Memory is still climbing. What must be true about those objects?",
+      reveal: "A GC only frees what's UNREACHABLE. If memory keeps climbing, the objects must still be reachable — so GC is doing its job perfectly. The bug isn't the collector; it's that the program is still holding references to data it will never use again."
+    },
+    {
+      label: "Find the root",
+      prompt: "Trace from the roots. What keeps every cached result alive?",
+      reveal: "The cache is a module-level (global) dict — a GC root. Every entry it holds is reachable through it, forever. Each request adds one more entry and nothing ever removes one, so the dict grows without bound. Reachable → never collected → memory ratchets up until OOM."
+    },
+    {
+      label: "Name the mental model",
+      prompt: "What's the general category of this bug?",
+      reveal: "A LOGICAL leak: pointlessly-held references, not a GC failure. The reachability rule (follow references from roots; keep everything you can reach) means any long-lived collection that only grows is a leak in waiting — caches, listener lists never unregistered, closures capturing big objects."
+    },
+    {
+      label: "Fix the contract",
+      prompt: "What does the cache need that it's missing?",
+      reveal: "An eviction story. Bound it (LRU/TTL) so old entries are dropped, or use weak references (which the GC is allowed to ignore). The rule: when you write the insert into a long-lived collection, write the removal too.",
+      code: "from functools import lru_cache\n\n@lru_cache(maxsize=10_000)     # bounded: evicts least-recently-used past 10k\ndef expensive(req_id):\n    return compute(req_id)\n\n# the leak version: cache = {}; cache[req_id] = compute(req_id)  # grows forever"
+    },
+    {
+      label: "The senior line",
+      prompt: "Your teammate suggests just raising the heap/memory limit. Right call?",
+      reveal: "No — a bigger heap only reschedules the OOM to next week. Fix the contract (bounded cache/TTL/weak refs), not the symptom. Diagnose in production by taking two heap snapshots minutes apart and diffing what grew — the leak announces itself as one collection owning gigabytes."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In a garbage-collected language, what does the GC actually free?",
+    options: [
+      "Objects no longer REACHABLE by following references from roots (globals, stack); reachable objects are kept by definition",
+      "Objects you simply haven't used in a while",
+      "Objects larger than a fixed size threshold",
+      "Every object the instant its variable leaves scope"
+    ],
+    answer: 0,
+    explain: "Reachability is the whole rule: if you can still reach it from a live variable, you might use it, so it stays. Unreachable means provably unusable, so it's safe to free."
+  },
+  {
+    q: "Your Java/Python service's memory climbs for days then OOMs, but the GC is running. Most likely cause?",
+    options: [
+      "A logical leak — objects are still reachable (e.g. an unbounded cache or list that only grows), so the GC can't collect them",
+      "The GC is broken and needs a restart",
+      "The GC isn't getting enough CPU time",
+      "A use-after-free bug corrupting the heap"
+    ],
+    answer: 0,
+    explain: "GC running + memory climbing = reachable garbage you're holding. Fix the contract (bounded cache, TTL, weak refs). Raising the heap size just delays the crash — that's the senior insight."
+  },
+  {
+    q: "The three classic manual-memory bugs in C/C++ are:",
+    options: [
+      "Memory leak (never free), use-after-free (free then use), and double free (free twice)",
+      "Stack overflow, segfault, and deadlock",
+      "Off-by-one, null pointer, and integer overflow",
+      "Race condition, leak, and syntax error"
+    ],
+    answer: 0,
+    explain: "Use-after-free is the #1 source of serious security holes; double free corrupts the allocator and crashes later. RAII / smart pointers prevent all three by tying freeing to scope."
+  },
+  {
+    q: "What is RAII (and Python's `with`) fundamentally about?",
+    options: [
+      "Tying cleanup to scope, so a resource is released automatically when its owner leaves scope — even if an exception is thrown",
+      "Making heap allocation faster",
+      "Avoiding the heap entirely",
+      "Counting references to each object"
+    ],
+    answer: 0,
+    explain: "Humans forget to free; scopes don't. Binding release to scope exit (destructors, context managers, try-with-resources) makes cleanup a language guarantee rather than a thing you remember."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="How does a garbage collector decide what to free, and what do 'generational' collectors exploit?">
