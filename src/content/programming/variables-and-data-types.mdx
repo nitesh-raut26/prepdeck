@@ -185,6 +185,94 @@ of bugs in every language, and we'll formalize it on the
 - **Float equality:** `if (a == 0.3)` after float math fails randomly.
   Compare with a tolerance: `abs(a - 0.3) < 1e-9`.
 
+## Think it through
+
+Most week-one "weird bugs" are a type in disguise. Debug the classic one —
+text where a number was meant — before revealing each step.
+
+<ThinkThrough
+  title="The checkout that says everyone's over budget"
+  difficulty="Beginner — find the type bug"
+  problem="A user enters two prices and a budget; this code always prints 'over'. Why? p1 = input(); p2 = input(); total = p1 + p2; budget = input(); if total > budget: print('over')."
+  stages={[
+    {
+      label: "Find the type",
+      prompt: "What type does input() return, and what does that do to p1 + p2?",
+      reveal: "input() ALWAYS returns a string — even '10' is text. So p1 + p2 doesn't add, it CONCATENATES: '10' + '20' becomes '1020'. And `total > budget` then compares two strings lexicographically (character by character), not numerically. The logic is fine; the types are wrong."
+    },
+    {
+      label: "Fix at the boundary",
+      prompt: "Where's the right place to turn text into numbers?",
+      reveal: "Convert the moment data enters: wrap each input() in float() (or int()). 'Parse at the boundary' keeps the rest of the code working with real numbers, so + adds and > compares magnitudes. This is why user input — which always arrives as text — is the #1 source of type bugs."
+    },
+    {
+      label: "The money subtlety",
+      prompt: "Is float the right type for prices and budgets?",
+      reveal: "For display, fine; for real money, no — 0.1 + 0.2 gives 0.30000000000000004 because binary can't represent 0.1 exactly. Production code stores money as integer minor units (paise/cents) or a decimal type, never raw floats. Worth saying out loud — it's a frequent interview question."
+    },
+    {
+      label: "Code it",
+      prompt: "Convert each input; then the arithmetic and comparison just work.",
+      reveal: "The conversions are the entire fix.",
+      code: "p1 = float(input('price1: '))     # convert text → number at the boundary\np2 = float(input('price2: '))\nbudget = float(input('budget: '))\ntotal = p1 + p2                    # arithmetic now, not string gluing\nif total > budget:\n    print('over')\n# For real money, store integer paise/cents — floats can't represent 0.1 exactly"
+    },
+    {
+      label: "The rules",
+      prompt: "Summarize what prevents this whole bug family.",
+      reveal: "Input is text — convert it to the type you need at the edge. Never compare floats with == (use a tolerance). Never use floats for money. And '42' is not 42: the look of a value isn't its type."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In Python, input() always returns:",
+    options: [
+      "A string — even '42' is text; convert with int()/float() before doing math",
+      "The correct type, inferred automatically",
+      "An int when the text looks like a number",
+      "None until you convert it"
+    ],
+    answer: 0,
+    explain: "Because input is always text, '10' + '20' concatenates to '1020' and comparisons are lexicographic. Parse at the boundary: float(input()) or int(input())."
+  },
+  {
+    q: "Why does 0.1 + 0.2 == 0.3 evaluate to False in essentially every language?",
+    options: [
+      "Floats use finite binary bits; 0.1 and 0.2 have no exact binary form, so the sum is slightly off — compare with a tolerance and use integer cents for money",
+      "0.3 is a reserved special value",
+      "Python rounds 0.3 down internally",
+      "It's a bug specific to the interpreter"
+    ],
+    answer: 0,
+    explain: "Same reason ⅓ can't be written exactly in decimal. Use abs(a - b) < 1e-9 to compare, and integer minor units (or a decimal type) for currency."
+  },
+  {
+    q: "a = [1,2,3]; b = a; b.append(4). What is a afterward, and why?",
+    options: [
+      "[1,2,3,4] — b = a copies the reference (address), so both names point at the SAME list",
+      "[1,2,3] — b is an independent copy",
+      "[4] — b replaced a entirely",
+      "It raises an error"
+    ],
+    answer: 0,
+    explain: "Assignment copies access to the object, not the object. For an independent copy use b = a.copy() (or list(a)); copy.deepcopy for nested data."
+  },
+  {
+    q: "In Java/C++, `7 / 2` with both operands ints gives:",
+    options: [
+      "3 — integer division drops the fraction; Python 3 gives 3.5 with / and 3 with //",
+      "3.5 in every language",
+      "4 — it rounds to nearest",
+      "A compile error"
+    ],
+    answer: 0,
+    explain: "Two ints produce an int in Java/C++, truncating toward zero. Python 3's / always gives a float; use // for the truncating version on purpose."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Why does 0.1 + 0.2 != 0.3 in every mainstream language, and what do you do about it?">
