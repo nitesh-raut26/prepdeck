@@ -113,8 +113,59 @@ maximizing a minimum. Complexity is O(check · log(value range)).
     ],
     answer: 0,
     explain: "Monotonic feasibility creates a sorted false…false|true…true boundary over the answer space — binary-search the boundary, checking each candidate in O(n)."
+  },
+  {
+    q: "In “Search in Rotated Sorted Array”, the key fact that lets binary search still work is:",
+    options: [
+      "At any mid, at least one half ([lo..mid] or [mid..hi]) is fully sorted — check which, then decide if target lies inside it",
+      "The whole array is still sorted after rotation",
+      "You must first un-rotate the array in O(n)",
+      "Rotated arrays cannot be binary-searched at all"
+    ],
+    answer: 0,
+    explain: "Rotation breaks the order in exactly ONE place, so on either side of any mid, one half is always clean. Test the sorted side's range to keep or discard it — still O(log n), no un-rotation needed."
   }
 ]} />
+
+## Think it through
+
+The page showed binary search on an *answer space*. Now the other famous
+twist: searching an array that's sorted but **rotated**. The trick is finding
+the half you can still trust. Think before revealing.
+
+<ThinkThrough
+  title="Search in Rotated Sorted Array"
+  difficulty="Medium — LeetCode 33"
+  problem="A sorted array of distinct values was rotated at an unknown pivot: nums = [4,5,6,7,0,1,2]. Return the index of target, or -1. Required: O(log n)."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "Why can't I use the plain template, and what's the speed bar?",
+      reveal: "The array isn't globally sorted, so a single 'a[mid] < target' comparison can't tell me which side to keep. But O(log n) is required — a linear scan is disqualified. Edges: rotation by 0 (already sorted), target absent (-1), single element, target at the pivot."
+    },
+    {
+      label: "Brute force first",
+      prompt: "What's the baseline, and why must I do better?",
+      reveal: "Linear scan: O(n), trivially correct. The O(log n) requirement forces binary search anyway — so the real question is how to make the halving decision when the array has one 'break' in its order."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "Look at mid. The rotation breaks the order in ONE place — so what's always true about the two halves?",
+      reveal: "At least ONE of [lo..mid] and [mid..hi] is fully sorted (the break can live in only one of them). Detect the sorted half with a single comparison: if nums[lo] <= nums[mid], the left half is clean. Then ask whether target falls inside that sorted half's value range — if yes, search it; if no, search the other half. Each step still discards half."
+    },
+    {
+      label: "Code the template",
+      prompt: "Once I know the left half is sorted, what's the exact range test for target?",
+      reveal: "If left is sorted and nums[lo] <= target < nums[mid], target must be in the left — move hi. Otherwise it's in the right — move lo. The mirror logic handles a sorted right half. (Closed interval [lo, hi] here, because we return mid on an exact hit.)",
+      code: "def search(nums, target):\n    lo, hi = 0, len(nums) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if nums[mid] == target:\n            return mid\n        if nums[lo] <= nums[mid]:         # left half is sorted\n            if nums[lo] <= target < nums[mid]:\n                hi = mid - 1             # target is in the sorted left\n            else:\n                lo = mid + 1\n        else:                             # right half is sorted\n            if nums[mid] < target <= nums[hi]:\n                lo = mid + 1             # target is in the sorted right\n            else:\n                hi = mid - 1\n    return -1"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and trace finding 0 in [4,5,6,7,0,1,2]?",
+      reveal: "O(log n) time, O(1) space. Trace target 0: lo=0,hi=6,mid=3 (nums=7); left [4..7] sorted, 0 not in [4,7) → go right, lo=4. mid=5 (nums=1); left [0,1] sorted (nums[4]=0 <= 1), 0 in [0,1)? yes → hi=4. mid=4 (nums=0) → found, index 4. ✓ The transferable idea: when structure is partly broken, find the part you can still trust and binary-search that."
+    }
+  ]}
+/>
 
 ## Practice — climb the ladder
 
