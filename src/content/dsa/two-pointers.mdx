@@ -6,14 +6,33 @@ difficulty: "Core pattern"
 tags: ["arrays", "linked-list", "two-pointers"]
 ---
 
-## Three variants
+## Why We Need Two Pointers & How to Think About It
+In many array and string problems, a naive search requires checking all pairs of elements. This results in nested loops and an $O(n^2)$ time complexity. 
+The **Two Pointers** pattern optimizes this to $O(n)$ by maintaining two independent indices (pointers) that traverse the data structure. Because we can prove that moving a pointer *discards* a set of invalid possibilities without checking them, we never need to re-scan.
 
-- **Opposite ends** — start at both ends of a *sorted* array, move inward based on
-  a comparison (pair-sum, container-with-most-water, valid palindrome).
-- **Fast & slow** — two pointers at different speeds (cycle detection, find the
-  middle, kth-from-end in a linked list).
-- **Partition / same-direction** — a write pointer trails a read pointer
-  (remove-in-place, Dutch national flag, dedupe sorted).
+---
+
+## Three Core Variants
+
+### 1. Opposite Ends (Converging Pointers)
+* **How it works**: Start one pointer at index `0` and another at `n - 1`. Move them toward each other based on a condition until they meet.
+* **Why it works**: If the array is **sorted**, a comparison of the values at the two pointers tells us if we need to make our sum larger (move left pointer up) or smaller (move right pointer down). We safely discard the other options.
+* **When to use**: Pair sum in sorted array, palindrome verification, container with most water.
+  - *LeetCode Link*: [LeetCode 167: Two Sum II - Input Array Is Sorted](https://leetcode.com/problems/two-sum-ii-input-array-is-sorted/)
+  - *LeetCode Link*: [LeetCode 11: Container With Most Water](https://leetcode.com/problems/container-with-most-water/)
+
+### 2. Fast & Slow (Runner Technique)
+* **How it works**: Two pointers start at the same position but move at different speeds (usually `slow` moves 1 step, `fast` moves 2 steps).
+* **Why it works**: If there is a cycle (e.g. in a linked list), the fast pointer will eventually lap the slow pointer and they will meet. If there is no cycle, the fast pointer will hit the end of the list.
+* **When to use**: Cycle detection, finding the middle node of a list, finding the k-th node from the end.
+  - *LeetCode Link*: [LeetCode 141: Linked List Cycle](https://leetcode.com/problems/linked-list-cycle/)
+  - *LeetCode Link*: [LeetCode 876: Middle of the Linked List](https://leetcode.com/problems/middle-of-the-linked-list/)
+
+### 3. Partition / Same-Direction (Reader/Writer)
+* **How it works**: Both pointers start at the beginning and move in the same direction. A `read` pointer scans elements, and a `write` pointer tracks where the next valid element should go.
+* **When to use**: In-place filtering, removing duplicates, partitioning arrays (like Dutch National Flag or Quicksort partition).
+  - *LeetCode Link*: [LeetCode 27: Remove Element](https://leetcode.com/problems/remove-element/)
+  - *LeetCode Link*: [LeetCode 283: Move Zeroes](https://leetcode.com/problems/move-zeroes/)
 
 ```python
 # Opposite ends: does a SORTED array contain two numbers summing to target?
