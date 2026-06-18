@@ -183,6 +183,95 @@ rule of thumb survives across languages.)
   `raise ValueError(f"expected ISO date, got {raw!r}")` — one of these saves
   an hour at 2 AM.
 
+## Think it through
+
+The syntax is easy; the *policy* is the skill — what to catch, what to let
+fly, and how to guarantee cleanup. Reason through one small function that
+forces all three decisions.
+
+<ThinkThrough
+  title="A robust config loader"
+  difficulty="Beginner — handle vs propagate"
+  problem="Write load_config(path) that reads a file and returns the integer inside it. Decide: what should it catch, what should it let propagate, and how do you guarantee the file is closed?"
+  stages={[
+    {
+      label: "Enumerate what can go wrong",
+      prompt: "List the failures, and ask which this function can sensibly recover from.",
+      reveal: "Three: the file is missing (FileNotFoundError), the contents aren't an integer (ValueError), or permission is denied. load_config can give a CLEARER error for bad contents, but it has no business deciding what to do about a missing config file — that's the caller's policy (use a default? exit? prompt?)."
+    },
+    {
+      label: "Narrow catch vs catch-all",
+      prompt: "Should this function wrap everything in try/except Exception?",
+      reveal: "No. Catch only what you can act on. Wrap just the int() parse to turn a cryptic ValueError into a message naming the file and the bad value. Let FileNotFoundError propagate — 'throw low, catch high': the layer with enough context decides. Catching Exception broadly would also swallow bugs that SHOULD crash in development."
+    },
+    {
+      label: "Tie cleanup to scope",
+      prompt: "How do you guarantee the file closes — even if parsing throws?",
+      reveal: "Use `with open(path) as f:` — it closes the file when the block exits, on success OR on exception. Never rely on a close() call on the line after the risky work; an exception would jump past it. (Java: try-with-resources; C++: RAII destructors.)"
+    },
+    {
+      label: "Code it",
+      prompt: "with for the file, a narrow try around only the parse, a rich error message.",
+      reveal: "Note FileNotFoundError is deliberately not caught — it flies to a caller that can choose a policy.",
+      code: "def load_config(path):\n    with open(path) as f:           # guaranteed closed, success or error\n        raw = f.read().strip()\n    try:\n        return int(raw)             # wrap ONLY the risky parse\n    except ValueError:\n        # we CAN act here: bad content → a clear domain error, with the value\n        raise ValueError(f'config at {path} must be an integer, got {raw!r}')\n    # FileNotFoundError is NOT caught — let a caller decide what to do"
+    },
+    {
+      label: "The rules behind it",
+      prompt: "State the two policies you just applied.",
+      reveal: "(1) Catch only what you can handle; otherwise let it propagate. (2) Never swallow silently — `except Exception: pass` turns a debuggable crash into invisible data corruption, and a raw stack trace shown to a user is an info leak. The slogan: throw low, catch high, log once."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "An exception is thrown and the current function has no matching handler. What happens?",
+    options: [
+      "Its frame is popped and the exception re-emerges at the caller, repeating UP the call stack until a handler is found or the program crashes",
+      "Execution simply continues at the next line",
+      "The exception is silently discarded",
+      "The function returns None"
+    ],
+    answer: 0,
+    explain: "An exception is a non-local jump up the stack. Each frame without a handler is unwound (running its finally/RAII cleanup) until one catches it — or the program terminates with a stack trace."
+  },
+  {
+    q: "Why must cleanup (closing a file, releasing a lock) live in finally / with / RAII rather than on the lines after the risky call?",
+    options: [
+      "An exception jumps from the throw site straight to the handler, so code between them — including 'cleanup after' — never runs",
+      "Because finally executes faster than normal lines",
+      "Because the lines after a risky call are unreachable anyway",
+      "It makes no difference where cleanup is placed"
+    ],
+    answer: 0,
+    explain: "On failure, control leaves the block immediately. Only scope-bound cleanup (finally, with, destructors) is guaranteed to run on both the success and the exception paths."
+  },
+  {
+    q: "The worst common error-handling mistake is:",
+    options: [
+      "Swallowing silently — `except Exception: pass` turns a loud, debuggable crash into invisible data corruption",
+      "Catching a single specific exception type",
+      "Re-raising an error after logging it",
+      "Using a finally block for cleanup"
+    ],
+    answer: 0,
+    explain: "An empty catch makes failures vanish with no trace. If you truly must continue, log it at minimum — but usually you should let it propagate to someone who can act."
+  },
+  {
+    q: "'Throw low, catch high, log once' means:",
+    options: [
+      "Low layers throw rich, specific errors; the layer with enough context catches/translates them; the top logs once and shows a clean message",
+      "Catch every error down in the database layer",
+      "Catch everything in main() and print the raw stack trace to the user",
+      "Never allow errors to propagate between layers"
+    ],
+    answer: 0,
+    explain: "Low layers lack the context to decide; the top layer has it. Showing a raw stack trace to end users leaks internals (a security issue), so present a clean message and log the detail server-side."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Walk through what happens, mechanically, when an exception is thrown.">
