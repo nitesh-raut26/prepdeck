@@ -66,6 +66,94 @@ described), then convert to bottom-up if you need to optimize space. Trying to
 write the table directly is where people make indexing errors.
 </Callout>
 
+## Think it through
+
+The five-step recipe only sticks once you run it yourself. Derive a clean
+1-D DP end to end — defining the state in English is 80% of the work.
+
+<ThinkThrough
+  title="House Robber"
+  difficulty="Medium — LeetCode 198"
+  problem="Houses in a row hold money nums[i]. Robbing two ADJACENT houses triggers the alarm. Maximize the loot. nums = [2,7,9,3,1] → 12 (rob houses 0, 2, 4 → 2+9+1)."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What's the constraint, stripped of the story?",
+      reveal: "Pick a subset of the array with no two chosen indices adjacent, maximizing the sum. Edges: empty → 0; one house → its value; two houses → the larger one. The 'no two adjacent' rule is the entire difficulty."
+    },
+    {
+      label: "Why DP, not greedy or brute force",
+      prompt: "Does grabbing the biggest house first work? What does brute force cost?",
+      reveal: "Greedy (take the richest house) fails: [2,7,9,3,1] — grabbing 9 then greedily is fine here, but [2,1,1,2] shows grabbing a middle house can block the two ends. Brute force tries all valid subsets — exponential. And the best-from-house-i-onward gets recomputed across many subsets → overlapping subproblems → DP."
+    },
+    {
+      label: "Define the state (the 80%)",
+      prompt: "Finish: dp[i] = … and the transition at house i is a choice between what two options?",
+      reveal: "dp[i] = the most money robbable considering houses 0..i. At house i you either SKIP it (keep dp[i-1]) or ROB it (take nums[i], but then house i-1 is forbidden, so add dp[i-2]). dp[i] = max(dp[i-1], nums[i] + dp[i-2]). Base: dp[0] = nums[0]; dp[1] = max(nums[0], nums[1]). That one sentence — 'rob or skip' — is the whole recurrence."
+    },
+    {
+      label: "Code it (and shrink the space)",
+      prompt: "dp[i] only ever reads dp[i-1] and dp[i-2]. So how big does the table need to be?",
+      reveal: "Only two values back — so keep two rolling variables instead of a full array: O(1) space. prev1 is dp[i-1], prev2 is dp[i-2].",
+      code: "def rob(nums):\n    prev2 = 0          # best loot up to house i-2\n    prev1 = 0          # best loot up to house i-1\n    for money in nums:\n        rob_it = prev2 + money   # rob i → must have skipped i-1\n        skip_it = prev1          # skip i\n        prev2, prev1 = prev1, max(rob_it, skip_it)\n    return prev1"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and trace [2,7,9,3,1]?",
+      reveal: "O(n) time, O(1) space. Trace: 2 → prev1=2; 7 → max(7, 0+2)=7; 9 → max(7, 2+9)=11; 3 → max(11, 7+3)=11; 1 → max(11, 11+1)=12. Answer 12. ✓ Empty input returns 0 for free. This shape — dp[i] = max(skip, take + dp[i−2]) — is the template for every non-adjacent-choice problem."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "The two signals that together mean 'reach for DP' are:",
+    options: [
+      "Optimal substructure (answer built from sub-answers) AND overlapping subproblems (the same subproblem recurs)",
+      "Sorting helps AND the array is large",
+      "A clear greedy choice AND no recursion needed",
+      "Two pointers AND a sorted array"
+    ],
+    answer: 0,
+    explain: "Both must hold. If subproblems DON'T overlap, it's divide-and-conquer, not DP. If a local choice is always safe, it's greedy."
+  },
+  {
+    q: "In House Robber, dp[i] = max(dp[i-1], nums[i] + dp[i-2]). What does the 'nums[i] + dp[i-2]' branch mean?",
+    options: [
+      "Rob house i — which forbids house i-1 — so add the best loot from houses up to i-2",
+      "Rob houses i and i-1 together",
+      "Skip house i entirely",
+      "The sum of every house"
+    ],
+    answer: 0,
+    explain: "Robbing i means i-1 is off-limits, so the most you can pair with nums[i] is dp[i-2]. The other branch, dp[i-1], is the 'skip i' choice. You take the better of the two."
+  },
+  {
+    q: "Top-down (memoization) vs bottom-up (tabulation):",
+    options: [
+      "Top-down is recursion + a cache and computes only states you reach; bottom-up fills a table in dependency order and enables space optimization",
+      "Top-down is always faster than bottom-up",
+      "Bottom-up uses recursion; top-down uses loops",
+      "They can produce different answers"
+    ],
+    answer: 0,
+    explain: "Derive top-down first (it mirrors the brute-force recursion), then convert to bottom-up when you need to cut recursion depth or shrink memory to a few rolling cells."
+  },
+  {
+    q: "Greedy (largest coin first) gives 4+1+1 for coins {1,3,4}, amount 6. Why does DP get the optimal 3+3?",
+    options: [
+      "DP compares all last-coin choices and reuses sub-answers, so it discovers 3+3 (2 coins) where greedy's local choice traps it at 3",
+      "DP sorts the coins before solving",
+      "DP allocates a bigger array",
+      "Greedy is actually correct here"
+    ],
+    answer: 0,
+    explain: "Taking the 4 changes what's reachable afterward — the choices interact. DP tries every last coin for each amount and keeps the cheapest, so it never gets stuck on a locally-greedy pick."
+  }
+]} />
+
 <QA q="How do you recognize a problem is DP rather than greedy?">
 
 DP applies when you have optimal substructure **and** overlapping subproblems,
