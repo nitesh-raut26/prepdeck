@@ -176,6 +176,16 @@ vector<int> bfs(vector<vector<int>>& adj, int start, int n) {
 
 ### BFS with path reconstruction
 
+BFS hands you the shortest *distance*, but interviews usually want the shortest
+*path* — the actual sequence of nodes. The trick is one extra array: when you
+first reach a node, record **which node you came from** (`prev`). Because BFS
+reaches every node by a shortest route, following those `prev` pointers backward
+from the destination — then reversing — rebuilds a shortest path.
+
+**Reach for it when** the problem asks for "the path / the sequence of moves /
+the shortest transformation" (word ladder, knight's moves, a maze route), not
+just the length.
+
 ```python
 def bfs_path(adj, start, end, n):
     prev = [-1] * n
@@ -251,7 +261,15 @@ vector<int> bfsPath(vector<vector<int>>& adj, int start, int end, int n) {
 
 ### Multi-source BFS
 
-When distances from **multiple** starting points simultaneously (nearest warehouse, nearest exit):
+**The problem:** find each node's distance to the *nearest* of many starting
+points — nearest warehouse, nearest exit, nearest rotting orange. Running a
+separate BFS from every source would be O(sources × (V+E)), far too slow.
+
+**The trick:** seed the queue with **all** sources at distance 0 at once, then
+run one ordinary BFS. The wavefront now grows from every source simultaneously,
+so the first time a node is reached it's reached by the *closest* source —
+exactly the nearest-source distance, in a single O(V+E) pass. (This is the whole
+idea behind Rotting Oranges, later in this chapter.)
 
 ```python
 def multi_source_bfs(adj, sources, n):
@@ -300,6 +318,16 @@ vector<int> multiSourceBFS(vector<vector<int>>& adj, vector<int>& sources, int n
 ```
 
 ### BFS on a 2D grid
+
+A grid **is** a graph in disguise: every cell is a node, and each cell has edges
+to its (up to) four orthogonal neighbours. You almost never build an adjacency
+list for it — you generate neighbours on the fly from a `dirs` array, skipping
+anything out of bounds or blocked. That's an **implicit graph**, and it's the
+single most common BFS setting in interviews.
+
+**Reach for it when** you see "shortest path / fewest steps in a maze or grid",
+flood fill, or "minimum time for X to spread". The traversal is the same BFS —
+only neighbour generation changes.
 
 ```python
 def bfs_grid(grid, start_r, start_c):
@@ -378,6 +406,19 @@ DFS dives as deep as possible before backtracking. Natural fit for: connectivity
 
 ### DFS recursive
 
+DFS dives as deep as it can down one path, then backtracks and tries the next
+branch — and the recursion's **call stack does the backtracking for you**, which
+is why DFS is naturally recursive. Each call marks its node visited and recurses
+into unvisited neighbours.
+
+The `count_components` helper shows the classic use: start a fresh DFS from every
+node you haven't seen yet. Each fresh start floods one entire connected blob, so
+the **number of starts equals the number of connected components**.
+
+**Reach for DFS when** the question is about connectivity, components, "does a
+path exist", flood fill, or exploring *all* of something — anywhere you don't
+need the shortest distance (that's BFS's job).
+
 ```python
 def dfs(adj, node, visited):
     visited[node] = True
@@ -430,6 +471,15 @@ int countComponents(vector<vector<int>>& adj, int n) {
 ```
 
 ### DFS iterative (for large graphs, avoids recursion limit)
+
+Recursive DFS is clean, but Python caps recursion at ~1000 frames — a graph with
+a long chain of 10⁵ nodes overflows it with a `RecursionError` (Java/C++ blow the
+stack too). The fix: replace the hidden call stack with an **explicit stack** that
+does exactly the same job.
+
+One subtlety: check `visited` when you **pop**, not when you push — the same node
+can be pushed several times before it's first processed. Pop a node, skip it if
+it's already done, otherwise mark it and push its neighbours.
 
 ```python
 def dfs_iterative(adj, start, n):
@@ -488,6 +538,16 @@ vector<int> dfsIterative(vector<vector<int>>& adj, int start, int n) {
 
 ### Cycle in an undirected graph
 
+**Why you'd ask:** "is this graph a tree?", "does adding these edges create a
+loop?", redundant-connection problems — all of them reduce to *does a cycle
+exist?*
+
+**The intuition:** DFS the graph, and for each node remember the **parent** you
+arrived from. If you ever reach a node that's already visited **and it isn't your
+parent**, you've found a *second* route to it — that's a cycle. The "not the
+parent" exclusion is the whole subtlety: in an undirected graph the edge back to
+your parent is just the edge you walked in on, not a real loop.
+
 ```python
 def has_cycle_undirected(adj, n):
     visited = [False] * n
@@ -542,6 +602,23 @@ bool hasCycleUndirected(vector<vector<int>>& adj, int n) {
 ```
 
 ### Cycle in a directed graph (3-colour DFS)
+
+In a **directed** graph the parent trick breaks — direction matters, so you must
+detect an edge that loops back to a node **still on your current path**, not just
+any visited node. Three colours track exactly that:
+
+- **White (0)** — unvisited.
+- **Gray (1)** — currently being explored: it's on the active DFS path, its
+  recursion hasn't returned yet.
+- **Black (2)** — fully finished, done and dusted.
+
+During the DFS, hitting a **gray** neighbour means it's an ancestor still open on
+your path → a *back edge* → a cycle. A **black** neighbour is harmless — it
+finished on an earlier branch and isn't on your current path.
+
+**Reach for it when** you need to catch deadlocks, dependency/build cycles, or
+answer "can this ordering even exist?" — which is the gateway to topological
+sort, next.
 
 ```python
 def has_cycle_directed(adj, n):
@@ -601,9 +678,29 @@ bool hasCycleDirected(vector<vector<int>>& adj, int n) {
 
 ## Part 5 — Topological Sort (DAGs)
 
-Linear ordering where every edge u→v has u before v. Only exists if graph is a DAG.
+A **topological sort** is an ordering of a directed graph's nodes so every edge
+points *forward* — for every edge u→v, u comes before v. Read it as: "what order
+can I do these tasks in, respecting every dependency?"
+
+**When you need it:** course prerequisites, build systems (which files compile
+first), job/task scheduling, spreadsheet recalculation, package install order.
+The tell is **"do A before B"** constraints between items.
+
+It only exists if the graph is a **DAG** (directed and acyclic) — a cycle is a
+circular dependency (A needs B needs A), which can't be ordered at all. So
+topological sort and directed-cycle detection are two sides of the same coin.
 
 ### Kahn's Algorithm (BFS-based — preferred)
+
+**The intuition:** a node's **in-degree** is how many prerequisites it still has.
+Begin with every node of in-degree 0 (nothing is blocking it). "Finishing" a node
+removes it as a prerequisite from its neighbours — decrement their in-degrees, and
+any neighbour that drops to 0 is now unblocked, so enqueue it. Repeat until the
+queue empties.
+
+If you output all n nodes, that order is a valid topological sort. If some nodes
+never reach in-degree 0, they're trapped in a cycle — which is why
+`len(order) == n` doubles as a cycle check.
 
 ```python
 from collections import deque
@@ -657,6 +754,12 @@ vector<int> topoKahn(vector<vector<int>>& adj, int n) {
 ```
 
 ### Course Schedule (LeetCode 207)
+
+This is topological sort with one twist: you don't need the *order*, just whether
+a valid one **exists**. Model each prerequisite `[a, b]` as an edge b→a ("take b
+before a"), run Kahn's algorithm, and count how many courses you manage to take.
+If a cycle blocks some of them, the count falls short of `numCourses` → return
+false. The full step-by-step reasoning is in the **Think it through** below.
 
 ```python
 def can_finish(numCourses, prerequisites):
@@ -730,6 +833,22 @@ improvement). The greedy choice is safe *because* weights are non-negative.
 
 <Visualizer algo="dijkstra" />
 
+**When you need it:** single-source shortest path on a **weighted** graph with
+**non-negative** weights — Google Maps routing, cheapest network path, minimum
+cost to reach every node.
+
+**The intuition:** Dijkstra is BFS upgraded with a **priority queue**. Instead of
+expanding the nearest node by *hop count*, it always expands the nearest node by
+*total distance so far*, then **relaxes** its edges — "if going through me is
+cheaper than your current best, lower your distance."
+
+**Why the greedy choice is safe:** once the closest unsettled node is pulled from
+the heap, no other route can ever beat it — any alternative would have to detour
+through a node that's *already* farther away, and adding more non-negative edges
+can't make it cheaper. That's exactly why negative weights break Dijkstra (and
+send you to Bellman-Ford). The `if d > dist[node]: continue` line simply skips
+stale heap entries left over from earlier, larger estimates.
+
 ```python
 import heapq
 
@@ -796,6 +915,15 @@ vector<int> dijkstra(vector<vector<pair<int,int>>>& adj, int src, int n) {
 
 ### 0-1 BFS (weights are only 0 or 1)
 
+**When:** every edge weight is 0 or 1 (e.g. "a normal move costs 1, a teleport is
+free"). Dijkstra works, but its log factor is overkill here.
+
+**The trick:** swap the heap for a plain **deque**. A 0-weight edge doesn't
+increase the distance, so push that neighbour to the **front** (process it
+immediately, same distance band); a 1-weight edge pushes to the **back** (next
+band). The deque stays ordered by distance for free, giving O(V+E) — BFS speed
+with just enough weight-awareness.
+
 ```python
 from collections import deque
 
@@ -854,6 +982,20 @@ vector<int> bfs01(vector<vector<pair<int,int>>>& adj, int src, int n) {
 ```
 
 ### Bellman-Ford (negative edges + cycle detection)
+
+**When:** the graph has **negative edge weights** (Dijkstra's greedy assumption
+fails), or you need to *detect a negative cycle* — the classic being currency
+arbitrage, where a loop of trades multiplies money forever.
+
+**The intuition:** forget cleverness — just **relax every edge, n−1 times**. After
+round k, every shortest path that uses at most k edges is already correct; since a
+shortest path without repeated nodes has at most n−1 edges, n−1 rounds settle them
+all. (The `updated` flag lets you stop early once a round changes nothing.)
+
+**Negative-cycle check:** run one extra round. If anything *still* improves, a
+negative cycle exists — you could loop it to push the cost down forever, so no
+finite shortest path is defined. It's O(V·E), slower than Dijkstra, but that's the
+price of handling negatives.
 
 ```python
 def bellman_ford(n, edges, src):
@@ -916,6 +1058,19 @@ vector<int> bellmanFord(int n, vector<tuple<int,int,int>>& edges, int src) {
 
 ### Floyd-Warshall (All-Pairs Shortest Path)
 
+**When:** you need the shortest distance between **every pair** of nodes and the
+graph is small/dense (V ≤ ~400). One run fills the whole distance matrix.
+
+**The intuition:** it's a tiny DP over *which nodes you're allowed to pass
+through*. The outer loop variable `k` means "you may now also route through node
+k." For every pair (i, j), check whether i→k→j beats the best i→j so far. Once k
+has ranged over all nodes, every pair has considered every possible intermediary,
+so every entry is optimal.
+
+**Mind the loop order:** `k` must be the **outermost** loop — it's the dimension
+being unlocked. Three nested loops, ten lines, O(V³) — the easiest shortest-path
+algorithm to code correctly under pressure.
+
 ```python
 def floyd_warshall(n, edges):
     INF = float('inf')
@@ -973,7 +1128,26 @@ vector<vector<int>> floydWarshall(int n, vector<tuple<int,int,int>>& edges) {
 
 ## Part 7 — Minimum Spanning Trees (MST)
 
+A **minimum spanning tree** connects all the nodes using a subset of edges with
+the **smallest possible total weight** and no cycles (so exactly n−1 edges). The
+picture to hold: the cheapest way to lay cable, road, or pipe so every city is
+connected.
+
+**When you need it:** "connect all points at minimum cost", network and cluster
+design, and as a building block inside approximation algorithms. Two greedy
+algorithms both find it — **Kruskal** (think in edges) and **Prim** (think in
+nodes).
+
 ### Kruskal's Algorithm (sort edges, use Union-Find)
+
+**The intuition:** sort every edge cheapest-first, then walk the list adding each
+edge **unless it would form a cycle** (its two endpoints are already connected).
+[Union-Find](/dsa/union-find) answers "already connected?" in near-O(1). Stop once
+you've chosen n−1 edges. Greedily taking the cheapest safe edge is provably
+optimal (the cut property).
+
+**Reach for Kruskal when** the graph is sparse or you're handed an edge list —
+it's just sorting plus Union-Find.
 
 ```python
 def kruskal(n, edges):
@@ -1052,6 +1226,15 @@ int kruskal(int n, vector<tuple<int,int,int>> edges) {
 
 ### Prim's Algorithm (grow MST node by node)
 
+**The intuition:** grow one tree outward from a starting node. Keep a min-heap of
+all edges crossing from "in the tree" to "not yet in the tree," and repeatedly add
+the **cheapest edge that reaches a new node**. It's Dijkstra's shape, but you
+compare a single *edge weight* rather than a *total distance from the source*.
+
+**Kruskal vs Prim:** Kruskal sorts all edges (great for sparse graphs / edge
+lists); Prim grows from a node with a heap (great for dense graphs / adjacency
+lists). Both produce an optimal MST — pick by how the graph is represented.
+
 ```python
 import heapq
 
@@ -1108,7 +1291,20 @@ int prim(vector<vector<pair<int,int>>>& adj, int n) {
 
 ## Part 8 — Strongly Connected Components (SCC)
 
+In a **directed** graph, a *strongly connected component* is a maximal group of
+nodes where **every node can reach every other** following edge directions.
+Collapse each SCC to a single point and the graph becomes a DAG — useful for
+2-SAT, deadlock analysis, and simplifying dependency graphs.
+
+**Honest calibration:** SCC, bridges, and articulation points (Parts 8–9) are
+*Staff-level / competitive-programming* material — rare in product-company loops.
+Skim them for awareness; master Parts 1–7 first.
+
 ### Kosaraju's Algorithm (2-pass DFS)
+
+**Intuition:** DFS once to order nodes by finish time, **reverse every edge**, then
+DFS again in that finish order — each tree the second pass produces is exactly one
+SCC. Two passes, easy to remember.
 
 ```python
 def kosaraju(adj, n):
@@ -1196,6 +1392,11 @@ vector<vector<int>> kosaraju(vector<vector<int>>& adj, int n) {
 ```
 
 ### Tarjan's Algorithm (single-pass, low-link values)
+
+**Intuition:** a single DFS that stamps each node with a discovery time and a
+*low-link* — the earliest node reachable from its subtree. When a node's low-link
+equals its own discovery time, it's the root of an SCC, so pop the working stack
+down to it. One pass instead of Kosaraju's two, same result.
 
 ```python
 def tarjan(adj, n):
@@ -1285,7 +1486,16 @@ vector<vector<int>> tarjan(vector<vector<int>>& adj, int n) {
 
 ## Part 9 — Bridges & Articulation Points
 
+A **bridge** is an edge whose removal disconnects the graph; an **articulation
+point** is a *node* whose removal does. Both find single points of failure —
+critical links in a network, weak spots in a road or utility grid.
+
 ### Find all bridges (critical edges)
+
+**Intuition:** one DFS tracking each node's discovery time and its *low-link* (the
+earliest ancestor reachable from its subtree). The edge u→v is a bridge when v's
+subtree has **no back edge** climbing above v — written `low[v] > disc[u]` — which
+means that single edge is the only way into the subtree.
 
 ```python
 def find_bridges(adj, n):
@@ -1344,6 +1554,11 @@ vector<pair<int,int>> findBridges(vector<vector<int>>& adj, int n) {
 ```
 
 ### Find all articulation points
+
+**Intuition:** the same DFS + low-link machinery. A node u is an articulation point
+when some child's subtree can't reach above u (`low[child] >= disc[u]`) — with one
+special case for the DFS root, which is a cut vertex only if it has two or more DFS
+children.
 
 ```python
 def find_articulation_points(adj, n):
@@ -1411,7 +1626,15 @@ set<int> findAP(vector<vector<int>>& adj, int n) {
 
 ## Part 10 — Bipartite Check & Grid Problems
 
+A graph is **bipartite** if its nodes split into two groups with **no edge inside a
+group** — equivalently, you can 2-colour it. This models "can these be divided into
+two teams / sides / shifts?" and underpins matching problems.
+
 ### Bipartite check (BFS 2-coloring)
+
+**Intuition:** BFS (or DFS) colouring each node the *opposite* of its parent. If you
+ever find an edge linking two **same-coloured** nodes, no valid 2-colouring exists →
+not bipartite. (Equivalently: a graph is bipartite iff it has no odd-length cycle.)
 
 ```python
 def is_bipartite(adj, n):
@@ -1520,7 +1743,15 @@ int numIslands(vector<vector<char>>& grid) {
 
 ## Part 11 — Classic Problems
 
+These tie the techniques together — each is a famous LeetCode problem that's really
+one of the patterns above wearing a costume.
+
 ### Rotting Oranges (Multi-source BFS)
+
+**The pattern:** every rotten orange is a BFS source. Seed them all at minute 0 and
+let the wavefront spread one minute per BFS level; the answer is the last level
+reached — pure **multi-source BFS** from earlier. If any fresh orange is never
+reached, it can never rot, so return −1.
 
 ```python
 def oranges_rotting(grid):
@@ -1592,6 +1823,12 @@ int orangesRotting(vector<vector<int>>& grid) {
 ```
 
 ### Cheapest Flights Within K Stops (Bellman-Ford)
+
+**The pattern:** shortest path with a *hop limit*. Run **Bellman-Ford** but only
+`k + 1` relaxation rounds — each round lets a path grow by one more edge, so after
+k+1 rounds you've covered every route using at most k stops. The `temp = dist[:]`
+copy each round is essential: it prevents a single round from chaining several
+flights together (which would exceed the hop budget).
 
 ```python
 def find_cheapest_price(n, flights, src, dst, k):
@@ -1680,6 +1917,47 @@ After pushing updated distances, old entries stay in the heap. Always check `if 
 </Callout>
 
 ---
+
+## Think it through
+
+The hardest part of a graph problem is often *recognising it's a graph
+problem at all*. Reason through the canonical one — where "prerequisites"
+quietly means "directed edges" and "can you finish?" means "is there a
+cycle?". Answer each prompt before revealing.
+
+<ThinkThrough
+  title="Course Schedule"
+  difficulty="Medium — LeetCode 207"
+  problem="There are numCourses courses (0…n−1). prerequisites[i] = [a, b] means you must take b before a. Return whether you can finish every course. Example: 2 courses with [[1,0]] → true; with [[1,0],[0,1]] → false."
+  stages={[
+    {
+      label: "Reframe as a graph",
+      prompt: "What are the nodes, what are the edges, and what does 'can finish all' really ask?",
+      reveal: "Courses are nodes. A prerequisite [a, b] is a DIRECTED edge b → a ('b must come first'). 'Can I finish everything?' is exactly 'does this directed graph have NO cycle?' — a cycle is a circular dependency (A needs B needs A), which is impossible. Edges to note: no prerequisites → trivially true; a self-loop [a, a] → false."
+    },
+    {
+      label: "Pick the tool",
+      prompt: "Which two standard algorithms decide 'is this directed graph acyclic'?",
+      reveal: "Either (a) topological sort via Kahn's algorithm (BFS): repeatedly remove a node with no remaining prerequisites; if you can remove all of them, there's no cycle — or (b) DFS with 3-colour cycle detection. Both are O(V+E). Kahn's doubles as the actual course ORDER if you record the removal sequence, so it's the natural pick."
+    },
+    {
+      label: "Kahn's algorithm, concretely",
+      prompt: "What state do I track, and what signals 'no cycle'?",
+      reveal: "Track each course's in-degree (number of unmet prerequisites). Start a queue with every in-degree-0 course (takeable now). Pop one, 'take' it, and decrement each dependent's in-degree; when one hits 0, enqueue it. Count how many you take. If you take all numCourses, the graph is acyclic → true. A cycle traps its members above in-degree 0 forever, so the count falls short."
+    },
+    {
+      label: "Code the template",
+      prompt: "Build the graph + in-degrees, BFS the zero-in-degree frontier, count.",
+      reveal: "The 'done == numCourses' check is the whole answer — it's true exactly when no cycle blocked progress.",
+      code: "from collections import deque\n\ndef can_finish(num_courses, prerequisites):\n    graph = [[] for _ in range(num_courses)]\n    indeg = [0] * num_courses\n    for a, b in prerequisites:       # take b before a → edge b → a\n        graph[b].append(a)\n        indeg[a] += 1\n    q = deque(c for c in range(num_courses) if indeg[c] == 0)\n    done = 0\n    while q:\n        c = q.popleft()              # a course with no remaining prereqs\n        done += 1\n        for nxt in graph[c]:\n            indeg[nxt] -= 1          # one prerequisite satisfied\n            if indeg[nxt] == 0:\n                q.append(nxt)\n    return done == num_courses       # all taken ⇔ acyclic"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and what exactly does a cycle do to the count?",
+      reveal: "O(V+E) time and space — each node and edge is processed once. A cycle's nodes can never reach in-degree 0 (each waits on the next), so they're never enqueued and done < numCourses → false. Swap the return for the removal order and you've solved Course Schedule II (the actual ordering). The transferable skill: translate the wording into nodes + edges, then it's a standard traversal."
+    }
+  ]}
+/>
 
 ## Part 14 — Interview Q&A
 
