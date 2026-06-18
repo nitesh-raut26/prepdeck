@@ -181,6 +181,113 @@ Don't just state that Transformers are fast — derive the computational bottlen
 
 ---
 
+## Encoder vs. Decoder: BERT vs. GPT
+
+Depending on how attention masking is set up, the transformer architecture branches into three primary configurations:
+
+| Architecture Type | Represented Model | Attention Style | Core Objective | Primary Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| **Encoder-Only** | BERT, RoBERTa | **Bidirectional**: Every token attends to all other tokens. | Masked Language Modeling (predict missing words in a sentence). | Text classification, sentence embeddings, Named Entity Recognition (NER). |
+| **Decoder-Only** | GPT-4, Llama, Mistral | **Causal (Masked)**: Tokens only attend to current and *previous* tokens. | Next-Token Prediction (autoregressively generate text). | Text generation, code completion, agent reasoning. |
+| **Encoder-Decoder** | T5, BART | **Mixed**: Bidirectional in encoder, causal in decoder, with cross-attention. | Sequence-to-Sequence (translate input sequence to output sequence). | Language translation, document summarization, text rewrite/style transfer. |
+
+### Encoder-Decoder & Cross-Attention
+
+In Encoder-Decoder models (like T5):
+1.  The **Encoder** processes the input sequence bidirectionally to create rich context vectors.
+2.  The **Decoder** generates the target sequence one token at a time.
+3.  To connect them, the decoder uses **Cross-Attention**: the decoder's Queries ($Q$) look at the encoder's Keys ($K$) and Values ($V$). This lets the decoder decide which parts of the input sequence to focus on at each generation step.
+
+---
+
+## Vision Transformers (ViT)
+
+Though designed for text, transformers revolutionized computer vision via the **Vision Transformer (ViT)**.
+
+```text
+                  Vision Transformer (ViT) Ingestion:
+  
+  [ Image ] ──> Split into Patches ──> Flatten to Vectors ──> Linear Projection (Tokens)
+                 (e.g., 16x16 pixels)    (e.g., 16x16x3 = 768)     + Class [CLS] Token
+                                                                       + Position Embeddings
+                                                                                │
+                                                                                ▼
+                                                                     Standard Transformer Encoder
+```
+
+### How ViT Works
+1.  **Image Patching**: A 2D image is split into a grid of non-overlapping patches (e.g., $16 \times 16$ pixels).
+2.  **Linear Projection**: Each patch is flattened into a 1D vector and projected into a vector space of size $D$ (acting as a "visual token" embedding).
+3.  **Position Embedding**: 1D learnable position embeddings are added to the patch embeddings to retain spatial relationships.
+4.  **CLS Token**: A special learnable `[CLS]` (classification) token is prepended to the sequence.
+5.  **Transformer Encoder**: The sequence of tokens is processed by a standard transformer encoder (bidirectional self-attention). The final output state of the `[CLS]` token is passed to a classification head.
+
+---
+
+## PyTorch Transformer Training Pipeline (From Scratch)
+
+Here is a complete, runnable script showing how to construct a single Transformer Encoder Layer using PyTorch, run a forward pass, compute loss, and perform a backward gradient update step:
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+class SimpleTransformerEncoder(nn.Module):
+    def __init__(self, vocab_size: int, d_model: int, nhead: int, num_layers: int):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        
+        # PyTorch built-in Transformer Layer
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, 
+            nhead=nhead, 
+            dim_feedforward=d_model * 4,
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.classifier = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Embedding: (batch_size, seq_len) -> (batch_size, seq_len, d_model)
+        embedded = self.embedding(x)
+        
+        # Self-Attention + FFN pass
+        encoded = self.transformer(embedded)
+        
+        # Classify back to vocabulary tokens
+        logits = self.classifier(encoded)
+        return logits
+
+# Initialize Model, Optimizer, and Loss
+torch.manual_seed(42)
+vocab_size = 1000
+d_model = 64
+nhead = 4
+model = SimpleTransformerEncoder(vocab_size, d_model, nhead, num_layers=1)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+criterion = nn.CrossEntropyLoss()
+
+# Mock batch: batch_size=2, seq_len=5
+x_inputs = torch.randint(0, vocab_size, (2, 5))
+y_targets = torch.randint(0, vocab_size, (2, 5))
+
+# 1. Forward Pass
+logits = model(x_inputs)
+
+# 2. Compute Loss (reshape to combine batch and sequence dimensions)
+loss = criterion(logits.view(-1, vocab_size), y_targets.view(-1))
+
+# 3. Backward Pass & Step
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+
+print(f"Training Step Success! Initial Loss: {loss.item():.4f}")
+```
+
+---
+
 ## Why transformers won
 
 - **Parallelizable** — every token is processed at once, so training scales to

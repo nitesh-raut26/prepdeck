@@ -128,7 +128,78 @@ Don't just state that HNSW is fast — walk through how a search query navigates
   ]}
 />
 
+
 ---
+
+## Semantic Search from Scratch
+
+To demystify vector databases, let's look at how we can implement a flat (brute-force) semantic search engine from scratch using only Python and `numpy`.
+
+```python
+import numpy as np
+
+# A simulated database of documents with pre-computed vectors (3-dimensional for simplicity)
+documents = [
+    {
+        "id": "doc1", 
+        "text": "Deploying a Docker container on AWS EC2 or ECS", 
+        "vector": np.array([0.85, 0.40, 0.10])
+    },
+    {
+        "id": "doc2", 
+        "text": "Cooking delicious Italian pasta carbonara with egg yolks", 
+        "vector": np.array([0.10, 0.90, 0.35])
+    },
+    {
+        "id": "doc3", 
+        "text": "Linear algebra foundations: eigenvalues, eigenvectors, and SVD", 
+        "vector": np.array([0.20, 0.15, 0.95])
+    },
+]
+
+# Query: "How to host a web application on cloud infrastructure"
+# The embedding model maps this query to a vector close to the tech topic
+query_vector = np.array([0.80, 0.35, 0.15])
+
+def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
+    # Formula: (A . B) / (||A|| * ||B||)
+    return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+
+def search_scratch(query_vector: np.ndarray, db: list[dict], top_k: int = 2) -> list[tuple[float, str]]:
+    results = []
+    for doc in db:
+        sim = cosine_similarity(query_vector, doc["vector"])
+        results.append((sim, doc["text"]))
+    
+    # Sort descending by similarity score
+    results.sort(key=lambda x: x[0], reverse=True)
+    return results[:top_k]
+
+# Execute query
+hits = search_scratch(query_vector, documents, top_k=2)
+for score, text in hits:
+    print(f"[{score:.4f}] {text}")
+# Output:
+# [0.9996] Deploying a Docker container on AWS EC2 or ECS
+# [0.3809] Cooking delicious Italian pasta carbonara with egg yolks
+```
+
+---
+
+## Embedding Models Comparison
+
+Before feeding vectors to a database, you must choose an embedding model. Different models yield different vector dimensions, semantic recall quality, and operational costs:
+
+| Model | Provider | Dimensions | Max Tokens (Input) | Key Strength | Best For |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **text-embedding-3-small** | OpenAI | 1536 (default) | 8,191 | Highly cost-efficient, standard performance, supports dimension shortening | Standard RAG applications, budget-friendly search |
+| **text-embedding-3-large** | OpenAI | 3072 (default) | 8,191 | Advanced semantic search, handles complex relations, dimension shortening | High-accuracy retrieval, multi-lingual matching |
+| **bge-large-en-v1.5** | BAAI (Open Source) | 1024 | 512 | Top-tier open-source retrieval performance | Private cloud hosting, retrieval benchmarks |
+| **e5-large-v2** | Microsoft (Open Source) | 1024 | 512 | Strong zero-shot performance across tasks | General-purpose open-source embeddings |
+| **cohere-embed-english-v3** | Cohere | 1024 | 512 | Optimized for retrieval search, supports compression (binary embeddings) | Enterprise search, compressed vector databases |
+
+---
+
 
 ## Vector Database Comparison
 
@@ -203,6 +274,64 @@ results = search("statically typed programming languages", top_k=2)
 ```
 
 ---
+
+## Pinecone — Managed Cloud Vector Database
+
+For production applications with millions or billions of vectors, a dedicated cloud-native vector database like **Pinecone** is widely used. It manages indexing, scaling, and high-availability serverlessly.
+
+```python
+from pinecone import Pinecone, ServerlessSpec
+
+# Initialize the Pinecone client
+pc = Pinecone(api_key="your_pinecone_api_key")
+
+index_name = "knowledge-base"
+
+# Create index if it doesn't exist
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=1536, # Must match the embedding model (e.g. OpenAI text-embedding-3-small)
+        metric="cosine",
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        )
+    )
+
+# Connect to the index
+index = pc.Index(index_name)
+
+# Upsert vectors with metadata
+index.upsert(
+    vectors=[
+        {
+            "id": "doc_1", 
+            "values": [0.015, -0.023, 0.091, ...], # 1536 float values
+            "metadata": {"category": "coding", "source": "docs"}
+        },
+        {
+            "id": "doc_2", 
+            "values": [0.088, 0.124, -0.005, ...],
+            "metadata": {"category": "travel", "source": "blogs"}
+        }
+    ]
+)
+
+# Search the index
+results = index.query(
+    vector=[0.012, -0.020, 0.085, ...], # Query embedding
+    top_k=2,
+    include_metadata=True,
+    filter={"category": "coding"} # Optional metadata filtering (Pre-filtering)
+)
+
+for match in results["matches"]:
+    print(f"Doc: {match['id']} | Score: {match['score']:.4f} | Meta: {match['metadata']}")
+```
+
+---
+
 
 ## pgvector — Vectors in PostgreSQL
 

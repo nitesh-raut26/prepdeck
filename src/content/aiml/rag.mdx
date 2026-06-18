@@ -300,7 +300,48 @@ results = collection.query(
 )
 ```
 
+### Query Translation & Rewriting
+
+Standard RAG struggles when the user's query is poorly formulated or complex. Query translation solves this:
+
+1.  **Multi-Query Retrieval**: Generate multiple variations of the user's query using an LLM. Search the vector DB for all variants and take the union of the results. This improves recall.
+2.  **Sub-Query Decomposition**: Split a complex query (e.g., *"Compare the Q3 financial performance of Apple and Microsoft"*) into sub-queries (*"Apple Q3 financial performance"*, *"Microsoft Q3 financial performance"*), run them independently, and merge.
+3.  **HyDE (Hypothetical Document Embeddings)**: Ask the LLM to write a hypothetical answer to the query first. Use the *hypothetical answer's* embedding to search the database. Since document-to-document similarity is higher than question-to-document similarity, this improves search relevance.
+
+```python
+# HyDE conceptual code
+def get_hyde_embedding(query: str) -> list[float]:
+    # 1. Generate hypothetical response
+    hypothetical_doc = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": f"Write a paragraph answering: {query}"}],
+        temperature=0.5
+    ).choices[0].message.content
+    
+    # 2. Embed the hypothetical response
+    return embed(hypothetical_doc)
+```
+
+### Multi-Vector Retrieval (Parent-Child)
+
+In standard RAG, the text you embed is identical to the text sent to the LLM. Multi-Vector Retrieval decouples them:
+*   **Child Chunks**: Small, precise chunks (e.g., 100-200 tokens) are embedded and stored in the vector database. Small chunks generate higher-similarity search matches.
+*   **Parent Document**: When a child chunk matches, the retriever fetches the larger parent chunk (e.g., 1000 tokens) or the full page containing the child.
+*   **Summary Retrieval**: Generate a summary of each document, embed the summaries, and map matches to the full original documents.
+
+### GraphRAG vs. Agentic RAG
+
+As RAG matures, systems evolve from static lookup pipelines to dynamic architectures:
+
+*   **GraphRAG**: Combines vector database search with a **Knowledge Graph** (entities like people, concepts, products as nodes; and their interactions as edges). It excels at **global queries** (e.g., *"What are the recurring issues in all customer transcripts?"*), where standard vector search fails because it only fetches localized snippets.
+*   **Agentic RAG**: Replaces static retrieval with an **autonomous LLM Agent** that has access to search tools. The agent can:
+    1.  Inspect search results.
+    2.  Decide if the retrieved information is sufficient.
+    3.  If not, rewrite the query and search again (multi-hop retrieval).
+    4.  Resolve conflicting information from multiple documents before compiling the answer.
+
 ---
+
 
 ## Common Failure Modes & Fixes
 

@@ -100,6 +100,164 @@ Decide what triggers a refresh:
 - **Performance-triggered** — retrain when measured accuracy drops (best, but needs
   timely labels).
 
+---
+
+## Experiment Tracking with MLflow
+
+To prevent "it worked in my notebook" syndrome, production MLOps relies on experiment tracking systems (like **MLflow** or **Weights & Biases**) to log every run's hyperparameters, training metrics, and code states, and register the model artifact.
+
+```python
+import mlflow
+import mlflow.sklearn
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+# Set experiment name
+mlflow.set_experiment("fraud-detection-model")
+
+# Start run tracking
+with mlflow.start_run():
+    # Define hyperparameters
+    n_estimators = 100
+    max_depth = 5
+    
+    # Log parameters
+    mlflow.log_param("n_estimators", n_estimators)
+    mlflow.log_param("max_depth", max_depth)
+    
+    # Train model
+    # (Assuming X_train, y_train, X_test, y_test are loaded)
+    clf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)
+    clf.fit(X_train, y_train)
+    
+    # Log metrics
+    y_pred = clf.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    mlflow.log_metric("accuracy", acc)
+    
+    # Log and register the model in the registry
+    mlflow.sklearn.log_model(
+        sk_model=clf,
+        artifact_path="model",
+        registered_model_name="RandomForestFraudModel"
+    )
+```
+
+---
+
+## Model Containerization (Docker + FastAPI)
+
+To deploy models consistently across staging and production, we package the model artifact and serving code into a container. Below is a standard `Dockerfile` and serving API using **FastAPI**:
+
+```python
+# app.py (Serving API)
+from fastapi import FastAPI
+import joblib
+import numpy as np
+
+app = FastAPI()
+# Load model from registry / disk
+model = joblib.load("model.joblib")
+
+@app.post("/predict")
+def predict(features: list[float]):
+    # Expects features as list of float values
+    prediction = model.predict([np.array(features)])
+    return {"prediction": int(prediction[0])}
+```
+
+```dockerfile
+# Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy model artifact and serving script
+COPY model.joblib .
+COPY app.py .
+
+# Expose API port
+EXPOSE 8000
+
+# Run FastAPI app with Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+---
+
+## CI/CD for ML (GitHub Actions)
+
+Continuous Integration in ML ensures that changes to training data, config files, or preprocessing code do not degrade performance. Below is a GitHub Actions workflow that automatically triggers on pull requests to run unit tests and check model performance regression:
+
+```yaml
+name: ML CI/CD Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  test_model:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Validate dataset schemas
+        run: |
+          pytest tests/test_data_validation.py
+
+      - name: Evaluate model performance threshold
+        run: |
+          # Fails the build if accuracy falls below 85%
+          python scripts/evaluate_regression.py --threshold 0.85
+```
+
+---
+
+## Model Cards
+
+A **Model Card** is a structured markdown document that serves as the "public label" of an ML model, providing transparency into its intent, performance, limitations, and biases.
+
+```markdown
+# Model Card: Fraud Detection Random Forest (v1.2.0)
+
+## Overview
+- **Developer**: Risk Platform Team
+- **Model Type**: Random Forest Classifier
+- **Release Date**: June 2026
+
+## Intended Use
+- **Primary Use**: Predicting credit card transaction fraud in real-time.
+- **Out of Scope**: Credit score evaluations or long-term lending risks.
+
+## Training Data & Methodology
+- Trained on 1.2M anonymized transactions (Q1 2026 data).
+- Features include: transaction amount, category, user location frequency, distance from home.
+
+## Metrics & Performance
+- **Accuracy**: 94.2%
+- **Precision (Fraud class)**: 91.5% (minimizes false positive blocks)
+- **Recall (Fraud class)**: 88.0% (captures true fraud events)
+
+## Ethical Considerations & Limitations
+- **Limitations**: The model lacks context on global traveling events, leading to higher false-positives during holidays.
+- **Biases**: Tends to flag transactions from IP addresses in newly registered server pools; regular checks are run to ensure geographic fairness.
+```
+
+---
+
 ## Common Interview Questions
 
 <QA q="How do you deploy a new model version without risking production?">

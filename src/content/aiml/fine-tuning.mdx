@@ -120,6 +120,17 @@ full fine-tuning on most specialization tasks at a fraction of the cost.
 compressed to 4-bit numbers — lossy but tolerable), letting a
 13B-parameter model fine-tune on one consumer GPU.
 
+### PEFT (Parameter-Efficient Fine-Tuning) Methods Comparison
+
+| Method | How it Works | Trained Params | Hardware Req. | Primary Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| **LoRA** | Injects low-rank adapters ($A$ & $B$) next to frozen weight matrices. | < 1% | Medium (Base model size) | Standard task specialization, style alignment |
+| **QLoRA** | Quantizes the base model to 4-bit NormalFloat, then adds 16-bit LoRA adapters. | < 1% | Low (Fits 13B model on a single consumer GPU) | Cost-sensitive training of open-weights models |
+| **Prefix Tuning** | Prepends trainable continuous vectors (virtual tokens) directly to key-value (KV) states in attention layers. | 1% - 2% | Medium | Multi-task learning (keep base model frozen, swap prefix vectors) |
+| **Prompt Tuning** | Prepends trainable prompt embeddings (virtual tokens) to the input sequence only. | < 0.1% | Low to Medium | High-throughput classification where system prompts can be learned as vectors |
+
+---
+
 ## LoRA Forward Pass in Code
 
 Here is a complete Python implementation demonstrating how a LoRA layer calculates its forward pass using low-rank matrices `A` and `B` alongside a frozen weight matrix `W`:
@@ -167,6 +178,140 @@ out_adapted = layer.forward(x_input)
 print("Initial output (W only):\n", out_initial)
 print("Adapted output (W + LoRA A*B):\n", out_adapted)
 ```
+
+## Dataset Format (JSONL) & Validation
+
+For instruction tuning, fine-tuning datasets are written in **JSON Lines (JSONL)** format, where each line is a self-contained JSON object representing a complete conversation history.
+
+Before submitting a dataset to a training cluster, it is standard practice to validate the file structure, checking roles, keys, and token lengths to prevent run-time crashes.
+
+```python
+# validate_dataset.py
+import json
+
+def validate_jsonl(file_path: str):
+    valid_count = 0
+    errors = []
+    
+    with open(file_path, "r") as f:
+        for idx, line in enumerate(f):
+            try:
+                data = json.loads(line.strip())
+                if "messages" not in data:
+                    errors.append(f"Line {idx}: Missing 'messages' key")
+                    continue
+                
+                messages = data["messages"]
+                if not isinstance(messages, list):
+                    errors.append(f"Line {idx}: 'messages' must be a list")
+                    continue
+                
+                # Check formatting of each conversation message
+                user_count, assistant_count = 0, 0
+                for msg in messages:
+                    if "role" not in msg or "content" not in msg:
+                        errors.append(f"Line {idx}: Message missing 'role' or 'content'")
+                        continue
+                    if msg["role"] == "user":
+                        user_count += 1
+                    elif msg["role"] == "assistant":
+                        assistant_count += 1
+                
+                if user_count == 0 or assistant_count == 0:
+                    errors.append(f"Line {idx}: Must contain at least one user and one assistant message")
+                else:
+                    valid_count += 1
+                    
+            except json.JSONDecodeError:
+                errors.append(f"Line {idx}: Invalid JSON syntax")
+                
+    print(f"Validation summary: {valid_count} valid rows, {len(errors)} errors.")
+    for err in errors[:5]:
+        print(f"  - ERROR: {err}")
+
+# Example invocation:
+# validate_jsonl("my_training_data.jsonl")
+```
+
+---
+
+## Fine-Tuning Pipeline with Hugging Face (`SFTTrainer`)
+
+Below is a complete, production-ready python script showing how to load a model using 4-bit quantization (QLoRA), apply a LoRA configuration, and run supervised fine-tuning (SFT) using Hugging Face's `trl` library.
+
+```python
+import torch
+from datasets import load_dataset
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments
+)
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from trl import SFTTrainer
+
+# 1. Load dataset from JSONL file
+dataset = load_dataset("json", data_files="training_data.jsonl", split="train")
+
+# 2. QLoRA Quantization Config (loads weights in 4-bit, performs compute in bf16)
+quant_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",               # NormalFloat4
+    bnb_4bit_use_double_quant=True,         # Quantizes quantization constants
+    bnb_4bit_compute_dtype=torch.bfloat16   # Training compute datatype
+)
+
+model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    quantization_config=quant_config,
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer.pad_token = tokenizer.eos_token
+
+# 3. Prepare quantized model for training
+model = prepare_model_for_kbit_training(model)
+
+# 4. LoRA Adapter Config
+peft_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], # Target self-attention layers
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+
+# 5. Define Training Arguments
+training_args = TrainingArguments(
+    output_dir="./qlora_output",
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,
+    learning_rate=2e-4,
+    logging_steps=10,
+    max_steps=100,
+    bf16=True,                               # Use bfloat16 for training stability
+    optim="paged_adamw_8bit"                 # Keeps optimizer states off RAM/VRAM
+)
+
+# 6. SFTTrainer
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset,
+    peft_config=peft_config,
+    max_seq_length=512,
+    tokenizer=tokenizer,
+    args=training_args,
+    dataset_text_field="messages",           # Uses default chat template wrapping
+)
+
+# Start training
+# trainer.train()
+```
+
+---
 
 ### Think it through like the interview
 

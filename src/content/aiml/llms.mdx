@@ -479,6 +479,88 @@ Safety:
 
 ---
 
+## LLM Model Comparison
+
+When building LLM-powered applications, selecting the right model involves balancing latency, cost, context window, and capability. Below is a comparison of major models used in industry:
+
+| Model | Provider | Context Window | Strengths | Cost Class | Ideal Use Cases |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **GPT-4o** | OpenAI | 128k | High-reasoning, multimodal, speed, structured output reliability | Premium | Complex reasoning, agent planning, tool usage, multi-step tasks |
+| **Claude 3.5 Sonnet** | Anthropic | 200k | Coding, technical writing, complex analytical reasoning, XML parsing | Premium | Software engineering automation, document analysis, data extraction |
+| **Gemini 1.5 Pro** | Google | 2M | Massive context window, native multimodal (video, audio), needle-in-a-haystack accuracy | Premium | Long document research, full codebase understanding, video analysis |
+| **Gemini 1.5 Flash** | Google | 1M | High speed, large context, low cost, multimodal | Budget | Fast summarization, simple structured data extraction, real-time RAG |
+| **Llama 3 (70B/405B)** | Meta (Open Source) | 128k | Self-hostable, custom fine-tuning, competitive reasoning | Variable (Hosting) | Private cloud deployments, domain-specific fine-tuning, offline processing |
+
+---
+
+## Open-Source vs. Proprietary LLMs
+
+An essential architectural choice is deciding between proprietary (API-based) and open-source (self-hosted) models:
+
+### 1. Proprietary LLMs (e.g., OpenAI, Anthropic, Google APIs)
+*   **Pros**: No infrastructure overhead, state-of-the-art capability, managed safety filters, pay-per-token pricing (cheap for low volume).
+*   **Cons**: Data privacy concerns (sending sensitive data to third parties), rate limits, model deprecation (APIs change or retired), vendor lock-in.
+
+### 2. Open-Source LLMs (e.g., Meta's Llama 3, Mistral, Microsoft's Phi-3)
+*   **Pros**: Full control over data privacy (runs inside your VPC), weights are yours forever, customizable vocabulary, option to fine-tune on domain-specific datasets, deterministic response times (no public API congestion).
+*   **Cons**: High infrastructure cost (GPU instances like A100/H100 are expensive), operational overhead (setup, scaling, cold starts), slightly lag behind the absolute best proprietary models.
+
+---
+
+## Embedding Models & Vector Space
+
+While generative models (LLMs) produce text, **Embedding Models** convert text into numerical representations (dense vectors) in a high-dimensional space. These vectors capture the semantic meaning of the text.
+
+### How Embeddings Work
+If two sentences are semantically similar (e.g., *"How do I reset my password?"* and *"I forgot my login credentials"*), their vectors will be close together in vector space, even if they share zero identical words.
+Conversely, semantically different sentences (e.g., *"How do I reset my password?"* and *"What is the capital of France?"*) will point in completely different directions.
+
+```python
+# Conceptualizing Vector Distance
+import numpy as np
+
+# A 3-dimensional mock vector representation
+vector_reset_password = np.array([0.9, 0.1, -0.05])
+vector_forgot_login   = np.array([0.85, 0.15, -0.02])
+vector_capital_france = np.array([-0.2, 0.7, 0.8])
+
+# Cosine similarity helper
+def cosine_similarity(v1, v2):
+    return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+
+print(f"Similarity (Reset vs Forgot): {cosine_similarity(vector_reset_password, vector_forgot_login):.4f}")
+# Outputs close to 1.0 (highly similar)
+print(f"Similarity (Reset vs France): {cosine_similarity(vector_reset_password, vector_capital_france):.4f}")
+# Outputs close to 0.0 or negative (unrelated)
+```
+
+### Common Distance Metrics
+To perform search over embeddings (e.g., in RAG), we calculate the distance between the query vector and document vectors:
+1.  **Cosine Similarity**: Measures the cosine of the angle between two vectors. Value ranges from -1 to 1. Ignores vector magnitude (useful when text lengths vary).
+2.  **Dot Product**: Measures projection of one vector onto another. Value depends on magnitude. If vectors are normalized to unit length (magnitude of 1), Dot Product is mathematically identical to Cosine Similarity and is highly optimized on GPUs.
+3.  **Euclidean Distance (L2)**: Measures the straight-line distance between two points in space. Smaller values mean higher similarity.
+
+---
+
+## Hallucinations: Causes & Mitigation
+
+**Hallucination** is when an LLM generates text that is factually incorrect, logically inconsistent, or completely fabricated, yet presented with high confidence.
+
+### Root Causes
+1.  **Objective Function Bias**: LLMs are trained to predict the next *most probable* token, not the *most truthful* token. They default to pleasing syntax over truth.
+2.  **Information Gap / Lack of Source**: The model tries to generate details it didn't fully capture during training or that are out of its parameters.
+3.  **Attention Decay / Context Window Saturation**: In long inputs, key instructions can be lost, causing the model to default to generic training data distributions.
+4.  **Imperfect Tokenization**: Numbers or characters are split in ways that confuse arithmetic reasoning (e.g., treating `1024` as two unrelated tokens `10` and `24`).
+
+### Mitigation Techniques
+*   **Retrieval-Augmented Generation (RAG)**: Do not rely on internal memory for facts. Retrieve external documents and inject them into the prompt, forcing the model to cite its sources.
+*   **Temperature Control**: Lower the temperature parameter to `0.0` or `0.1` for factual tasks. This forces the model to select only the highest-probability tokens.
+*   **Structured Output (Schema Enforcement)**: Force the model to output JSON adhering to a strict schema (e.g., using Pydantic in OpenAI's API) to prevent it from outputting generic conversational prose.
+*   **Self-Consistency / Chain-of-Thought (CoT)**: Ask the model to "think step-by-step" before writing the answer. Generate multiple reasoning paths and take a majority vote on the final answer.
+*   **Critique and Refine (Self-Correction)**: Programmatically prompt the LLM to review its own output against constraints and correct errors before returning the response to the user.
+
+---
+
 ## Common Interview Questions
 
 <QA q="How do LLMs work at a high level?">
