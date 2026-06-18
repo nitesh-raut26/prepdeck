@@ -5,6 +5,15 @@ order: 2
 difficulty: "Foundations"
 tags: ["math", "linear-algebra", "probability", "calculus", "ml"]
 ---
+## Starting from Zero — A Physical Intuition
+
+Before looking at equations, let's build a physical model of ML mathematics in our minds:
+
+*   **Vectors as Flashlight Beams**: Imagine holding a flashlight in a dark room. You can point it up/down, left/right, and forward/backward. The direction you point is a list of three coordinates—a **vector**. Every data point in ML (a house, a word, a credit transaction) is just a flashlight beam pointing in a specific direction in a multi-dimensional room.
+*   **Dot Product as Beam Overlap**: If you point your flashlight in the same direction as a friend, your beams merge into a bright overlap. If you point it at a right angle, they don't intersect at all. The **dot product** is the mathematical measurement of this overlap—representing similarity.
+*   **The Gradient as a Magnetic Slope**: Imagine you are dropped on a dark, foggy mountainside and must walk down to the base. You can't see the valley, but you can feel the slope of the ground under your boots. The direction of steepest slope is the **gradient**, and walking downhill step-by-step is **gradient descent**.
+
+---
 
 ## How much math do you actually need?
 
@@ -72,6 +81,35 @@ machines, and a neural network is a stack of matrix multiplies.
 entries; a "70B-parameter model" has 70 billion such numbers
 ([fine-tuning](/aiml/fine-tuning) nudges them; LoRA adds small
 matrices beside them).
+
+### Think it through like the interview
+
+Don't just plug vectors into equations — derive why we normalise them for semantic matching.
+
+<ThinkThrough
+  title="Dot Product vs Cosine Similarity"
+  difficulty="Linear Algebra & Representation"
+  problem="Design a similarity metric to match user query embeddings. Explain why raw dot products fail when vector magnitudes differ."
+  stages={[
+    {
+      label: "Evaluate the raw dot product",
+      prompt: "Given query vector q = [1, 0] and two document vectors d1 = [2, 0] and d2 = [0, 100], which vector has a higher raw dot product with q? Does this match semantic similarity?",
+      reveal: "q · d1 = 1*2 + 0*0 = 2. q · d2 = 1*0 + 0*100 = 0. Here, d1 matches because it points in the exact same direction, while d2 is completely perpendicular (unrelated). However, what if d1 = [10, 0] and d2 = [5, 5]? Let's look at magnitude's impact."
+    },
+    {
+      label: "Find the scaling bug",
+      prompt: "What happens to the dot product when a document is extremely long, containing the same words repeated multiple times (increasing its vector length)?",
+      reveal: "A repeated document increases its vector's coordinate values, inflating its magnitude ||d||. Since q · d = ||q|| * ||d|| * cos(θ), a huge ||d|| makes the dot product massive, even if the angle θ (semantic orientation) is large. The query will erroneously match the long document simply because of its length, not its semantic relevance."
+    },
+    {
+      label: "Normalize to Cosine Similarity",
+      prompt: "How do we remove the magnitude bias from our search metric to compare only semantic directions?",
+      reveal: "We divide the dot product by the product of their Euclidean lengths (L2 norms). This projects both vectors onto a unit sphere (length = 1). The result is Cosine Similarity: cos(θ) = (q · d) / (||q|| * ||d||). Now, matching is purely angular, ranging from -1 (opposite) to +1 (identical direction), completely invariant to document length."
+    }
+  ]}
+/>
+
+---
 
 ## Calculus: the gradient is a compass
 
@@ -217,16 +255,101 @@ in production.
 
 </QA>
 
+## Gradient Descent in Code
+
+Here is a complete, dependency-free Python implementation of a 1D gradient descent solver fitting the line $y = wx + b$ to coordinate points:
+
+```python
+from typing import List, Tuple
+
+def compute_loss(data: List[Tuple[float, float]], w: float, b: float) -> float:
+    # Mean Squared Error (MSE)
+    total_error = sum((y - (w * x + b)) ** 2 for x, y in data)
+    return total_error / len(data)
+
+def step_gradient(
+    data: List[Tuple[float, float]], 
+    w_current: float, 
+    b_current: float, 
+    learning_rate: float
+) -> Tuple[float, float]:
+    w_gradient = 0.0
+    b_gradient = 0.0
+    N = len(data)
+    
+    # Calculate slopes (derivatives of loss with respect to w and b)
+    for x, y in data:
+        prediction = w_current * x + b_current
+        error = y - prediction
+        w_gradient += -2 * x * error
+        b_gradient += -2 * error
+        
+    # Nudge parameters opposite to gradient direction
+    new_w = w_current - (w_gradient / N) * learning_rate
+    new_b = b_current - (b_gradient / N) * learning_rate
+    return new_w, new_b
+
+# 1. Target line: y = 2x + 1 (with minor noise)
+points = [(1.0, 3.1), (2.0, 4.9), (3.0, 7.2), (4.0, 8.8), (5.0, 11.1)]
+
+# 2. Start from random initial weights and set learning rate
+w, b = 0.0, 0.0
+lr = 0.01
+
+print("Training Loop:")
+for epoch in range(1, 101):
+    w, b = step_gradient(points, w, b, lr)
+    if epoch % 20 == 0:
+        loss = compute_loss(points, w, b)
+        print(f"Epoch {epoch:03d} | Loss: {loss:.4f} | w: {w:.3f} | b: {b:.3f}")
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why does the scaled dot product attention equation divide by √d?",
+    options: [
+      "To limit the runtime complexity of the dot product matrix multiplication from O(N^2) to O(N).",
+      "To prevent dot products from growing extremely large in high dimensions, which would cause the softmax function to saturate (gradients vanish).",
+      "To compress the weights so they can fit on smaller GPU memory footprints."
+    ],
+    answer: "To prevent dot products from growing extremely large in high dimensions, which would cause the softmax function to saturate (gradients vanish).",
+    explanation: "As vector dimension d grows, the average magnitude of their dot product increases. Large inputs to softmax produce extremely flat probability curves where gradients are close to zero, halting model updates. Dividing by √d scales variance back to 1."
+  },
+  {
+    question: "If your training loss explodes or diverges (reaches NaN or infinity) during gradient descent, what is the most likely cause?",
+    options: [
+      "The learning rate is too large, causing the weight updates to overshoot the valley and oscillate outward.",
+      "The GPU memory is full, corrupting parameter calculations.",
+      "The dataset has too many features, causing float overflow errors."
+    ],
+    answer: "The learning rate is too large, causing the weight updates to overshoot the valley and oscillate outward.",
+    explanation: "An excessively high learning rate makes step sizes larger than the local slope warrants. Instead of walking down, the optimizer leaps over the minimum and lands higher up the other side, compounding updates until they diverge."
+  },
+  {
+    question: "Why do GPUs excel at training and running deep neural networks relative to standard CPUs?",
+    options: [
+      "GPUs use specialized recursive cache hierarchies to process sequential loops faster.",
+      "Neural network operations are stacks of matrix multiplications—independent dot products that can be run in parallel across thousands of tiny cores.",
+      "GPUs natively compiled raw Python files into machine binary formats."
+    ],
+    answer: "Neural network operations are stacks of matrix multiplications—independent dot products that can be run in parallel across thousands of tiny cores.",
+    explanation: "CPUs are optimized for fast sequential execution and complex logic. GPUs are massively-parallel compute machines designed to execute simple operations simultaneously on grids of data, making them perfect for matrix multiplications."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Dot products by hand:** compute cosine similarity between
    `[1,2,0]`, `[2,4,0]` and `[0,0,3]` — confirm the parallel pair
    scores 1.0 and the perpendicular pair 0. Then do it in NumPy and
    feel the [vector-DB query](/aiml/vector-databases) you just ran.
-2. **Gradient descent in 15 lines:** fit `y = wx + b` to ten points
-   with the update rule above — no libraries. Print the loss each
-   step; try learning rates 0.0001, 0.01, and 1.0, and watch all
-   three behaviors from the QA.
+2. **Gradient descent parameter test:** Run the Python code above with learning rates `0.0001`, `0.01`, and `1.0`. Verify which one underfits, which converges, and which diverges.
 3. **Distribution feel:** simulate 10,000 coin-flip batches of 100 in
    Python; histogram the heads-counts and meet the bell curve. Then
    compute how often a *fair* coin gives ≥60 heads — your first

@@ -5,6 +5,16 @@ order: 5
 difficulty: "Advanced"
 tags: ["transformers", "attention", "self-attention", "nlp", "deep-learning", "positional-encoding"]
 ---
+## Starting from Zero — A Physical Intuition
+
+Before looking at equations, let's understand self-attention through a physical office filing system analogy:
+
+*   **The Query (Q) — Your Sticky Note Search**: Imagine you are working at a desk and need information about a specific task. You write down exactly what you're looking for on a sticky note. This search term is your **Query**.
+*   **The Key (K) — The Drawer Labels**: Around your office, there are filing cabinets. Each drawer has a label identifying its contents. These labels are the **Keys**. You compare your sticky note (Query) against every drawer label (Key) to find the best match.
+*   **The Value (V) — The Document Inside**: Once you find the cabinet drawer whose label (Key) matches your sticky note (Query), you open it and extract the actual files inside. These files are the **Values**.
+*   **Self-Attention — Blending the Files**: If your search matches multiple drawers, you don't just pull one document; you pull files from all matching drawers and compile a summary. The brightness of your match (dot product similarity) determines how much page space each file gets in your final summary (weighted average).
+
+---
 
 ## The problem attention solved
 
@@ -96,6 +106,81 @@ Two flavors:
   a model generate left-to-right, one token at a time. Modern [LLMs](/aiml/llms)
   are decoder stacks.
 
+## Self-Attention in Code
+
+Here is a complete, clean Python implementation of Scaled Dot-Product Attention with causal masking using NumPy:
+
+```python
+import numpy as np
+from typing import Tuple, Optional
+
+def scaled_dot_product_attention(
+    q: np.ndarray, 
+    k: np.ndarray, 
+    v: np.ndarray, 
+    mask: Optional[np.ndarray] = None
+) -> Tuple[np.ndarray, np.ndarray]:
+    # q, k, v shape: (seq_len, d_k)
+    d_k = q.shape[-1]
+    
+    # 1. Compute similarity scores
+    scores = np.matmul(q, k.T) / np.sqrt(d_k)
+    
+    # 2. Apply causal mask (1 = allow, 0 = mask out)
+    if mask is not None:
+        scores = np.where(mask == 0, -1e9, scores)
+        
+    # 3. Softmax along the last dimension (for weights summing to 1.0)
+    exp_scores = np.exp(scores - np.max(scores, axis=-1, keepdims=True))
+    weights = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
+    
+    # 4. Multiply weights by Values
+    output = np.matmul(weights, v)
+    return output, weights
+
+# Example: 3 tokens, 2-dimensional embeddings
+# Tokens: ["The", "cat", "sat"]
+Q = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+K = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+V = np.array([[10.0, 0.0], [0.0, 20.0], [5.0, 5.0]])
+
+# Causal lower-triangular mask
+causal_mask = np.tril(np.ones((3, 3)))
+
+out, attn_weights = scaled_dot_product_attention(Q, K, V, causal_mask)
+print("Attention Weights:\n", attn_weights)
+print("Output:\n", out)
+```
+
+### Think it through like the interview
+
+Don't just state that Transformers are fast — derive the computational bottleneck of sequential loops.
+
+<ThinkThrough
+  title="RNN Bottleneck vs Self-Attention"
+  difficulty="Sequence Modeling Limits"
+  problem="You need to process a 10,000-token sequence. Contrast the backpropagation speed of an LSTM against a Transformer."
+  stages={[
+    {
+      label: "Evaluate LSTM step dependencies",
+      prompt: "Can a CPU/GPU compute the hidden state h_500 of an LSTM before h_499 is finalized? Why or why not?",
+      reveal: "No. The LSTM recurrent step equation is h_t = LSTM_Cell(x_t, h_{t-1}). Because h_t directly depends on the previous hidden state h_{t-1}, the operations cannot be parallelized. You must run a sequential loop of 500 steps, running one core on the GPU while the other 9,999 idle."
+    },
+    {
+      label: "Analyze Transformer parallel path",
+      prompt: "How does Self-Attention calculate the representation of token 500 relative to token 1 without a sequential loop?",
+      reveal: "Self-attention computes Q, K, and V for all 10,000 tokens simultaneously using a single matrix multiply (Parallel projection). It then computes the 10,000 x 10,000 score matrix QKᵀ in parallel. Every token looks directly at every other token in exactly one step. The distance between any two tokens is always exactly 1 hop."
+    },
+    {
+      label: "Contrast backpropagation gradients",
+      prompt: "What happens to gradients flowing from step 10,000 back to step 1 during training for both models?",
+      reveal: "In LSTMs, the gradient must multiply back through 10,000 sequential cell state transitions, causing extreme vanishing or exploding gradients. In a Transformer, because every token has a direct attention connection to every other token, gradients flow directly from token 10,000 to token 1 in a single step, bypassing intermediate tokens entirely. This enables stable training of extremely long contexts."
+    }
+  ]}
+/>
+
+---
+
 ## Why transformers won
 
 - **Parallelizable** — every token is processed at once, so training scales to
@@ -167,6 +252,43 @@ new token reuses past Keys/Values instead of recomputing them.
 
 </QA>
 
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "What is the purpose of the causal mask in decoder-only transformers?",
+    options: [
+      "To restrict the attention layer to compute similarities only for vocabulary words that are adjectives.",
+      "To prevent current tokens from looking at future tokens during training, preserving the autoregressive property (predicting left-to-right).",
+      "To compress the sequence dimensionality from O(N^2) to O(N log N)."
+    ],
+    answer: "To prevent current tokens from looking at future tokens during training, preserving the autoregressive property (predicting left-to-right).",
+    explanation: "Causal masking replaces future-position scores with -inf (resulting in 0 after softmax). This ensures that when training the model to predict the next token at position t, it cannot 'cheat' by reading tokens at position t+1 onward."
+  },
+  {
+    question: "Why does standard Self-Attention have a memory complexity of O(n²)?",
+    options: [
+      "Because each token vector is projected into d-dimensional space.",
+      "Because every token in the sequence computes a similarity score with every other token, requiring an n×n attention weight matrix to be stored.",
+      "Because the positional encoding values require double-precision floating-point grids."
+    ],
+    answer: "Because every token in the sequence computes a similarity score with every other token, requiring an n×n attention weight matrix to be stored.",
+    explanation: "For a sequence of length n, the dot product is computed between all pairs of queries and keys, resulting in a matrix of size n×n. This leads to both O(n²) time complexity for computation and O(n²) memory complexity to store the matrix."
+  },
+  {
+    question: "What is the Key Value (KV) Cache optimization used for during LLM inference?",
+    options: [
+      "It caches the generated text outputs directly in browser local storage.",
+      "It stores the Key and Value matrices of all prompt/context tokens computed in previous steps, so the model only needs to project the single newly generated token's Q/K/V.",
+      "It compresses the weight matrices using low-rank approximations."
+    ],
+    answer: "It stores the Key and Value matrices of all prompt/context tokens computed in previous steps, so the model only needs to project the single newly generated token's Q/K/V.",
+    explanation: "During next-token generation (autoregressive generation), the prefix tokens remain constant. Instead of recalculating their Keys and Values at every step, we cache them and only project Q, K, and V for the single new token, saving massive computational overhead."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Attention by hand**: given three tokens with 2-D Q/K/V vectors, compute the
@@ -174,8 +296,7 @@ new token reuses past Keys/Values instead of recomputing them.
    the weights sum to 1.
 2. **Causal mask**: write the mask matrix for a 4-token decoder so each token only
    attends to itself and earlier tokens. Why is it an upper-triangular −∞?
-3. **Implement scaled dot-product attention** in NumPy or PyTorch
-   (`softmax(Q @ K.T / sqrt(d)) @ V`) and verify against `torch.nn.functional.scaled_dot_product_attention`.
+3. **Run the Attention code**: Execute the Python self-attention function above. Run it with and without the causal mask and inspect how the output vectors change when looking at past vs future context.
 4. **Cost estimate**: a model has a 128k-token context. Relative to a 4k context,
    how much more attention compute and memory does one layer need? (Answer with the
    n² factor.)

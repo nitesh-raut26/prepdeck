@@ -5,6 +5,14 @@ order: 7
 difficulty: "Intermediate"
 tags: ["rag", "llm", "embeddings", "vector-database", "retrieval", "ai"]
 ---
+## Starting from Zero — A Physical Intuition
+
+Before looking at pipeline architectures, let's understand RAG through a physical analogy:
+
+*   **The Closed-Book Exam (Standard LLM)**: Imagine sitting in a classroom taking a closed-book history exam. You must rely solely on the facts you memorized months ago during study sessions. If the exam asks about an event that occurred *after* you studied, you will either fail to answer or confidently guess the wrong information. This is an LLM responding from its frozen pre-trained weights.
+*   **The Open-Book Exam (RAG)**: Now, imagine the teacher allows you to bring a massive library of books. Since you can't read all 10,000 pages in the 60-minute exam window, you hire a fast assistant (the Retrieval system) who reads the exam question, runs to the bookshelves, pulls out the exact 3 pages containing the answers, and highlights them for you. You then read those 3 highlighted pages (the Context) and write a perfect answer. This is RAG.
+
+---
 
 ## The LLM Knowledge Problem
 
@@ -117,6 +125,33 @@ chunks = splitter.split_text(document_text)
 - Shorter chunks (200-400 tokens): precise retrieval, less context per chunk
 - Longer chunks (800-1200 tokens): more context, may dilute relevance score
 - Always include metadata: document source, page number, created date, section title
+
+### Think it through like the interview
+
+Don't just split text randomly — derive the correct chunk size based on context density and model limits.
+
+<ThinkThrough
+  title="Chunking Strategies"
+  difficulty="Data Ingestion Engineering"
+  problem="Design an ingestion pipeline for a 1,000-page engineering PDF. Decide on a chunking strategy to balance retrieval accuracy and context coherence."
+  stages={[
+    {
+      label: "Evaluate fixed-size chunking",
+      prompt: "What happens if we split the PDF into fixed blocks of exactly 200 tokens without any overlap?",
+      reveal: "A concept, sentence, or database query might cross the exact boundary of token 200. This cuts the semantic context in half, meaning neither chunk alone will contain the full concept, leading to poor embedding vector similarity and retrieval failure."
+    },
+    {
+      label: "Optimize with sliding-window overlap",
+      prompt: "How does adding a 50-token overlap resolve this boundary problem? What are the tradeoffs?",
+      reveal: "Adding an overlap (e.g., chunk size 500, overlap 50) ensures that concepts crossing the boundary are captured in both adjacent chunks, maintaining semantic coherence. The tradeoff is increased index size and cost: overlapping tokens are embedded and stored multiple times, increasing storage and query search space."
+    },
+    {
+      label: "Select chunk size based on content density",
+      prompt: "Should we use tiny chunks (100 tokens) or large chunks (1,000 tokens) for technical documentation containing API schemas and code snippets?",
+      reveal: "API schemas and code snippets require high context precision. Large chunks (1,000 tokens) dilute the embedding vector since many unrelated functions are blended together. Tiny chunks (100 tokens) will truncate the code block. We should use a medium chunk size (approx 400-500 tokens) with paragraph-based semantic boundaries so that entire functions remain contiguous."
+    }
+  ]}
+/>
 
 ---
 
@@ -292,6 +327,43 @@ RAG (Retrieval-Augmented Generation) retrieves relevant document chunks at query
 Key metrics: (1) **Retrieval recall** — are the right chunks being retrieved? (measure: does the ground-truth chunk appear in top-K?). (2) **Answer faithfulness** — does the answer stick to retrieved context? (use an LLM judge). (3) **Answer relevance** — does the answer actually address the question? Frameworks: RAGAS (open-source RAG evaluation), TruLens. The most common RAG failure is retrieval failure — if you retrieve the wrong chunks, no amount of LLM sophistication helps.
 
 </QA>
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "If a user query matches documents by keyword but fails to match synonyms (e.g., searching 'APAC' misses documents containing 'Asia-Pacific'), how do you resolve this?",
+    options: [
+      "By fine-tuning the base LLM on APAC financial terms.",
+      "By implementing Hybrid Search, combining keyword retrieval (BM25) with vector embeddings to match both exact spellings and semantic meanings.",
+      "By increasing the temperature of the model to 1.5."
+    ],
+    answer: "By implementing Hybrid Search, combining keyword retrieval (BM25) with vector embeddings to match both exact spellings and semantic meanings.",
+    explanation: "Vector embeddings match semantic meaning ('APAC' and 'Asia-Pacific' have close vectors), while keyword indexes (BM25) ensure exact term matches like product SKUs or serial numbers. Combining them covers both search regimes."
+  },
+  {
+    question: "What does the RAG metric 'Faithfulness' measure?",
+    options: [
+      "How closely the generated answer matches the vocabulary of the training dataset.",
+      "Whether the generated answer is derived strictly and only from the retrieved context documents, without introducing outside hallucinations.",
+      "Whether the user query is written in polite language."
+    ],
+    answer: "Whether the generated answer is derived strictly and only from the retrieved context documents, without introducing outside hallucinations.",
+    explanation: "Faithfulness evaluates grounding: it ensures the LLM did not invent facts (hallucinate) or import facts from its pre-training weights that are not supported by the retrieved document chunks."
+  },
+  {
+    question: "Why is a Cross-Encoder (Re-ranker) applied after retrieving document candidates, rather than using it to search the entire database?",
+    options: [
+      "Cross-encoders are only compatible with local SQL databases.",
+      "Cross-encoders analyze the query and document together, which is highly accurate but computationally expensive and slow; running it on the top-20 retrieved candidates is fast, whereas running it on the entire DB is impossible.",
+      "Cross-encoders require a different tokenization vocabulary."
+    ],
+    answer: "Cross-encoders analyze the query and document together, which is highly accurate but computationally expensive and slow; running it on the top-20 retrieved candidates is fast, whereas running it on the entire DB is impossible.",
+    explanation: "Bi-encoders compute query and document vectors independently (enabling fast dot-product lookups on billions of rows). Cross-encoders calculate attention across query and document jointly, yielding higher ranking accuracy but requiring O(N) evaluation time, making it practical only as a secondary sorting filter on a small candidate pool."
+  }
+]} />
+
+---
 
 ## Practice
 

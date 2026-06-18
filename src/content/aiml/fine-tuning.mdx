@@ -5,6 +5,14 @@ order: 10
 difficulty: "Intermediate"
 tags: ["fine-tuning", "lora", "llm", "training", "ai"]
 ---
+## Starting from Zero — A Physical Intuition
+
+Before looking at training equations, let's understand fine-tuning and LoRA through two physical analogies:
+
+*   **The Doctor Residency Analogy (Fine-Tuning)**: A pre-trained base model is like a doctor who has just graduated from medical school. They possess broad knowledge of biology, chemistry, and general medicine. Fine-tuning is their residency: a few months of highly focused training in cardiology. You don't re-teach them basic human anatomy (pre-training); you specialize their behavioral habits and vocabulary for a specific clinic.
+*   **The Piano Adapter Analogy (LoRA)**: Full fine-tuning is like restringing and retuning every single string on a grand piano to play jazz instead of classical—expensive and time-consuming. **LoRA (Low-Rank Adaptation)** is like attaching a temporary adapter clamp to a few keys. The base piano remains untouched (frozen), but the clamp slightly redirects a few notes to create the jazz sound. When you want classical again, you simply unclip the adapter.
+
+---
 
 ## What fine-tuning is
 
@@ -111,6 +119,83 @@ full fine-tuning on most specialization tasks at a fraction of the cost.
 **QLoRA** pushes further: the frozen base model is *quantized* (weights
 compressed to 4-bit numbers — lossy but tolerable), letting a
 13B-parameter model fine-tune on one consumer GPU.
+
+## LoRA Forward Pass in Code
+
+Here is a complete Python implementation demonstrating how a LoRA layer calculates its forward pass using low-rank matrices `A` and `B` alongside a frozen weight matrix `W`:
+
+```python
+import numpy as np
+from typing import Tuple
+
+class LinearLayerWithLoRA:
+    def __init__(self, in_features: int, out_features: int, rank: int = 4):
+        # 1. Base weights: simulated frozen pre-trained weight matrix W
+        self.W = np.random.randn(out_features, in_features) * 0.1
+        
+        # 2. LoRA matrices: A and B
+        # B is initialized to zeros so the adapter contributes nothing at start
+        self.A = np.random.randn(rank, in_features) * 0.1
+        self.B = np.zeros((out_features, rank))
+        
+        # Scaling factor: alpha / rank
+        self.alpha = 8.0
+        self.scaling = self.alpha / rank
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        # Base forward pass (completely frozen)
+        base_output = np.dot(self.W, x)
+        
+        # LoRA forward pass: (B @ A) @ x * scaling
+        # Evaluated as B @ (A @ x) to maintain O(d * r) compute complexity
+        lora_output = np.dot(self.B, np.dot(self.A, x)) * self.scaling
+        
+        # Combined output
+        return base_output + lora_output
+
+# Instantiate a layer: 8 input dims, 8 output dims, rank-2 adapter
+layer = LinearLayerWithLoRA(in_features=8, out_features=8, rank=2)
+x_input = np.random.randn(8)
+
+# Output before training (adapter contributes zero)
+out_initial = layer.forward(x_input)
+
+# Simulate training: update B to non-zero values
+layer.B = np.random.randn(8, 2) * 0.1
+out_adapted = layer.forward(x_input)
+
+print("Initial output (W only):\n", out_initial)
+print("Adapted output (W + LoRA A*B):\n", out_adapted)
+```
+
+### Think it through like the interview
+
+Don't just launch a training run — derive whether your task needs domain knowledge injection or instruction adaptation.
+
+<ThinkThrough
+  title="Instruction Tuning vs Continual Pre-training"
+  difficulty="Training Regimes & Objectives"
+  problem="Design the training strategy to specialize an LLM for two tasks: (1) answering questions about proprietary internal medical trials, and (2) outputting text in a strict patient-chart JSON schema."
+  stages={[
+    {
+      label: "Evaluate Task 1: Medical Trials",
+      prompt: "Can we use LoRA instruction tuning to teach the model all the facts, values, and drug names from our medical trials?",
+      reveal: "No. Attempting to teach a model large amounts of new factual data via low-rank adapters (like LoRA) is ineffective. The adapter capacity is too small, leading to high hallucination rates and catastrophic forgetting. Instead, we must use Continual Pre-training (mask language modeling on raw texts) or, preferably, RAG to inject the document context directly at query time."
+    },
+    {
+      label: "Evaluate Task 2: Strict JSON schema",
+      prompt: "Why is LoRA instruction tuning the perfect match to teach the model to output a strict patient-chart JSON schema?",
+      reveal: "The model already knows how to construct JSON and write English (pre-trained capability). The task is simply restricting its output format to a specific schema. This formatting behavior is low-dimensional and fits perfectly within a low-rank adapter, yielding 100% compliance with very few training examples (500-1,000 pairs)."
+    },
+    {
+      label: "Synthesize the production architecture",
+      prompt: "How do we combine both strategies to build a complete medical trials assistant?",
+      reveal: "We build a hybrid system: (1) we use a LoRA fine-tuned model (trained to output strict JSON summaries and follow medical tone), (2) we run a vector search to retrieve relevant medical trial snippets (RAG) at query time, and (3) we feed those snippets into the prompt of the fine-tuned model. Knowledge is supplied by RAG; style and format are supplied by LoRA."
+    }
+  ]}
+/>
+
+---
 
 In practice you'll meet fine-tuning at two levels:
 
@@ -239,6 +324,45 @@ you built them, which is the habit the question is really probing.
 
 </QA>
 
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "How does the 'Rank' (r) parameter in LoRA affect the training process and output?",
+    options: [
+      "Rank determines the vocabulary size of the model during tokenization.",
+      "Rank controls the width of the adapter matrices: a higher rank (e.g. r=16) trains more parameters, increasing capacity for complex tasks but requiring more memory; a lower rank (e.g. r=4) reduces parameter count for simpler style adjustments.",
+      "Rank restricts the context window size to prevent latency spikes."
+    ],
+    answer: "Rank controls the width of the adapter matrices: a higher rank (e.g. r=16) trains more parameters, increasing capacity for complex tasks but requiring more memory; a lower rank (e.g. r=4) reduces parameter count for simpler style adjustments.",
+    explanation: "LoRA decomposes the weight update matrix ΔW into two low-rank matrices A and B of dimensions d×r and r×d. Rank r determines the dimensionality of this bottleneck. If r is small, we train very few parameters, which is fine for formatting; if r is large, we have more capacity but higher compute costs."
+  },
+  {
+    question: "What is the phenomenon of 'Catastrophic Forgetting' during LLM fine-tuning?",
+    options: [
+      "The database indexes fail, causing documents to be deleted.",
+      "The model specializes in the fine-tuning task but loses its general abilities, such as reasoning, basic math, or safety alignment, due to excessive weight shifts.",
+      "The model fails to load weights because of a missing license file."
+    ],
+    answer: "The model specializes in the fine-tuning task but loses its general abilities, such as reasoning, basic math, or safety alignment, due to excessive weight shifts.",
+    explanation: "If you fine-tune too aggressively (high learning rate, too many epochs, or highly repetitive data), the model's weights shift drastically to optimize the training loss, destroying the fragile general-reasoning pathways established during pre-training."
+  },
+  {
+    question: "Why is fine-tuning generally considered a poor strategy to teach an LLM new factual knowledge?",
+    options: [
+      "Factual knowledge cannot be converted into vectors.",
+      "Fine-tuned models hallucinate when asked to cite sources, because the knowledge is diffused across weights rather than retrieved explicitly; furthermore, updating facts requires an expensive retraining run.",
+      "Fine-tuning deletes the model's pre-training token vocabulary."
+    ],
+    answer: "Fine-tuned models hallucinate when asked to cite sources, because the knowledge is diffused across weights rather than retrieved explicitly; furthermore, updating facts requires an expensive retraining run.",
+    explanation: "Knowledge is best supplied via RAG, which retrieves exact source materials that can be directly cited and updated in real-time. Fine-tuning attempts to memorize facts in weights, leading to parameter blending and hallucinations when details are queried."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Decision reps:** for each, pick prompt/RAG/fine-tune and defend it
@@ -246,18 +370,16 @@ you built them, which is the habit the question is really probing.
    (b) extractor must emit your exact JSON schema 100% of the time;
    (c) model doesn't know a library released last month; (d) support
    bot should sound like your brand across 50 K tickets/day.
-2. **Data drill:** write 5 training conversations for the LandAI report
+2. **LoRA Forward Lab:** Run the custom Python LoRA simulation code provided above. Modify the rank `r` from 2 to 4 and observe the changes in parameter counts and matrix dimensions.
+3. **Data drill:** write 5 training conversations for the LandAI report
    style above — then critique your own consistency (format, length,
    tone) the way step-6 demands.
-3. **Hands-on (API path):** take 50 examples of a toy task (e.g.,
+4. **Hands-on (API path):** take 50 examples of a toy task (e.g.,
    classify commit messages as feat/fix/chore), fine-tune a small hosted
    model, and compare against few-shot prompting on a held-out 20. The
    eval table you produce is the deliverable.
-4. **Hands-on (open path):** run a LoRA fine-tune of a 7B model with
+5. **Hands-on (open path):** run a LoRA fine-tune of a 7B model with
    Hugging Face PEFT on the same data; note GPU memory with and without
    4-bit quantization.
 
-**That completes Level 11.** The full roadmap now runs unbroken from
-[what a computer is](/basics/how-computers-work) to
-[salary negotiation](/career/salary-negotiation) — see the
-[roadmap](/roadmap).
+Next: [LLM Evaluation & Safety](/aiml/llm-eval-safety) — testing and defending production models.

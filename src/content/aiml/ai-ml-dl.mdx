@@ -218,6 +218,33 @@ This is how LLMs (ChatGPT, Gemini, Claude) are pre-trained — no humans manuall
    Serve predictions via API, monitor for drift
 ```
 
+### Think it through like the interview
+
+Don't just memorize the pipeline steps — understand how data and parameters flow through them to protect against leakage and drift.
+
+<ThinkThrough
+  title="The Machine Learning Pipeline"
+  difficulty="Foundational Pipeline Architecture"
+  problem="Design the logical flow to build, validate, and deploy a spam classifier starting with a folder of raw user reports."
+  stages={[
+    {
+      label: "Map raw reports into data representations",
+      prompt: "How should raw text emails be preprocessed so an ML model can consume them?",
+      reveal: "Raw text must be normalized (lowercase, remove punctuation, strip HTML) and then tokenized. Next, we convert words to numerical features, such as TF-IDF scores or word embeddings, because models only understand matrices of numbers, not text strings."
+    },
+    {
+      label: "Establish validation partition rules",
+      prompt: "Why can't we simply split our data randomly into 90% train and 10% test, and tune hyperparameters against the test set?",
+      reveal: "If you tune hyperparameters (like regularization strength or learning rate) directly on the test set, you cause data leakage. Your model choices 'memorize' the test set features, rendering the test set biased. We must split into three: Train (for fitting parameters), Validation (for tuning hyperparameters), and Test (used exactly once at the end for unbiased evaluation)."
+    },
+    {
+      label: "Address representation shift in deployment",
+      prompt: "Once the model scores 98% on our test set, we deploy it. Why might accuracy drop to 70% in production immediately, and how do we prevent this?",
+      reveal: "This is sampling bias and data drift. If your training data consisted of formal English emails, but production users send slang, emojis, or short sentences, the input distribution has shifted. To mitigate this, we need continuous monitoring of input feature distributions (e.g., via drift metrics) and a feedback loop to regularly retrain the model on fresh production samples."
+    }
+  ]}
+/>
+
 ---
 
 ## Key ML Concepts Every Engineer Must Know
@@ -368,10 +395,49 @@ Overfitting is when a model performs well on training data but poorly on new (un
 
 </QA>
 
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "You are building a system to predict whether a credit card transaction is fraudulent. 99.9% of transactions are legitimate. What is the danger of evaluating this model using accuracy alone?",
+    options: [
+      "Accuracy is mathematically impossible to compute for decimal numbers.",
+      "A simple baseline model that predicts 'legitimate' for every transaction achieves 99.9% accuracy but catches zero fraud, rendering accuracy completely misleading.",
+      "Accuracy requires high GPU memory because it processes the entire dataset simultaneously."
+    ],
+    answer: "A simple baseline model that predicts 'legitimate' for every transaction achieves 99.9% accuracy but catches zero fraud, rendering accuracy completely misleading.",
+    explanation: "On highly imbalanced datasets, accuracy is a deceptive metric. A model that does nothing achieves near-perfect accuracy. We must use Precision, Recall, and F1-score to assess true performance."
+  },
+  {
+    question: "What is data leakage and how does it happen during preprocessing?",
+    options: [
+      "When the database leaks passwords or keys through error logs.",
+      "When you compute statistics (like the mean or standard deviation) using the entire dataset before splitting, allowing training data to gain information from the unseen test set.",
+      "When the model's weights are printed out in plaintext to standard output."
+    ],
+    answer: "When you compute statistics (like the mean or standard deviation) using the entire dataset before splitting, allowing training data to gain information from the unseen test set.",
+    explanation: "Any preprocessing step (like scaling features or filling missing values with the median) must calculate its parameters *only* on the training split, then apply those same parameters to the validation/test splits. Computing them on the entire dataset leaks future statistics to the model during training."
+  },
+  {
+    question: "How do you distinguish between supervised and unsupervised learning?",
+    options: [
+      "Supervised learning requires GPU acceleration, while unsupervised learning runs only on CPUs.",
+      "Supervised learning trains on inputs associated with explicit ground-truth labels to map inputs to outputs; unsupervised learning operates on unlabeled data to find hidden clusters or structures.",
+      "Supervised learning is only used for tabular data, while unsupervised learning is used for images."
+    ],
+    answer: "Supervised learning trains on inputs associated with explicit ground-truth labels to map inputs to outputs; unsupervised learning operates on unlabeled data to find hidden clusters or structures.",
+    explanation: "The defining difference is the presence of labels. If the data has inputs and expected outputs, it is supervised (regression/classification). If it only has inputs and we seek natural groups or patterns, it is unsupervised (clustering/dimensionality reduction)."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Beginner**: Using scikit-learn, train a logistic regression model to classify Iris flowers. Evaluate with precision, recall, and F1 score.
 2. **Core**: Compare Random Forest, SVM, and Gradient Boosting on a tabular dataset. Plot learning curves to diagnose overfitting.
 3. **Advanced**: Build a complete ML pipeline — data preprocessing, feature engineering, model selection with cross-validation, hyperparameter tuning with GridSearchCV, and final test set evaluation.
 
-Next: [Neural Networks](/aiml/neural-networks) — the engines behind deep learning.
+Next: [Math Foundations](/aiml/math-foundations) — the minimal math required to understand ML models.

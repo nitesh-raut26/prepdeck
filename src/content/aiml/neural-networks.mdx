@@ -46,19 +46,36 @@ Activation: output = ReLU(0.01) = max(0, 0.01) = 0.01
 
 ```python
 import numpy as np
+from typing import Tuple
 
 class Neuron:
-    def __init__(self, n_inputs):
+    def __init__(self, n_inputs: int):
         # Weights initialized randomly (small values)
         self.weights = np.random.randn(n_inputs) * 0.01
         self.bias = 0.0
+        
+        # Cache inputs and net input for backprop
+        self.last_inputs = None
+        self.last_z = 0.0
 
-    def forward(self, inputs):
-        z = np.dot(inputs, self.weights) + self.bias
-        return max(0, z)  # ReLU activation
+    def forward(self, inputs: np.ndarray) -> float:
+        self.last_inputs = np.array(inputs)
+        self.last_z = np.dot(self.last_inputs, self.weights) + self.bias
+        return max(0.0, self.last_z)  # ReLU activation: f(z) = max(0, z)
+
+    def backward(self, d_out: float) -> Tuple[np.ndarray, float]:
+        # Derivative of ReLU: 1 if z > 0 else 0
+        d_relu = 1.0 if self.last_z > 0 else 0.0
+        d_z = d_out * d_relu
+        
+        # Gradients: ∂Loss/∂w = d_z * inputs, ∂Loss/∂b = d_z
+        d_weights = d_z * self.last_inputs
+        d_bias = d_z
+        return d_weights, d_bias
 
 neuron = Neuron(n_inputs=3)
 output = neuron.forward([0.5, 0.8, 0.2])
+d_w, d_b = neuron.backward(d_out=1.0)
 ```
 
 ---
@@ -373,6 +390,38 @@ def forward(self, x):
     return self.fc(h_n[-1])
 ```
 
+### Think it through like the interview
+
+Don't just state that Sigmoids vanish — walk through the chain rule mechanics that cause it.
+
+<ThinkThrough
+  title="The Vanishing Gradient Problem"
+  difficulty="Deep Network Optimization"
+  problem="Diagnose why a 10-layer network utilizing Sigmoid activation functions stops learning after the first few training steps."
+  stages={[
+    {
+      label: "Trace the activation derivatives",
+      prompt: "What is the derivative of the Sigmoid function σ(x) = 1 / (1 + e⁻ˣ), and what is its maximum possible value?",
+      reveal: "The derivative of Sigmoid is σ'(x) = σ(x) * (1 - σ(x)). Since the output of σ(x) is bounded between 0 and 1, the maximum value of σ'(x) occurs when σ(x) = 0.5 (which is 0.5 * 0.5 = 0.25). Thus, the derivative is ALWAYS bounded between 0 and 0.25."
+    },
+    {
+      label: "Apply the Chain Rule back through layers",
+      prompt: "Using the chain rule, how is the gradient of the loss with respect to the weights in the 1st layer calculated in a 10-layer network?",
+      reveal: "To compute the gradient for layer 1, we multiply the local derivatives of all subsequent layers: ∂Loss/∂W₁ = d_out * (W_10 * σ'_10) * (W_9 * σ'_9) * ... * (W_2 * σ'_2) * inputs. Every layer introduces another multiplication of the local Sigmoid derivative σ'(x)."
+    },
+    {
+      label: "Evaluate the product decay",
+      prompt: "If each activation derivative term is at most 0.25, what happens to the product of 10 of these derivatives as gradients flow from the output back to layer 1?",
+      reveal: "The product contains (0.25)^10 ≈ 0.00000095. Even with normal weight magnitudes, this repeated multiplication shrinks the gradient exponentially to near-zero by the time it reaches the early layers. Consequently, layer 1 weights are updated by virtually nothing, halting feature extraction training."
+    },
+    {
+      label: "Nudge to ReLU and Skip Connections",
+      prompt: "How do ReLU activations and residual (skip) connections structurally resolve this decay?",
+      reveal: "1. ReLU has a derivative of 1.0 for all positive inputs, so gradients pass through hidden layers completely unchanged (no multiplication by fractional values). 2. Residual connections add the input directly to the layer output: y = F(x) + x. The derivative with respect to x is dF/dx + 1.0. The '+1' term acts as a gradient superhighway, allowing gradients to flow back to early layers without shrinking."
+    }
+  ]}
+/>
+
 ---
 
 ## Model Architectures Compared
@@ -443,11 +492,49 @@ Overfitting is when the network memorizes training data (achieves very low train
 
 </QA>
 
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why do we initialize weights randomly in a neural network rather than setting them all to zero?",
+    options: [
+      "Zero weights cause matrix divisions by zero in softmax.",
+      "If all weights are initialized to zero, all hidden neurons in a layer will compute the exact same output and gradient during backpropagation, remaining completely symmetric (symmetric weight updates).",
+      "Setting weights to zero causes the model to consume triple the GPU memory."
+    ],
+    answer: "If all weights are initialized to zero, all hidden neurons in a layer will compute the exact same output and gradient during backpropagation, remaining completely symmetric (symmetric weight updates).",
+    explanation: "Symmetry breaking is essential. If neurons have identical weights, they will compute identical outputs, receive identical gradients, and update identically, collapsing the layer's capacity to that of a single neuron. Random initialization breaks this symmetry."
+  },
+  {
+    question: "What does the 'Dropout' layer do during neural network training?",
+    options: [
+      "It permanently deletes 50% of the dataset from the training partition.",
+      "It randomly zero-outs a fraction of neuron activations on each forward pass, forcing the network to learn redundant representations and avoid over-relying on specific features.",
+      "It shuts down the model training if the validation loss increases."
+    ],
+    answer: "It randomly zero-outs a fraction of neuron activations on each forward pass, forcing the network to learn redundant representations and avoid over-relying on specific features.",
+    explanation: "Dropout is a powerful regularization technique. By disabling a random subset of neurons in each training step, the model cannot develop co-adaptations (relying too heavily on specific single pathways), which forces it to learn robust, generalized features."
+  },
+  {
+    question: "How do Convolutional Neural Networks (CNNs) achieve translation invariance when processing images?",
+    options: [
+      "CNNs use recursive loops to scan all pixels sequentially from top-left to bottom-right.",
+      "By sharing weights across the sliding filter (kernel) and using Max Pooling, which extracts the maximum activation regardless of its exact location in the window.",
+      "CNNs convert images into 1D sorted text vectors before processing."
+    ],
+    answer: "By sharing weights across the sliding filter (kernel) and using Max Pooling, which extracts the maximum activation regardless of its exact location in the window.",
+    explanation: "A convolutional kernel slides across the image applying the same weights to detect a feature (like an edge) anywhere. Max Pooling then summarizes local regions by their maximum value, meaning if a feature moves slightly, the pooled output remains the same."
+  }
+]} />
+
+---
+
 ## Practice
 
 1. **Beginner**: Train a neural network on the MNIST dataset (handwritten digits) in PyTorch. Achieve >98% test accuracy using a two-layer MLP.
-2. **CNN**: Build a CNN for CIFAR-10 (10-class image classification). Use batch normalization and data augmentation. Target: >80% test accuracy.
-3. **RNN**: Build a simple LSTM model in PyTorch to classify the sentiment of movie reviews (binary classification) or predict the next number in a sequence. Use an embedding layer and experiment with hidden sizes.
-4. **Hyperparameter tuning**: Starting from a baseline MNIST model, experiment with: learning rate (1e-2, 1e-3, 1e-4), batch size (32, 256), dropout rates (0, 0.3, 0.5). Plot training curves and explain the results.
+2. **Neuron Gradient Test**: Run the custom Python `Neuron` implementation from the top of this page. Pass random inputs and verify that running `backward` correctly updates weight and bias gradients based on whether the net input `z` was positive or negative.
+3. **CNN**: Build a CNN for CIFAR-10 (10-class image classification). Use batch normalization and data augmentation. Target: >80% test accuracy.
+4. **RNN**: Build a simple LSTM model in PyTorch to classify the sentiment of movie reviews (binary classification) or predict the next number in a sequence. Use an embedding layer and experiment with hidden sizes.
+5. **Hyperparameter tuning**: Starting from a baseline MNIST model, experiment with: learning rate (1e-2, 1e-3, 1e-4), batch size (32, 256), dropout rates (0, 0.3, 0.5). Plot training curves and explain the results.
 
-Next: [LLMs](/aiml/llms) — the transformer revolution and large language models.
+Next: [Transformers & Attention](/aiml/transformers) — the architectural revolution behind modern LLMs.
