@@ -65,6 +65,61 @@ queries/joins (slow, hard to make transactional). Pick a key with high
 cardinality and even access — and design so most queries hit a single shard.
 </Callout>
 
+---
+
+## Replication Topologies
+
+To scale reads, writes, and handle hardware failovers, databases distribute data across multiple nodes using different replication topologies:
+
+### 1. Single-Leader Replication (Master-Follower)
+*   **How it works**: Writes are sent only to the **leader**. The leader writes to its log and sends updates to the **followers**. Followers only serve reads.
+*   **Sync vs. Async vs. Semi-Sync**:
+    *   *Synchronous*: Leader waits for *all* followers to confirm before returning success. (Guarantees zero data loss, but high latency and blocking if a follower dies).
+    *   *Asynchronous*: Leader returns success immediately after writing locally. (Low latency, but risk of data loss if leader crashes before logs reach followers).
+    *   *Semi-Synchronous*: Leader waits for *one* follower to acknowledge, while others replicate asynchronously. (Best compromise between safety and latency).
+
+### 2. Multi-Leader Replication (Active-Active / Master-Master)
+*   **How it works**: Multiple nodes act as leaders, accepting both reads and writes. They replicate state updates to each other. Used across multiple geographical datacenters.
+*   **Conflict Resolution**: If two leaders receive conflicting writes (e.g. updating same row to different values simultaneously):
+    *   *Last-Write-Wins (LWW)*: Uses timestamps to discard the older write. (Risky due to clock skew).
+    *   *Conflict-Free Replicated Data Types (CRDTs)*: Mathematical data structures (like G-Counters or PN-Counters) that merge automatically without conflicts.
+
+### 3. Leaderless Replication (Dynamo-Style)
+*   **How it works**: Clients send writes and reads directly to *multiple* nodes simultaneously. Popularized by Amazon's DynamoDB and Apache Cassandra.
+*   **Data Consistency**:
+    *   *Hinted Handoff*: If a node is down, another node stores the write temporary "hint" and delivers it when the target node recovers.
+    *   *Read Repair*: When a client reads from multiple nodes and detects a version mismatch, the client writes the newest value back to the stale nodes.
+    *   *Anti-Entropy*: Background processes run hashes (Merkle Trees) to identify and fix out-of-sync data.
+
+---
+
+## CQRS & Event Sourcing
+
+For high-throughput enterprise applications, standard database updates can become performance bottlenecks. We can decouple the read and write paths using **CQRS** and **Event Sourcing**:
+
+### 1. CQRS (Command Query Responsibility Segregation)
+Instead of using a single schema for both reads and writes, CQRS splits them:
+*   **Write DB (Command)**: Highly normalized, optimized for insertions, updates, and enforcing transactions/business rules.
+*   **Read DB (Query)**: Highly denormalized (e.g., Elasticsearch or read-replicas), optimized for fast query execution and search.
+*   *Replication*: Commands write to the Command database, which triggers an async event message (via Kafka/RabbitMQ) to update the Read database.
+
+### 2. Event Sourcing
+Rather than storing the *current state* of a row directly, Event Sourcing stores the state changes as a sequence of **immutable events** (an audit log):
+
+```text
+Current State: Account Balance = $150
+
+Event Store (Immutable Ledger):
+  1. AccountOpened (ID=101)
+  2. FundsDeposited (Amount=$200)
+  3. FundsWithdrawn (Amount=$50)
+```
+
+*   **Pros**: Complete, unalterable historical audit trail (perfect for financial/medical systems). Reconstructing state to any historical point is trivial.
+*   **Cons**: Reconstructing the current state requires replaying all historical events. To optimize, we must periodically store **snapshots** of the current state.
+
+---
+
 ## Indexing & denormalization (one line each)
 
 An **index** turns an O(n) scan into an O(log n) B-tree lookup at the cost of

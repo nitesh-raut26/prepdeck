@@ -100,6 +100,90 @@ invariants and let the rest be eventually consistent.
 
 </QA>
 
+---
+
+## Quorums & Split-Brain Mitigation
+
+In a distributed cluster, how do we guarantee that two nodes don't both declare themselves the leader during a network partition? (This is the **split-brain problem**). We use **Quorums**.
+
+### The Quorum Math
+
+To read or write safely, a cluster of **N** nodes requires a majority agreement:
+
+```text
+Quorum Size = floor(N / 2) + 1
+```
+
+*   **For N = 3**: Quorum is 2. The cluster can tolerate 1 node failure.
+*   **For N = 5**: Quorum is 3. The cluster can tolerate 2 node failures.
+*   **Why odd numbers of nodes?** An odd number (e.g., 5) has the same failure tolerance as the next even number (e.g., 6, which also requires a quorum of 4 and can only tolerate 2 failures) but requires one fewer node, saving hardware costs and reducing network synchronization overhead.
+
+To ensure a read always sees the latest write, the write quorum (**W**) and read quorum (**R**) must overlap:
+
+```text
+R + W > N
+```
+
+If this condition is met, any read quorum is guaranteed to contain at least one node that participated in the latest write quorum, ensuring strong consistency.
+
+---
+
+## Distributed Consensus: Paxos vs. Raft
+
+To maintain a consistent state (like a distributed key-value store or transaction ledger) across multiple machines, we need a **Consensus Algorithm**.
+
+### 1. Paxos (The Academic Classic)
+Paxos operates in a leaderless or multi-proposer state, making it highly resilient but notoriously difficult to implement.
+*   **Roles**: Proposer, Acceptor, Learner.
+*   **Phase 1 (Prepare)**: A proposer sends a proposal number $N$ to a majority of acceptors. If acceptors agree, they promise not to accept any proposals numbered less than $N$.
+*   **Phase 2 (Accept)**: Once the proposer receives promises from a majority, it sends the proposal value to those acceptors. If a majority accepts, the value is committed and sent to learners.
+
+### 2. Raft (The Modern Standard)
+Designed to be easier to understand than Paxos, Raft decomposes consensus into explicit sub-problems:
+*   **Roles**: Leader, Follower, Candidate.
+*   **Leader Election**: If a follower stops hearing from the leader (heartbeat timeout), it transitions to a candidate, increments the election term, and requests votes. A candidate needs a majority of votes to become the new leader.
+*   **Log Replication**: All writes go through the leader. The leader writes the command to its log and sends it to all followers (AppendEntries). Once a majority of followers acknowledge, the leader commits the entry and responds to the client.
+
+---
+
+## Distributed Transactions: Two-Phase Commit (2PC) vs. Sagas
+
+How do you update multiple microservices in a single transaction (e.g., debiting a bank account *and* booking a flight)?
+
+### 1. Two-Phase Commit (2PC) — Strong Consistency
+2PC relies on a central coordinator to force block updates across all participant databases.
+
+```text
+  Coordinator                  Service A (Database)         Service B (Database)
+       │                                 │                            │
+       ├──── Phase 1: Prepare? ──────────┼───────────────────────────>│
+       │<─── Yes (Lock rows) ────────────┼────────────────────────────┤
+       │                                 │                            │
+       ├──── Phase 2: Commit! ───────────┼───────────────────────────>│
+       │<─── Acknowledged (Unlock) ──────┼────────────────────────────┤
+```
+
+*   **Pros**: Guarantees ACID compliance across multiple databases.
+*   **Cons**: **Blocking protocol**. If the coordinator dies midway, participants hold locks indefinitely, leading to resource starvation. Scales poorly due to network round-trips.
+
+### 2. The Saga Pattern — Eventual Consistency
+A Saga is a sequence of **local transactions**. Each service updates its own database and publishes an event. If a step fails, the saga executes **compensating transactions** (backward rollbacks) to undo preceding updates.
+
+*   **Choreography**: Each service listens to events from other services and triggers its local action independently (decentralized).
+*   **Orchestration**: A central orchestrator service tells each participant which local transaction to execute next, handling failures and triggering compensation steps directly (easier to debug).
+
+```
+         Saga Orchestrator
+          /      |      \
+     1.Debit  2.Book   [If 2 Fails]
+     Account   Flight   3.Credit Account (Compensate)
+```
+
+*   **Pros**: Non-blocking, highly scalable, ideal for complex microservice architectures.
+*   **Cons**: Lacks strict Isolation (intermediate states are visible to other transactions). Must be designed to handle out-of-order events.
+
+---
+
 ## Design drills
 
 CAP is a decision tool, not trivia. Practise *choosing* per workload.
