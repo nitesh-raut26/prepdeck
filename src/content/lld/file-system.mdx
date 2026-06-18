@@ -6,26 +6,53 @@ difficulty: "Classic"
 tags: ["LLD", "oop", "composite-pattern", "tree"]
 ---
 
+## The real-world analogy: Russian nesting boxes and drawer folders
+
+Imagine organizing a physical filing cabinet:
+1. **The Nesting Boxes (Composite Pattern)**: You have wooden storage containers. A container can hold single paper documents (**Files**), or it can hold smaller wooden storage containers (**Directories**), which in turn hold more documents and folders.
+   - Both files and directories sit in the same drawer layout and can be moved, labeled, and sized.
+   - When calculating the total weight of a container, you sum the weights of its contents. If a content item is a folder, you recursively open that folder and sum its items. The folder and the document share the same base trait—they are physical nodes on the shelf.
+
+If you don't use this Composite structure in code, you end up writing separate, duplicate traversal systems for folders and files, resulting in messy `if (is_file) { ... } else { ... }` branching nested inside every search, print, and calculation logic.
+
+---
+
 ## The ask
 
-Build an in-memory file system supporting `mkdir`, `ls`, `addContentToFile`, and
-`readContentFromFile`, with arbitrarily nested directories. Paths are absolute
-(`/a/b/file.txt`). (This is **LeetCode 588** in disguise.)
+Build an in-memory file system supporting `mkdir`, `ls`, `addContentToFile`, and `readContentFromFile`, with arbitrarily nested directories. Paths are absolute (`/a/b/file.txt`). (This is **LeetCode 588** in disguise.)
 
-<Callout type="info" title="Why this one, and at what level">
-It's the cleanest test of the **Composite pattern** — a tree where leaves and containers
-share an interface. **SDE-1:** a working tree with path traversal. **SDE-2:** the
-files-and-dirs-as-one-Node insight and clean path parsing. **SDE-3:** extensions —
-search/glob, permissions, symlinks, and thread-safety. Asked at **Amazon, Microsoft,
-Google, Bloomberg**.
-</Callout>
+---
 
 ## The insight — files and directories are the same shape
 
-The naive design has two unrelated classes and `if (isDirectory)` checks smeared through
-every operation. The **Composite pattern** unifies them: a `Node` is either a **file**
-(leaf: has content) or a **directory** (composite: has named children). Both live in one
-tree, so traversal is uniform and you stop special-casing at every step.
+The naive design has two unrelated classes and `if (isDirectory)` checks smeared through every operation. The **Composite pattern** unifies them: a `Node` is either a **file** (leaf: has content) or a **directory** (composite: has named children). Both live in one tree, so traversal is uniform and you stop special-casing at every step.
+
+---
+
+## UML Class Diagram
+
+<Mermaid chart={`classDiagram
+  class Node {
+    +name: String
+    +isFile: bool
+    +content: String
+    +children: Map~String, Node~
+    +lock: Lock
+  }
+  class FileSystem {
+    -root: Node
+    -splitPath(path: String): List~String~
+    -traverse(path: String, create: bool): Node
+    +mkdir(path: String)
+    +addContentToFile(path: String, content: String)
+    +readContentFromFile(path: String): String
+    +ls(path: String): List~String~
+  }
+  FileSystem *-- Node
+  Node "1" --> "*" Node : children
+`} />
+
+---
 
 ## Think it through like the interview
 
@@ -52,76 +79,295 @@ tree, so traversal is uniform and you stop special-casing at every step.
   ]}
 />
 
+---
+
 ## Implementation
 
-```ts
+Below are complete implementations utilizing the Composite pattern and fine-grained, thread-safe node locks.
+
+### Python
+```python
+import threading
+from typing import Dict, List
+
+class Node:
+    def __init__(self, name: str, is_file: bool = False):
+        self.name = name
+        self.is_file = is_file
+        self.content = ""
+        self.children: Dict[str, Node] = {}
+        self.lock = threading.Lock()  # Per-node lock for thread-safety
+
+class FileSystem:
+    def __init__(self):
+        self.root = Node("/")
+        
+    def _split_path(self, path: str) -> List[str]:
+        return [p for p in path.split("/") if p]
+
+    def _traverse(self, path: str, create: bool = False) -> Node:
+        parts = self._split_path(path)
+        curr = self.root
+        
+        for part in parts:
+            with curr.lock:
+                if part not in curr.children:
+                    if not create:
+                        raise ValueError(f"Path not found: {path}")
+                    curr.children[part] = Node(part)
+                curr = curr.children[part]
+        return curr
+
+    def mkdir(self, path: str) -> None:
+        self._traverse(path, create=True)
+
+    def add_content_to_file(self, path: str, content: str) -> None:
+        node = self._traverse(path, create=True)
+        with node.lock:
+            node.is_file = True
+            node.content += content
+
+    def read_content_from_file(self, path: str) -> str:
+        node = self._traverse(path, create=False)
+        with node.lock:
+            if not node.is_file:
+                raise ValueError("Path is a directory, not a file")
+            return node.content
+
+    def ls(self, path: str) -> List[str]:
+        node = self._traverse(path, create=False)
+        with node.lock:
+            if node.is_file:
+                return [node.name]
+            return sorted(node.children.keys())
+```
+
+### Java
+```java
+import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
+
 class Node {
-  isFile = false;
-  content = "";
-  children = new Map<string, Node>();   // only used when it's a directory
-  constructor(public name: string) {}
+    String name;
+    boolean isFile;
+    String content = "";
+    final Map<String, Node> children = new HashMap<>();
+    final ReentrantLock lock = new ReentrantLock();
+
+    Node(String name) { this.name = name; }
+    Node(String name, boolean isFile) {
+        this.name = name;
+        this.isFile = isFile;
+    }
 }
 
-class FileSystem {
-  private root = new Node("/");
+public class FileSystem {
+    private final Node root = new Node("/");
 
-  private parts(path: string) {
-    return path.split("/").filter(Boolean);   // "/a/b" -> ["a","b"]
-  }
-
-  // Walk to the node at `path`, creating directories along the way if asked.
-  private traverse(path: string, create = false): Node {
-    let cur = this.root;
-    for (const part of this.parts(path)) {
-      if (!cur.children.has(part)) {
-        if (!create) throw new Error(`No such path: ${path}`);
-        cur.children.set(part, new Node(part));
-      }
-      cur = cur.children.get(part)!;
+    private List<String> splitPath(String path) {
+        List<String> list = new ArrayList<>();
+        for (String s : path.split("/")) {
+            if (!s.isEmpty()) list.add(s);
+        }
+        return list;
     }
-    return cur;
-  }
 
-  ls(path: string): string[] {
-    const node = this.traverse(path);
-    if (node.isFile) return [node.name];
-    return [...node.children.keys()].sort();
-  }
+    private Node traverse(String path, boolean create) {
+        List<String> parts = splitPath(path);
+        Node curr = root;
 
-  mkdir(path: string): void { this.traverse(path, true); }
+        for (String part : parts) {
+            curr.lock.lock();
+            try {
+                if (!curr.children.containsKey(part)) {
+                    if (!create) throw new IllegalArgumentException("Path not found: " + path);
+                    curr.children.put(part, new Node(part));
+                }
+                curr = curr.children.get(part);
+            } finally {
+                curr.lock.unlock();
+            }
+        }
+        return curr;
+    }
 
-  addContentToFile(path: string, content: string): void {
-    const file = this.traverse(path, true);   // create parent dirs + file node
-    file.isFile = true;
-    file.content += content;                   // append semantics
-  }
+    public void mkdir(String path) {
+        traverse(path, true);
+    }
 
-  readContentFromFile(path: string): string {
-    const file = this.traverse(path);
-    if (!file.isFile) throw new Error("Not a file");
-    return file.content;
-  }
+    public void addContentToFile(String path, String content) {
+        Node node = traverse(path, true);
+        node.lock.lock();
+        try {
+            node.isFile = true;
+            node.content += content;
+        } finally {
+            node.lock.unlock();
+        }
+    }
+
+    public String readContentFromFile(String path) {
+        Node node = traverse(path, false);
+        node.lock.lock();
+        try {
+            if (!node.isFile) throw new IllegalArgumentException("Path is a directory, not a file");
+            return node.content;
+        } finally {
+            node.lock.unlock();
+        }
+    }
+
+    public List<String> ls(String path) {
+        Node node = traverse(path, false);
+        node.lock.lock();
+        try {
+            if (node.isFile) return Collections.singletonList(node.name);
+            List<String> sortedNames = new ArrayList<>(node.children.keySet());
+            Collections.sort(sortedNames);
+            return sortedNames;
+        } finally {
+            node.lock.unlock();
+        }
+    }
 }
 ```
 
-<Callout type="tip" title="One Node type kills the branching">
-Because directories and files share `Node`, `traverse` walks the tree without asking "is
-this a file or a folder?" at each step — the Composite pattern's whole point. Mention it;
-it's the design vocabulary the interviewer is listening for.
-</Callout>
+### C++
+```cpp
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <mutex>
+#include <algorithm>
+#include <sstream>
+#include <stdexcept>
+#include <memory>
+
+class Node {
+public:
+    std::string name;
+    bool isFile = false;
+    std::string content = "";
+    std::unordered_map<std::string, std::shared_ptr<Node>> children;
+    std::mutex mtx;
+
+    Node(std::string n) : name(n) {}
+};
+
+class FileSystem {
+private:
+    std::shared_ptr<Node> root;
+
+    std::vector<std::string> splitPath(const std::string& path) {
+        std::vector<std::string> parts;
+        std::stringstream ss(path);
+        std::string item;
+        while (std::getline(ss, item, '/')) {
+            if (!item.empty()) parts.push_back(item);
+        }
+        return parts;
+    }
+
+    std::shared_ptr<Node> traverse(const std::string& path, bool create) {
+        std::vector<std::string> parts = splitPath(path);
+        std::shared_ptr<Node> curr = root;
+
+        for (const auto& part : parts) {
+            std::lock_guard<std::mutex> lock(curr->mtx);
+            if (curr->children.find(part) == curr->children.end()) {
+                if (!create) throw std::invalid_argument("Path not found: " + path);
+                curr->children[part] = std::make_shared<Node>(part);
+            }
+            curr = curr->children[part];
+        }
+        return curr;
+    }
+
+public:
+    FileSystem() { root = std::make_shared<Node>("/"); }
+
+    void mkdir(const std::string& path) {
+        traverse(path, true);
+    }
+
+    void addContentToFile(const std::string& path, const std::string& content) {
+        auto node = traverse(path, true);
+        std::lock_guard<std::mutex> lock(node->mtx);
+        node->isFile = true;
+        node->content += content;
+    }
+
+    std::string readContentFromFile(const std::string& path) {
+        auto node = traverse(path, false);
+        std::lock_guard<std::mutex> lock(node->mtx);
+        if (!node->isFile) throw std::runtime_error("Path is a directory, not a file");
+        return node->content;
+    }
+
+    std::vector<std::string> ls(const std::string& path) {
+        auto node = traverse(path, false);
+        std::lock_guard<std::mutex> lock(node->mtx);
+        if (node->isFile) return {node->name};
+        
+        std::vector<std::string> sortedNames;
+        for (const auto& entry : node->children) {
+            sortedNames.push_back(entry.first);
+        }
+        std::sort(sortedNames.begin(), sortedNames.end());
+        return sortedNames;
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "How does the Composite Pattern simplify path traversal operations in a file system tree?",
+    options: [
+      "It allows directories and files to share a common Node interface/type, enabling traversal logic to crawl down the tree without checking individual child types at each intermediate step.",
+      "It automatically compresses subfolders.",
+      "It implements binary search on directory strings."
+    ],
+    answer: "It allows directories and files to share a common Node interface/type, enabling traversal logic to crawl down the tree without checking individual child types at each intermediate step.",
+    explanation: "Because files and directories inherit from the same node base class, path walkers can traverse the folder children map uniformly until they reach the final target node."
+  },
+  {
+    question: "Why do we apply fine-grained lock objects to individual directory Node instances rather than using a single global FileSystem lock?",
+    options: [
+      "To enable concurrent operations (like writes or directory creation) under different parent subdirectories, maximizing thread performance.",
+      "To prevent files from leaking content in raw binary.",
+      "To allow the CPU compiler to optimize recursive operations in parallel."
+    ],
+    answer: "To enable concurrent operations (like writes or directory creation) under different parent subdirectories, maximizing thread performance.",
+    explanation: "If a global lock is used, A writing to `/a` blocks B reading from `/b`. Locking per directory only blocks threads modifying the exact same folder registry."
+  },
+  {
+    question: "When adding support for Symbolic Links (symlinks), how do you prevent infinite traversal loops?",
+    options: [
+      "Maintain a set of visited physical node paths during traversal, throwing an error if a node is encountered more than once (cycle detection).",
+      "Limit paths to a maximum length of 10 characters.",
+      "Convert symbolic link paths to floats."
+    ],
+    answer: "Maintain a set of visited physical node paths during traversal, throwing an error if a node is encountered more than once (cycle detection).",
+    explanation: "Symlinks can point to ancestor directories (e.g. `/a/b` points to `/a`). Standard DFS tree walkers will loop infinitely unless visited sets track and flag cycles early."
+  }
+]} />
+
+---
 
 ## Complexity & follow-ups
 
-- **Complexity:** each op is O(path length) traversal; `ls` on a directory is O(children
-  log children) for the sort.
-- **Search / glob:** DFS the subtree matching a pattern (`*.txt`) — naturally recursive on
-  the Composite tree.
+- **Complexity:** each op is O(path length) traversal; `ls` on a directory is O(children log children) for the sort.
+- **Search / glob:** DFS the subtree matching a pattern (`*.txt`) — naturally recursive on the Composite tree.
 - **Permissions:** add owner + rwx bits per node; check on traverse.
 - **Symlinks:** a node that points to another path — watch for cycles when traversing.
-- **Thread-safety:** concurrent `mkdir`/write on the same parent races on the children map
-  — guard with a lock per directory, or a read-write lock (many readers, one writer).
-- **Real FS:** swap content strings for block pointers + an [LRU](/lld/lru-cache) page
-  cache; this is where in-memory meets storage.
+- **Thread-safety:** concurrent `mkdir`/write on the same parent races on the children map — guard with a lock per directory, or a read-write lock (many readers, one writer).
+- **Real FS:** swap content strings for block pointers + an [LRU](/lld/lru-cache) page cache; this is where in-memory meets storage.
+
+---
 
 ## Design drills
 
@@ -160,22 +406,12 @@ it's the design vocabulary the interviewer is listening for.
 
 <QA q="Why model files and directories with one Node type (the Composite pattern)?">
 
-Because the operations — traverse a path, list children, read content — want to treat the
-tree uniformly. With two unrelated classes you'd branch on "is this a file or a directory?"
-in every method, which is brittle. The **Composite pattern** gives leaves (files) and
-containers (directories) a common `Node` type; directories simply hold a `name → Node` map.
-Path traversal then walks children without special-casing, and extensions (search,
-permissions) operate recursively on the one tree.
+Because the operations — traverse a path, list children, read content — want to treat the tree uniformly. With two unrelated classes you'd branch on "is this a file or a directory?" in every method, which is brittle. The **Composite pattern** gives leaves (files) and containers (directories) a common `Node` type; directories simply hold a `name → Node` map. Path traversal then walks children without special-casing, and extensions (search, permissions) operate recursively on the one tree.
 
 </QA>
 
 <QA q="How do you make the file system thread-safe under concurrent mkdir and writes?">
 
-The contention is on a directory's children map (two threads creating entries under the
-same parent) and on a file's content. Guard each directory with a lock — a **read-write
-lock** lets many readers (`ls`, `read`) proceed while serializing writers
-(`mkdir`, `addContent`). For multi-node operations like move/rename, acquire locks in a
-consistent order (e.g. by path depth) to avoid deadlock. For read-heavy workloads,
-copy-on-write or optimistic concurrency reduces lock contention.
+The contention is on a directory's children map (two threads creating entries under the same parent) and on a file's content. Guard each directory with a lock — a **read-write lock** lets many readers (`ls`, `read`) proceed while serializing writers (`mkdir`, `addContent`). For multi-node operations like move/rename, acquire locks in a consistent order (e.g. by path depth) to avoid deadlock. For read-heavy workloads, copy-on-write or optimistic concurrency reduces lock contention.
 
 </QA>

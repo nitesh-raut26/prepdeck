@@ -6,19 +6,25 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "concurrency", "booking"]
 ---
 
+## The real-world analogy: physical ticket booths and sand timers
+
+Imagine walking up to the ticket window of a grand old theater in downtown:
+1. **The Seating Map**: Behind the cashier hangs a giant magnetic board showing all seats (F7, F8, etc.). This map represents permanent slots (**Seats**). The magnetic labels (AVAILABLE, HELD, SOLD) placed on top represent the **SeatingState**—which varies entirely per screening show.
+2. **The Hourglass Hold (Two-Phase Lock)**: You ask for seats F7 and F8. The cashier places yellow "HELD" magnets on them and flips a 5-minute physical sand hourglass on the counter. While that sand is running, no one else standing in other lines can buy those seats. If you hand over your credit card and complete payment before the sand runs out, the cashier replaces the magnets with red "SOLD" labels. If you walk away or your card declines, the sand timer finishes, and the cashier immediately returns the magnets to "AVAILABLE" for the next guest.
+
+In code, this is modeled as a two-phase check-and-set transaction with a lazy **Time-To-Live (TTL)** expiry stamp, protected by locking mechanisms to resolve concurrent booking races.
+
+---
+
 ## Scope it first
 
-*"Browse movies by city, pick a show, see the seat map, hold seats, pay,
-get a ticket. One city's catalog, ignore payments beyond success/failure
-callbacks, ignore pricing tiers — OK?"* And know what you're walking
-into: every other classic hides its concurrency question at the end —
-**BookMyShow *is* the concurrency question**. Two users, one seat, same
-second; everything else is supporting cast.
+*"Browse movies by city, pick a show, see the seat map, hold seats, pay, get a ticket. One city's catalog, ignore payments beyond success/failure callbacks, ignore pricing tiers — OK?"*
 
-## Entities & relationships
+And know what you're walking into: every other classic hides its concurrency question at the end — **BookMyShow *is* the concurrency question**. Two users, one seat, same second; everything else is supporting cast.
 
-The catalog is a ladder of containment — get the chain right and the rest
-follows:
+---
+
+## UML Class Diagram
 
 <Mermaid chart={`classDiagram
   class City
@@ -33,12 +39,19 @@ follows:
     +movie Movie
     +screen Screen
     +startTime
-    +seatStates Map~Seat, SeatState~
+    +seatStates Map~Seat, ShowSeatState~
+    +lock: Lock
   }
   class Seat {
     +row
     +number
     +type SeatType
+  }
+  class ShowSeatState {
+    +seat: Seat
+    +state: SeatState
+    +lockedBy: String
+    +expiresAt: long
   }
   class Booking {
     +show Show
@@ -51,218 +64,354 @@ follows:
   Screen "1" --> "*" Seat
   Show --> Movie
   Show --> Screen
+  Show "1" --> "*" ShowSeatState
   Booking --> Show`} />
 
-The non-obvious modeling decision — the one graders watch for: **a `Seat`
-is physical and permanent; its availability belongs to the `Show`.**
-Screen 4's seat F7 exists once; whether it's free is a different fact for
-the 6 PM and 9 PM shows. So `Show` owns
-`Map<Seat, SeatState>` where `SeatState = AVAILABLE | LOCKED | BOOKED`.
-Hanging state on `Seat` itself is *the* classic mistake here.
+The non-obvious modeling decision — the one graders watch for: **a `Seat` is physical and permanent; its availability belongs to the `Show`.** Screen 4's seat F7 exists once; whether it's free is a different fact for the 6 PM and 9 PM shows. So `Show` owns `Map<Seat, ShowSeatState>` where `SeatState = AVAILABLE | LOCKED | BOOKED`. Hanging state on `Seat` itself is *the* classic mistake here.
 
-`BookingStatus`: `PENDING → CONFIRMED | EXPIRED | CANCELLED` — a small
-[state machine](/lld/elevator) again, because payment isn't instant.
+`BookingStatus`: `PENDING → CONFIRMED | EXPIRED | CANCELLED` — a small state machine again, because payment isn't instant.
+
+---
 
 ## The flow: lock → pay → confirm
 
-Booking can't be atomic — payment takes a minute and might fail — so the
-flow is **two-phase with a TTL**:
+Booking can't be atomic — payment takes a minute and might fail — so the flow is **two-phase with a TTL**:
+1. **Lock.** User picks seats → atomically transition each from `AVAILABLE → LOCKED(user, expiresAt = now + 7 min)`. Any seat unavailable → whole request fails (all-or-nothing; nobody wants half a family's seats).
+2. **Pay.** A `PENDING` Booking exists; user completes payment with the gateway.
+3. **Confirm or release.** Payment success → `LOCKED → BOOKED`, booking `CONFIRMED`. Failure or timeout → lock expires, seats return to `AVAILABLE`, booking `EXPIRED`.
 
-1. **Lock.** User picks seats → atomically transition each from
-   `AVAILABLE → LOCKED(user, expiresAt = now + 7 min)`. Any seat
-   unavailable → whole request fails (all-or-nothing; nobody wants half a
-   family's seats).
-2. **Pay.** A `PENDING` Booking exists; user completes payment with the
-   gateway.
-3. **Confirm or release.** Payment success → `LOCKED → BOOKED`, booking
-   `CONFIRMED`. Failure or timeout → lock expires, seats return to
-   `AVAILABLE`, booking `EXPIRED`.
+The TTL is the design's quiet hero: **no user action is ever required to free a seat** — abandonment self-heals. Expiry via lazy check (`isLocked() = state == LOCKED && now < expiresAt`) plus a sweeper; lazy checking means correctness never depends on the sweeper being on time.
 
-The TTL is the design's quiet hero: **no user action is ever required to
-free a seat** — abandonment self-heals. Expiry via lazy check
-(`isLocked() = state == LOCKED && now < expiresAt`) plus a sweeper; lazy
-checking means correctness never depends on the sweeper being on time.
-
-Drive a single seat through that machine. Run the happy path `lock → pay`, then
-try the abandonment path (`lock`, then `expire` — the TTL returning the seat for
-free), and the illegal `pay` before `lock` — which is refused, because you can't
-pay for a seat you never held:
-
-<Visualizer algo="state-machine" problem="seat-booking" />
-
-Here's the whole two-phase flow with the race resolving correctly — two
-users, one pair of seats, 80 ms apart:
-
-<Mermaid chart={`sequenceDiagram
-  participant A as Asha
-  participant R as Rahul
-  participant BS as BookingService
-  participant SS as ShowSeating (per-show mutex)
-  participant P as Payment gateway
-  A->>BS: lock F7+F8 (9 PM show)
-  BS->>SS: atomic check-and-set both seats
-  SS-->>BS: LOCKED(asha, +7 min) ✓
-  BS-->>A: PENDING booking — pay within 7:00
-  R->>BS: lock F7+F8 (80 ms later)
-  BS->>SS: atomic check-and-set
-  SS--xBS: F7 already LOCKED & unexpired ✗
-  BS-->>R: SeatUnavailable → suggest next-best pair
-  A->>P: pay
-  P-->>BS: success callback
-  BS->>SS: F7,F8 LOCKED → BOOKED
-  Note over SS: had Asha abandoned: at minute 7 the lock<br/>lazily reads as expired — seats free again,<br/>no cleanup job required`} />
+---
 
 ## The race, and the only acceptable answer
 
-Two users hit "lock F7" in the same 10 ms. A read-then-write
-(`if seat is available → mark locked`) lets **both** see AVAILABLE and
-both proceed — double-booking, the cinema equivalent of the
-[parking lot's last spot](/lld/parking-lot) and a balance double-spend.
-The invariant must be enforced **at the point of mutation**:
+Two users hit "lock F7" in the same 10 ms. A read-then-write (`if seat is available → mark locked`) lets **both** see AVAILABLE and both proceed — double-booking, the cinema equivalent of the [parking lot's last spot](/lld/parking-lot) and a balance double-spend. The invariant must be enforced **at the point of mutation**.
 
+---
+
+## Implementation
+
+Below are complete implementations featuring O(1) checks, lazy TTL evaluation, and per-show lock synchronization.
+
+### Python
 ```python
-class ShowSeating:
-    def lock_seats(self, seats, user):
-        with self.lock:                       # one mutex per SHOW — not global
-            for s in seats:                   # check ALL first…
-                if not self.is_available(s):
-                    raise SeatUnavailable(s)
-            for s in seats:                   # …then mutate (all-or-nothing)
-                self.states[s] = Locked(user, now() + LOCK_TTL)
-        return Booking(pending, seats, user)
+import time
+import threading
+from enum import Enum
+from typing import Dict, List, Optional
+
+class SeatState(Enum):
+    AVAILABLE = 1
+    LOCKED = 2
+    BOOKED = 3
+
+class Seat:
+    def __init__(self, seat_id: str, row: str, number: int):
+        self.seat_id = seat_id
+        self.row = row
+        self.number = number
+
+class ShowSeatState:
+    def __init__(self, seat: Seat):
+        self.seat = seat
+        self.state = SeatState.AVAILABLE
+        self.locked_by: Optional[str] = None
+        self.expires_at: float = 0.0
+
+class Show:
+    def __init__(self, show_id: str, movie_title: str, seats: List[Seat]):
+        self.show_id = show_id
+        self.movie_title = movie_title
+        self.seat_map: Dict[str, ShowSeatState] = {s.seat_id: ShowSeatState(s) for s in seats}
+        self.lock = threading.Lock()  # Per-show lock to prevent races
+
+    def is_seat_available(self, seat_id: str, now: float) -> bool:
+        seat_state = self.seat_map.get(seat_id)
+        if not seat_state:
+            return False
+        if seat_state.state == SeatState.AVAILABLE:
+            return True
+        if seat_state.state == SeatState.LOCKED and now > seat_state.expires_at:
+            return True  # Lock expired lazily
+        return False
+
+    def lock_seats(self, seat_ids: List[str], user_id: str, duration_sec: int = 420) -> bool:
+        # Atomic lock check-and-set
+        with self.lock:
+            now = time.time()
+            # 1. Check all seats first
+            for seat_id in seat_ids:
+                if not self.is_seat_available(seat_id, now):
+                    return False
+            
+            # 2. Reserve all seats (All-or-Nothing)
+            for seat_id in seat_ids:
+                seat_state = self.seat_map[seat_id]
+                seat_state.state = SeatState.LOCKED
+                seat_state.locked_by = user_id
+                seat_state.expires_at = now + duration_sec
+            return True
+
+    def confirm_booking(self, seat_ids: List[str], user_id: str) -> bool:
+        with self.lock:
+            now = time.time()
+            for seat_id in seat_ids:
+                seat_state = self.seat_map.get(seat_id)
+                if not seat_state or seat_state.state != SeatState.LOCKED or seat_state.locked_by != user_id or now > seat_state.expires_at:
+                    return False
+            for seat_id in seat_ids:
+                self.seat_map[seat_id].state = SeatState.BOOKED
+            return True
 ```
 
-In a database (the production reality), same idea, different spelling —
-one atomic conditional write:
+### Java
+```java
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
-```sql
-UPDATE show_seats SET state = 'LOCKED', user_id = :u, expires_at = :t
-WHERE show_id = :s AND seat_id IN (:seats)
-  AND (state = 'AVAILABLE' OR (state = 'LOCKED' AND expires_at < now()));
--- affected rows < requested seats ⇒ roll back, tell the user
-```
+enum SeatState { AVAILABLE, LOCKED, BOOKED }
 
-Lock granularity is the follow-up: a global lock serializes the whole
-country's bookings; **per-show** locking is natural (contention is
-per-show by definition) and shows you think about lock scope.
+class Seat {
+    String seatId;
+    String row;
+    int number;
+    Seat(String id, String r, int n) { this.seatId = id; this.row = r; this.number = n; }
+}
 
-## Where the patterns live
+class ShowSeatState {
+    Seat seat;
+    SeatState state = SeatState.AVAILABLE;
+    String lockedBy;
+    long expiresAt = 0;
+    ShowSeatState(Seat seat) { this.seat = seat; }
+}
 
-- **State** — seat availability and booking lifecycle; illegal transitions
-  (`BOOKED → LOCKED`) become unrepresentable.
-- **Strategy** — seat recommendation ("best available": center-out,
-  contiguous-block-finding) and later pricing.
-- **Observer** — seat-map UIs subscribe to seat-state changes (everyone
-  watching the map sees F7 grey out live); notification service subscribes
-  to booking confirmations.
-- **Facade** — `BookingService.book(show, seats, user)` orchestrating
-  lock → payment → confirm, so controllers never touch seat maps.
+class Show {
+    String showId;
+    String movieTitle;
+    Map<String, ShowSeatState> seatMap = new HashMap<>();
+    final ReentrantLock lock = new ReentrantLock();
 
-<Callout type="tip" title="Say the invariant, then the mechanism">
-The sentence graders wait for: *"The invariant is a seat is never LOCKED
-or BOOKED by two users for the same show; I enforce it with an atomic
-check-and-set under a per-show lock, with TTL so abandoned locks
-self-release."* Mechanism without the invariant sounds memorized;
-invariant first proves you know *why*.
-</Callout>
-
-## Think it through like the interview
-
-<ThinkThrough
-  title="Design BookMyShow"
-  difficulty="LLD Classic — concurrency"
-  problem="Design movie-ticket booking: browse shows, view a seat map, hold seats, pay, get a ticket. Two users will inevitably grab the same seat in the same second."
-  stages={[
-    {
-      label: "Identify what's REALLY being asked",
-      prompt: "Every classic has one core test. What is BookMyShow actually grading?",
-      reveal: "Concurrency. Other classics hide the race at the end; here two-users-one-seat IS the question — entities are supporting cast. Scope fast ('one city, payment as success/failure callback, no pricing tiers — OK?') and budget your time for the race."
-    },
-    {
-      label: "The entity ladder + the trap",
-      prompt: "City → Cinema → Screen → Seat… so where does 'is F7 free?' live?",
-      reveal: "NOT on Seat. F7 is physical and permanent; its availability is per-SHOW (free at 6 PM, taken at 9 PM). Show owns Map<Seat, SeatState> with AVAILABLE | LOCKED | BOOKED. Hanging state on Seat is the classic mistake — it's the type-vs-instance trap from the library problem, one level deeper."
-    },
-    {
-      label: "Design around the slow step",
-      prompt: "Payment takes a minute and might fail. What does that force on the flow?",
-      reveal: "Booking can't be atomic, so: two-phase with TTL. Lock (AVAILABLE → LOCKED, all-or-nothing across the seat group, expiresAt = +7 min) → pay → confirm (LOCKED → BOOKED) or let the TTL release. The TTL is the quiet hero: abandonment self-heals with zero user action and zero cleanup dependency."
-    },
-    {
-      label: "Kill the race at the mutation point",
-      prompt: "Two lock requests, 10 ms apart, both read F7 as AVAILABLE. Where's the bug, and where's the fix?",
-      reveal: "The bug is check-then-act — the gap between read and write. Fix: collapse them into one atomic step. Whiteboard: per-show mutex around validate-then-lock. Production: one conditional UPDATE … WHERE state='AVAILABLE' and verify affected rows; plus a unique constraint on (show, seat) as the schema-level backstop. Say the invariant first: 'a seat is never held by two users for the same show.'"
-    },
-    {
-      label: "Scale the answer",
-      prompt: "Follow-up: blockbuster tickets open at 9 AM. The per-show lock melts. Now what?",
-      reveal: "Correctness stays, enforcement moves: queue admission (waiting room) caps concurrent bookers; the READ path (seat map) serves from cache slightly stale; the WRITE path stays strictly atomic in Redis/DB with the same conditional-write semantics. Browsing stale is fine, booking stale is not — that one line is the LLD→HLD seam."
+    Show(String id, String title, List<Seat> seats) {
+        this.showId = id;
+        this.movieTitle = title;
+        for (Seat s : seats) {
+            seatMap.put(s.seatId, new ShowSeatState(s));
+        }
     }
-  ]}
-/>
+
+    boolean isAvailable(String seatId, long now) {
+        ShowSeatState ss = seatMap.get(seatId);
+        if (ss == null) return false;
+        if (ss.state == SeatState.AVAILABLE) return true;
+        return ss.state == SeatState.LOCKED && now > ss.expiresAt;
+    }
+
+    public boolean lockSeats(List<String> seatIds, String userId, long durationSec) {
+        lock.lock();
+        try {
+            long now = Instant.now().getEpochSecond();
+            for (String seatId : seatIds) {
+                if (!isAvailable(seatId, now)) {
+                    return false; // Already locked or booked
+                }
+            }
+            for (String seatId : seatIds) {
+                ShowSeatState ss = seatMap.get(seatId);
+                ss.state = SeatState.LOCKED;
+                ss.lockedBy = userId;
+                ss.expiresAt = now + durationSec;
+            }
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean confirmBooking(List<String> seatIds, String userId) {
+        lock.lock();
+        try {
+            long now = Instant.now().getEpochSecond();
+            for (String seatId : seatIds) {
+                ShowSeatState ss = seatMap.get(seatId);
+                if (ss == null || ss.state != SeatState.LOCKED || !userId.equals(ss.lockedBy) || now > ss.expiresAt) {
+                    return false;
+                }
+            }
+            for (String seatId : seatIds) {
+                seatMap.get(seatId).state = SeatState.BOOKED;
+            }
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <mutex>
+#include <chrono>
+#include <memory>
+
+enum class SeatState { AVAILABLE, LOCKED, BOOKED };
+
+class Seat {
+public:
+    std::string seatId;
+    std::string row;
+    int number;
+    Seat(std::string id, std::string r, int n) : seatId(id), row(r), number(n) {}
+};
+
+struct ShowSeatState {
+    std::shared_ptr<Seat> seat;
+    SeatState state = SeatState::AVAILABLE;
+    std::string lockedBy = "";
+    long long expiresAt = 0;
+    ShowSeatState(std::shared_ptr<Seat> s) : seat(s) {}
+};
+
+class Show {
+private:
+    std::string showId;
+    std::string movieTitle;
+    std::unordered_map<std::string, std::shared_ptr<ShowSeatState>> seatMap;
+    std::mutex mtx;
+
+    bool isAvailable(const std::string& seatId, long long now) {
+        auto it = seatMap.find(seatId);
+        if (it == seatMap.end()) return false;
+        if (it->second->state == SeatState::AVAILABLE) return true;
+        return it->second->state == SeatState::LOCKED && now > it->second->expiresAt;
+    }
+
+public:
+    Show(std::string id, std::string title, const std::vector<std::shared_ptr<Seat>>& seats) 
+        : showId(id), movieTitle(title) {
+        for (const auto& s : seats) {
+            seatMap[s->seatId] = std::make_shared<ShowSeatState>(s);
+        }
+    }
+
+    bool lockSeats(const std::vector<std::string>& seatIds, const std::string& userId, long long durationSec) {
+        std::lock_guard<std::mutex> lock(mtx);
+        long long now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        for (const auto& seatId : seatIds) {
+            if (!isAvailable(seatId, now)) return false;
+        }
+
+        for (const auto& seatId : seatIds) {
+            auto ss = seatMap[seatId];
+            ss->state = SeatState::LOCKED;
+            ss->lockedBy = userId;
+            ss->expiresAt = now + durationSec;
+        }
+        return true;
+    }
+
+    bool confirmBooking(const std::vector<std::string>& seatIds, const std::string& userId) {
+        std::lock_guard<std::mutex> lock(mtx);
+        long long now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        for (const auto& seatId : seatIds) {
+            auto it = seatMap.find(seatId);
+            if (it == seatMap.end() || it->second->state != SeatState::LOCKED || 
+                it->second->lockedBy != userId || now > it->second->expiresAt) {
+                return false;
+            }
+        }
+
+        for (const auto& seatId : seatIds) {
+            seatMap[seatId]->state = SeatState::BOOKED;
+        }
+        return true;
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Where should the seat availability state (e.g. AVAILABLE, LOCKED, BOOKED) be modeled?",
+    options: [
+      "On the Show class (as a map of Seat -> ShowSeatState), because availability varies entirely per screening show.",
+      "Directly on the Seat class, to keep the model flat.",
+      "Within the global City database catalog."
+    ],
+    answer: "On the Show class (as a map of Seat -> ShowSeatState), because availability varies entirely per screening show.",
+    explanation: "If you place availability on Seat, F7 cannot be booked for 6 PM while remaining available for 9 PM. Decoupling physical slot (Seat) from timeline occupancy is core to booking designs."
+  },
+  {
+    question: "Why do we implement a Time-To-Live (TTL) on temporary seat locks?",
+    options: [
+      "To prevent seats from being held indefinitely by clients who close their browser, abandon checkout, or suffer network drops.",
+      "To force the payment gateway to run faster.",
+      "To ensure seats are auto-assigned to random users."
+    ],
+    answer: "To prevent seats from being held indefinitely by clients who close their browser, abandon checkout, or suffer network drops.",
+    explanation: "Because checkout spans external actions (user typing credit card, payment gateway network calls), locks must self-heal on timeout so slots release automatically without stuck inventory."
+  },
+  {
+    question: "Under high concurrency flash sales, what is the best lock granularity to prevent bottlenecks?",
+    options: [
+      "A mutex lock per Show object, so booking calls for Screening A do not block concurrent bookings for Screening B.",
+      "A single global mutex on the BookingService class.",
+      "A database table lock on cinema screens."
+    ],
+    answer: "A mutex lock per Show object, so booking calls for Screening A do not block concurrent bookings for Screening B.",
+    explanation: "Locking the entire ticket system blocks unrelated operations. Locking per Show isolates serialization only to users competing for the exact same movie room tickets."
+  }
+]} />
+
+---
 
 ## Walk a scenario
 
-Asha and Rahul, both eyeing F7+F8 for the 9 PM show. Asha's lock request
-wins the mutex: both seats → LOCKED(asha), PENDING booking, 7-minute
-clock. Rahul's request enters the mutex 80 ms later, sees F7 LOCKED and
-unexpired → `SeatUnavailable`; UI offers the Strategy's next-best
-contiguous pair. Asha pays in 3 minutes → seats BOOKED, booking
-CONFIRMED, observers repaint the map. Had she abandoned: at minute 7 the
-seats lazily read as AVAILABLE again — no cleanup dependency, no stuck
-inventory.
+Asha and Rahul, both eyeing F7+F8 for the 9 PM show. Asha's lock request wins the mutex: both seats → LOCKED(asha), PENDING booking, 7-minute clock. Rahul's request enters the mutex 80 ms later, sees F7 LOCKED and unexpired → `SeatUnavailable`; UI offers the Strategy's next-best contiguous pair. Asha pays in 3 minutes → seats BOOKED, booking CONFIRMED, observers repaint the map. Had she abandoned: at minute 7 the seats lazily read as AVAILABLE again — no cleanup dependency, no stuck inventory.
+
+---
+
+## Q&A
 
 <QA q="Why do seat locks need a TTL, and what breaks without one?">
 
-The lock spans an *external* slow step (payment) driven by a user who may
-vanish — close the tab, lose connectivity, walk away. Without expiry,
-those seats are stranded in LOCKED until manual intervention: inventory
-shrinks all day, and the failure mode compounds during exactly the
-high-demand shows where abandonment is highest. A TTL makes every lock
-self-releasing: hold time generous enough for honest payment (5–10 min),
-enforced lazily on read (`LOCKED && now < expiresAt`) so correctness
-doesn't depend on a background sweeper's punctuality — the sweeper is just
-hygiene. Same pattern as distributed locks and DHCP leases: *never grant
-indefinite holds on shared resources to unreliable parties.*
+The lock spans an *external* slow step (payment) driven by a user who may vanish — close the tab, lose connectivity, walk away. Without expiry, those seats are stranded in LOCKED until manual intervention: inventory shrinks all day, and the failure mode compounds during exactly the high-demand shows where abandonment is highest. A TTL makes every lock self-releasing: hold time generous enough for honest payment (5–10 min), enforced lazily on read (`LOCKED && now < expiresAt`) so correctness doesn't depend on a background sweeper's punctuality — the sweeper is just hygiene. Same pattern as distributed locks and DHCP leases: *never grant indefinite holds on shared resources to unreliable parties.*
 
 </QA>
 
 <QA q="Where exactly does double-booking come from, and what are the legitimate fixes?">
 
-From check-then-act on shared state: both requests read F7 as AVAILABLE
-before either writes LOCKED — the gap between read and write is the race.
-Fixes all collapse the check and write into one atomic step: (1) in-process
-mutex per show around validate-and-lock — right for the whiteboard;
-(2) database conditional update (`UPDATE … WHERE state='AVAILABLE'`) and
-verify affected-row count — the atomicity lives in the DB; (3) optimistic
-concurrency — version column, retry on conflict — best when contention is
-rare; (4) unique constraint on (show, seat) in a bookings table as the
-final backstop that makes the invariant unviolatable even by buggy code.
-Production uses 2 or 3 *plus* 4: enforce at mutation, guarantee at the
-schema.
+From check-then-act on shared state: both requests read F7 as AVAILABLE before either writes LOCKED — the gap between read and write is the race. Fixes all collapse the check and write into one atomic step: (1) in-process mutex per show around validate-and-lock — right for the whiteboard; (2) database conditional update (`UPDATE … WHERE state='AVAILABLE'`) and verify affected-row count — the atomicity lives in the DB; (3) optimistic concurrency — version column, retry on conflict — best when contention is rare; (4) unique constraint on (show, seat) in a bookings table as the final backstop that makes the invariant unviolatable even by buggy code. Production uses 2 or 3 *plus* 4: enforce at mutation, guarantee at the schema.
 
 </QA>
 
 <QA q="How does this design change for a flash sale — a blockbuster's tickets opening at 9 AM sharp?">
 
-The per-show lock becomes the bottleneck by design (correctness first),
-so engineer around it: queue admission (virtual waiting room) to cap
-concurrent bookers at what the seat-map service sustains; serve the
-*read* path (seat map) from cache with milliseconds of staleness while
-keeping the *write* path strictly atomic — browsing stale is fine, booking
-stale is not; shard contention naturally per show/screen; pre-warm locks'
-store (the seat state moves to Redis with the same conditional-write
-semantics). That's the LLD→HLD seam: invariants stay identical, the
-enforcement point moves from a mutex to a distributed conditional write —
-the full story is the [scalability](/hld/scalability) and
-[caching](/hld/caching) chapters.
+The per-show lock becomes the bottleneck by design (correctness first), so engineer around it: queue admission (virtual waiting room) to cap concurrent bookers at what the seat-map service sustains; serve the *read* path (seat map) from cache with milliseconds of staleness while keeping the *write* path strictly atomic — browsing stale is fine, booking stale is not; shard contention naturally per show/screen; pre-warm locks' store (the seat state moves to Redis with the same conditional-write semantics). That's the LLD→HLD seam: invariants stay identical, the enforcement point moves from a mutex to a distributed conditional write — the full story is the [scalability](/hld/scalability) and [caching](/hld/caching) chapters.
 
 </QA>
 
+---
+
 ## Practice — level up
 
-BookMyShow is **reserve under contention with a TTL**. Drill the allocation and
-the expiry separately, then together:
+BookMyShow is **reserve under contention with a TTL**. Drill the allocation and the expiry separately, then together:
 
 <PracticeLadder
   topic="Locking, TTL & reservations"

@@ -5,18 +5,23 @@ order: 4
 tags: ["design-patterns", "applied", "projects"]
 ---
 
+## The real-world analogy: modular skyscrapers
+
+Imagine designing a modern skyscraper. You don't lay concrete plumbing and wiring fixed inside every single brick. Instead, you design modular structural patterns:
+1. **Utility Shaft (Chain of Responsibility / Middleware)**: Electric, water, and fiber-optic cables run down a single centralized shaft. Each floor taps into the shaft, gets its supply, and passes the remaining capacity onward. If one floor blocks water flow, it doesn't shut down the electricity.
+2. **Standard Power Outlet Registry (Strategy & Registry)**: No matter which device you buy (vacuum, phone charger, toaster), they all conform to a standard two- or three-prong wall outlet configuration. The wall outlet registry manages which plugs are connected, letting the building handle them uniformly.
+
+---
+
 ## Why this page exists
 
-"Have you used design patterns?" goes badly when you recite GoF. It goes well
-when you point at code: *"the ingestion layer is Strategy + Registry, the API
-middleware is Chain of Responsibility, the alert worker is Observer."* Here are
-the real ones.
+"Have you used design patterns?" goes badly when you recite GoF. It goes well when you point at code: *"the ingestion layer is Strategy + Registry, the API middleware is Chain of Responsibility, the alert worker is Observer."* Here are the real ones.
+
+---
 
 ## LandAI — source registry & compliance gate
 
-Each external source is an adapter behind a common interface (**Strategy**),
-looked up by a **Registry**, and fronted by a **Guard / Proxy** (`RobotsGate`)
-that can refuse to run a non-permitted source.
+Each external source is an adapter behind a common interface (**Strategy**), looked up by a **Registry**, and fronted by a **Guard / Proxy** (`RobotsGate`) that can refuse to run a non-permitted source.
 
 <Mermaid chart={`flowchart LR
   CALL[Caller: ingest] --> REG[(Source Registry)]
@@ -29,6 +34,7 @@ that can refuse to run a non-permitted source.
   style SA fill:#E0E7FF,stroke:#4F46E5
   style ERR fill:#FFE4E6,stroke:#E11D48`} />
 
+### TypeScript
 ```ts
 interface SourceAdapter { id: string; permitted: boolean; fetch(q: Query): Promise<Raw>; }
 
@@ -44,11 +50,152 @@ function ingest(sourceId: string, q: Query) {
 }
 ```
 
-- **Graceful degradation = Strategy with a fallback chain:** FAISS → NumPy,
-  PostGIS → in-memory, XGBoost → scikit-learn. Same interface, swap the
-  implementation by availability.
-- **Provenance envelope = a Decorator/wrapper** that attaches
-  `source · license · confidence · freshness` to every value.
+### Python
+```python
+from abc import ABC, abstractmethod
+from typing import Dict
+
+class Query: pass
+class Raw: pass
+class ComplianceError(Exception): pass
+
+class SourceAdapter(ABC):
+    @property
+    @abstractmethod
+    def id(self) -> str: pass
+    
+    @property
+    @abstractmethod
+    def permitted(self) -> bool: pass
+    
+    @abstractmethod
+    def fetch(self, q: Query) -> Raw: pass
+
+class OverpassAdapter(SourceAdapter):
+    id = "osm_overpass"
+    permitted = True
+    def fetch(self, q: Query) -> Raw:
+        return Raw()
+
+class PortalAdapter(SourceAdapter):
+    id = "listing_portal"
+    permitted = False
+    def fetch(self, q: Query) -> Raw:
+        return Raw()
+
+SOURCE_REGISTRY: Dict[str, SourceAdapter] = {
+    "osm_overpass": OverpassAdapter(),
+    "listing_portal": PortalAdapter()
+}
+
+def ingest(source_id: str, q: Query) -> Raw:
+    adapter = SOURCE_REGISTRY.get(source_id)
+    if not adapter or not adapter.permitted:
+        raise ComplianceError(source_id)
+    return adapter.fetch(q)
+```
+
+### Java
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+class Query {}
+class Raw {}
+class ComplianceException extends RuntimeException {
+    public ComplianceException(String id) { super(id); }
+}
+
+public interface SourceAdapter {
+    String getId();
+    boolean isPermitted();
+    Raw fetch(Query q);
+}
+
+public class OverpassAdapter implements SourceAdapter {
+    public String getId() { return "osm_overpass"; }
+    public boolean isPermitted() { return true; }
+    public Raw fetch(Query q) { return new Raw(); }
+}
+
+public class PortalAdapter implements SourceAdapter {
+    public String getId() { return "listing_portal"; }
+    public boolean isPermitted() { return false; }
+    public Raw fetch(Query q) { return new Raw(); }
+}
+
+public class Ingestor {
+    private static final Map<String, SourceAdapter> registry = new HashMap<>();
+    static {
+        registry.put("osm_overpass", new OverpassAdapter());
+        registry.put("listing_portal", new PortalAdapter());
+    }
+    
+    public Raw ingest(String sourceId, Query q) {
+        SourceAdapter adapter = registry.get(sourceId);
+        if (adapter == null || !adapter.isPermitted()) {
+            throw new ComplianceException(sourceId);
+        }
+        return adapter.fetch(q);
+    }
+}
+```
+
+### C++
+```cpp
+#include <string>
+#include <unordered_map>
+#include <memory>
+#include <stdexcept>
+
+class Query {};
+class Raw {};
+
+class SourceAdapter {
+public:
+    virtual ~SourceAdapter() = default;
+    virtual std::string getId() const = 0;
+    virtual bool isPermitted() const = 0;
+    virtual Raw fetch(const Query& q) = 0;
+};
+
+class OverpassAdapter : public SourceAdapter {
+public:
+    std::string getId() const override { return "osm_overpass"; }
+    bool isPermitted() const override { return true; }
+    Raw fetch(const Query& q) override { return Raw(); }
+};
+
+class PortalAdapter : public SourceAdapter {
+public:
+    std::string getId() const override { return "listing_portal"; }
+    bool isPermitted() const override { return false; }
+    Raw fetch(const Query& q) override { return Raw(); }
+};
+
+class Ingestor {
+private:
+    std::unordered_map<std::string, std::shared_ptr<SourceAdapter>> registry;
+public:
+    Ingestor() {
+        registry["osm_overpass"] = std::make_shared<OverpassAdapter>();
+        registry["listing_portal"] = std::make_shared<PortalAdapter>();
+    }
+    
+    Raw ingest(const std::string& sourceId, const Query& q) {
+        auto it = registry.find(sourceId);
+        if (it == registry.end() || !it->second->isPermitted()) {
+            throw std::runtime_error("ComplianceError: " + sourceId);
+        }
+        return it->second->fetch(q);
+    }
+};
+```
+
+- **Graceful degradation = Strategy with a fallback chain:** FAISS → NumPy, PostGIS → in-memory, XGBoost → scikit-learn. Same interface, swap the implementation by availability.
+- **Provenance envelope = a Decorator/wrapper** that attaches `source · license · confidence · freshness` to every value.
+
+---
 
 ## StockVision — middleware & engines
 
@@ -63,61 +210,78 @@ function ingest(sourceId: string, q: Query) {
   GW -->|fail| R3[403]
   style H fill:#DCFCE7,stroke:#16A34A`} />
 
-- **Chain of Responsibility / Decorator:** the request passes through auth →
-  rate-limit → CSP → B2B-gateway middleware, each free to short-circuit. Adding a
-  concern = adding a link, not editing the others.
-- **Strategy + Composite:** the conviction score combines 40+ weighted factors;
-  each factor is a small strategy, the composite aggregates them.
-- **Observer + Scheduler:** the APScheduler alert worker observes price changes
-  and notifies subscribers out of band.
-- **Policy / Strategy:** subscription plan-gating selects behavior by tier,
-  enforced server-side.
+- **Chain of Responsibility / Decorator:** the request passes through auth → rate-limit → CSP → B2B-gateway middleware, each free to short-circuit. Adding a concern = adding a link, not editing the others.
+- **Strategy + Composite:** the conviction score combines 40+ weighted factors; each factor is a small strategy, the composite aggregates them.
+- **Observer + Scheduler:** the APScheduler alert worker observes price changes and notifies subscribers out of band.
+- **Policy / Strategy:** subscription plan-gating selects behavior by tier, enforced server-side.
+
+---
 
 ## StockStump — pricing & trading
 
-- **Strategy:** `PriceEngineService` (performance-based jumps) vs
-  `PlayerPriceService` (random tick) are interchangeable price-move strategies.
-- **State:** a player is `TRADING` or `FROZEN` (lock active); the trade endpoint's
-  behavior depends on that state object rather than scattered booleans.
-- **Adapter:** cricket-API responses are mapped into internal DTOs, isolating the
-  domain from a third-party schema.
+- **Strategy:** `PriceEngineService` (performance-based jumps) vs `PlayerPriceService` (random tick) are interchangeable price-move strategies.
+- **State:** a player is `TRADING` or `FROZEN` (lock active); the trade endpoint's behavior depends on that state object rather than scattered booleans.
+- **Adapter:** cricket-API responses are mapped into internal DTOs, isolating the domain from a third-party schema.
 
 <Callout type="tip" title="Tie the pattern to a force and a payoff">
-For each, say the force and the win: "sources vary and some are illegal → Strategy
-+ a Registry + a Gate → I can add a licensed feed without touching callers and the
-illegal one can't run." That's a senior-sounding answer.
+For each, say the force and the win: "sources vary and some are illegal → Strategy + a Registry + a Gate → I can add a licensed feed without touching callers and the illegal one can't run." That's a senior-sounding answer.
 </Callout>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "In StockVision's middleware pipeline (Chain of Responsibility), what design benefit is achieved by enabling links to short-circuit the execution?",
+    options: [
+      "It allows request validation handlers to terminate illegal requests (e.g. 401 Unauthorized) early, preventing unnecessary database downstream execution.",
+      "It speeds up CPU execution by running all handlers in parallel.",
+      "It compresses HTTP body headers dynamically."
+    ],
+    answer: "It allows request validation handlers to terminate illegal requests (e.g. 401 Unauthorized) early, preventing unnecessary database downstream execution.",
+    explanation: "If a handler detects authentication failure, it halts the chain and returns a response, sparing the subsequent database/handling logic from execution."
+  },
+  {
+    question: "Why is a strategy registry useful when handling highly dynamic integrations (like LandAI's data scraping feeds)?",
+    options: [
+      "It allows new adapters to register dynamically at runtime without modifying the caller's main ingestion routing logic.",
+      "It reduces network transport sizes.",
+      "It replaces compile-time type safety."
+    ],
+    answer: "It allows new adapters to register dynamically at runtime without modifying the caller's main ingestion routing logic.",
+    explanation: "By decoupling key lookup from selection, adding a new source is as simple as creating a new adapter class and adding it to the map/registry, satisfying the Open/Closed Principle."
+  },
+  {
+    question: "How does a composite-strategy engine (like StockVision's conviction calculation) evaluate rules?",
+    options: [
+      "It aggregates the evaluations of several leaf strategies under a single uniform interface, treating a composite ruleset like a single rule.",
+      "It forces sequential single-threaded execution across rules.",
+      "It runs a ruleset through a thread-pool using global mutable variables."
+    ],
+    answer: "It aggregates the evaluations of several leaf strategies under a single uniform interface, treating a composite ruleset like a single rule.",
+    explanation: "A composite strategy implements the Strategy interface itself and contains a collection of other strategies, recursively calling and aggregating them."
+  }
+]} />
+
+---
+
+## Q&A
 
 <QA q="Tell me about a design pattern you used and why.">
 
-In LandAI's ingestion layer I used Strategy + Registry + a Guard. Each data
-source implements a common `SourceAdapter` interface (Strategy); a registry maps
-an id to the adapter; and a `RobotsGate` checks a `permitted` flag before
-running, so sources whose ToS forbids automation literally can't execute. The
-payoff: adding a new licensed feed is a new registered adapter with zero changes
-to callers, and compliance is structural rather than a convention someone might
-forget.
+In LandAI's ingestion layer I used Strategy + Registry + a Guard. Each data source implements a common `SourceAdapter` interface (Strategy); a registry maps an id to the adapter; and a `RobotsGate` checks a `permitted` flag before running, so sources whose ToS forbids automation literally can't execute. The payoff: adding a new licensed feed is a new registered adapter with zero changes to callers, and compliance is structural rather than a convention someone might forget.
 
 </QA>
 
 <QA q="Where did you use the Observer pattern in production code?">
 
-StockVision's alerts. The APScheduler worker evaluates price conditions and
-notifies subscribers (email/push) when an alert fires — subjects (prices) and
-observers (alerts/notifications) are decoupled, and it runs off the request path
-so a slow notification never blocks an API call. It also makes alert types
-extensible: new notification channels subscribe without changing the price
-logic.
+StockVision's alerts. The APScheduler worker evaluates price conditions and notifies subscribers (email/push) when an alert fires — subjects (prices) and observers (alerts/notifications) are decoupled, and it runs off the request path so a slow notification never blocks an API call. It also makes alert types extensible: new notification channels subscribe without changing the price logic.
 
 </QA>
 
 <QA q="How did patterns help you handle missing dependencies gracefully?">
 
-Graceful degradation is Strategy with a fallback: the similarity search exposes
-one interface with two implementations, FAISS for scale and NumPy as a fallback
-that returns identical results; spatial queries fall back from PostGIS to
-in-memory; the price model falls back from XGBoost to scikit-learn. Because each
-pair shares an interface, the caller is oblivious and the app still runs (and
-demos) when the heavy dependency isn't installed.
+Graceful degradation is Strategy with a fallback: the similarity search exposes one interface with two implementations, FAISS for scale and NumPy as a fallback that returns identical results; spatial queries fall back from PostGIS to in-memory; the price model falls back from XGBoost to scikit-learn. Because each pair shares an interface, the caller is oblivious and the app still runs (and demos) when the heavy dependency isn't installed.
 
 </QA>

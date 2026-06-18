@@ -5,6 +5,17 @@ order: 2
 tags: ["design-patterns", "GoF", "behavioral"]
 ---
 
+## The real-world analogy: the kitchen utensil drawer
+
+Imagine entering a commercial restaurant kitchen. The chef doesn't have one giant, multi-purpose tool that chops, whisks, blends, and bakes. Instead, they have a drawer filled with specialized tools.
+1. **The Hand Tools (Strategy)**: You want to scrape a bowl. You grab a silicone spatula. You want to flip a burger. You swap it for a metal turner. The action of flipping/scraping is delegated to the tool, which fits a standard handle size (the interface).
+2. **The Order Board (Observer)**: A new order ticket is pinned to the kitchen rail. The line cook starts cooking, the expeditor notes the table delay, and the busser readies the table. One event (new order) triggers updates to several decoupled listeners.
+3. **The Kitchen Timer (State)**: A timer dial rotates. Depending on where the dial points (Waiting, Preheating, Baking, Done), pressing the start button does completely different things. You can't bake without preheating first—the behavior is bound to the timer's current state.
+
+Our job in LLD is to avoid writing one giant, unmaintainable "all-in-one" utility class, and instead layout standard interfaces, behaviors, and lifecycles using established patterns.
+
+---
+
 ## The shortlist
 
 | Category | Pattern | Intent (one line) |
@@ -21,8 +32,7 @@ tags: ["design-patterns", "GoF", "behavioral"]
 
 ## How to pick — follow the force, not the name
 
-Patterns are answers to recurring *forces*. Start from the problem you can feel
-in the code, and the pattern falls out:
+Patterns are answers to recurring *forces*. Start from the problem you can feel in the code, and the pattern falls out:
 
 <Mermaid chart={`flowchart TD
   Q{What's the pain?} -->|"an algorithm/policy varies<br/>(pricing, sorting, routing)"| ST[Strategy]
@@ -35,15 +45,15 @@ in the code, and the pattern falls out:
   Q -->|"callers juggle 5 subsystems<br/>to do one task"| FA[Facade]
   style Q fill:#E0E7FF,stroke:#4F46E5`} />
 
-In an interview, *say the force out loud first* ("seat-assignment policy varies
-→ I'll put it behind a Strategy"), then name the pattern. Naming without the
-force is buzzword bingo; the force without the name still earns full credit.
+In an interview, *say the force out loud first* ("seat-assignment policy varies → I'll put it behind a Strategy"), then name the pattern. Naming without the force is buzzword bingo; the force without the name still earns full credit.
+
+---
 
 ## Strategy — the most useful one
 
-Encapsulate interchangeable algorithms behind a common interface and inject the
-one you want. Kills `if/else`-on-type and satisfies Open/Closed.
+Encapsulate interchangeable algorithms behind a common interface and inject the one you want. Kills `if/else`-on-type and satisfies Open/Closed.
 
+### TypeScript
 ```ts
 interface PricingStrategy { price(base: number): number; }
 
@@ -57,8 +67,96 @@ class Checkout {
 // Add a BlackFridayStrategy later without touching Checkout.
 ```
 
+### Python
+```python
+from abc import ABC, abstractmethod
+
+class PricingStrategy(ABC):
+    @abstractmethod
+    def price(self, base: float) -> float:
+        pass
+
+class RegularPricing(PricingStrategy):
+    def price(self, base: float) -> float:
+        return base
+
+class MemberPricing(PricingStrategy):
+    def price(self, base: float) -> float:
+        return base * 0.9
+
+class Checkout:
+    def __init__(self, strategy: PricingStrategy):
+        self.strategy = strategy
+        
+    def total(self, base: float) -> float:
+        return self.strategy.price(base)
+```
+
+### Java
+```java
+public interface PricingStrategy {
+    double price(double base);
+}
+
+public class RegularPricing implements PricingStrategy {
+    @Override
+    public double price(double base) { return base; }
+}
+
+public class MemberPricing implements PricingStrategy {
+    @Override
+    public double price(double base) { return base * 0.9; }
+}
+
+public class Checkout {
+    private final PricingStrategy strategy;
+    
+    public Checkout(PricingStrategy strategy) {
+        this.strategy = strategy;
+    }
+    
+    public double total(double base) {
+        return this.strategy.price(base);
+    }
+}
+```
+
+### C++
+```cpp
+#include <memory>
+
+class PricingStrategy {
+public:
+    virtual ~PricingStrategy() = default;
+    virtual double price(double base) const = 0;
+};
+
+class RegularPricing : public PricingStrategy {
+public:
+    double price(double base) const override { return base; }
+};
+
+class MemberPricing : public PricingStrategy {
+public:
+    double price(double base) const override { return base * 0.9; }
+};
+
+class Checkout {
+private:
+    std::shared_ptr<PricingStrategy> strategy;
+public:
+    Checkout(std::shared_ptr<PricingStrategy> strat) : strategy(strat) {}
+    double total(double base) const { return strategy->price(base); }
+};
+```
+
+---
+
 ## Observer — events & notifications
 
+Watch the fan-out. The subject keeps a subscriber list and, on every `publish` (or `emit`), calls the same update on each one—it never knows their concrete types or how many there are.
+
+### TypeScript
 ```ts
 type Listener<T> = (event: T) => void;
 
@@ -70,26 +168,86 @@ class Subject<T> {
 // priceFeed.subscribe(updateChart); priceFeed.subscribe(checkAlerts);
 ```
 
-Watch the fan-out. The subject keeps a subscriber list and, on every `publish`,
-calls the same `update` on each one — it never knows their concrete types or how
-many there are. Subscribe, publish, then `unsubscribe` one and publish again.
+### Python
+```python
+from typing import Callable, Set
+
+class PriceFeed:
+    def __init__(self):
+        self._listeners: Set[Callable[[float], None]] = set()
+        
+    def subscribe(self, callback: Callable[[float], None]) -> Callable[[], None]:
+        self._listeners.add(callback)
+        return lambda: self._listeners.remove(callback)
+        
+    def emit(self, price: float):
+        for callback in list(self._listeners): # Copy list for concurrent safety
+            callback(price)
+```
+
+### Java
+```java
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+public interface PriceListener {
+    void onPriceUpdate(double price);
+}
+
+public class PriceFeed {
+    private final Set<PriceListener> listeners = new CopyOnWriteArraySet<>();
+    
+    public void subscribe(PriceListener listener) {
+        listeners.add(listener);
+    }
+    
+    public void unsubscribe(PriceListener listener) {
+        listeners.remove(listener);
+    }
+    
+    public void emit(double price) {
+        for (PriceListener listener : listeners) {
+            listener.onPriceUpdate(price);
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <vector>
+#include <functional>
+#include <algorithm>
+
+class PriceFeed {
+private:
+    std::vector<std::function<void(double)>> listeners;
+public:
+    void subscribe(std::function<void(double)> callback) {
+        listeners.push_back(callback);
+    }
+    
+    void emit(double price) {
+        for (const auto& cb : listeners) {
+            cb(price);
+        }
+    }
+};
+```
 
 <Visualizer algo="observer" />
 
+---
+
 ## State — behavior that changes with the object's mode
 
-When an object behaves differently depending on a `status` field, that logic
-tends to sprawl into the same `switch (status)` copied across every method. The
-**State** pattern gives each mode its own object that knows which events it
-accepts and which state comes next — so an illegal move (pressing *pause* while
-already **Stopped**) is simply *refused*, not a forgotten `if`.
+When an object behaves differently depending on a `status` field, that logic tends to sprawl into the same `switch (status)` copied across every method. The **State** pattern gives each mode its own object that knows which events it accepts and which state comes next.
 
-Step through a media player below. Watch how each event is handled by the
-**current** state, and add an illegal event to the list — it gets ignored
-because that state has no transition for it.
+Step through a media player below. Watch how each event is handled by the **current** state.
 
 <Visualizer algo="state-machine" problem="media-player" />
 
+### TypeScript
 ```ts
 interface PlayerState { play(p: Player): void; stop(p: Player): void; }
 
@@ -108,52 +266,191 @@ class Player {
 }
 ```
 
-The `Player` has zero `if (status === …)` branches: each state encapsulates its
-own transitions. Adding a `Paused` state is one new class, not an edit to five
-methods — that's Open/Closed in action.
+### Python
+```python
+from abc import ABC, abstractmethod
 
-<Callout type="warn" title="Don't pattern-match for its own sake">
-Naming a pattern is worthless if it doesn't fit. The signal is recognizing the
-*forces* — "the algorithm varies → Strategy", "many things react to a change →
-Observer", "objects behave differently per mode → State" — and knowing the cost
-(Singleton hides global state and wrecks testability; Decorator adds wrapper
-layers). Reach for the simplest thing that removes the duplication.
-</Callout>
+class PlayerState(ABC):
+    @abstractmethod
+    def play(self, player) -> None: pass
+    @abstractmethod
+    def stop(self, player) -> None: pass
+
+class StoppedState(PlayerState):
+    def play(self, player) -> None:
+        player.state = PlayingState()
+        print("Now playing.")
+    def stop(self, player) -> None:
+        print("Already stopped.")
+
+class PlayingState(PlayerState):
+    def play(self, player) -> None:
+        print("Already playing.")
+    def stop(self, player) -> None:
+        player.state = StoppedState()
+        print("Stopped.")
+
+class Player:
+    def __init__(self):
+        self.state: PlayerState = StoppedState()
+    def play(self):
+        self.state.play(self)
+    def stop(self):
+        self.state.stop(self)
+```
+
+### Java
+```java
+public interface PlayerState {
+    void play(Player player);
+    void stop(Player player);
+}
+
+public class StoppedState implements PlayerState {
+    @Override
+    public void play(Player player) {
+        player.setState(new PlayingState());
+        System.out.println("Now playing.");
+    }
+    @Override
+    public void stop(Player player) {
+        System.out.println("Already stopped.");
+    }
+}
+
+public class PlayingState implements PlayerState {
+    @Override
+    public void play(Player player) {
+        System.out.println("Already playing.");
+    }
+    @Override
+    public void stop(Player player) {
+        player.setState(new StoppedState());
+        System.out.println("Stopped.");
+    }
+}
+
+public class Player {
+    private PlayerState state = new StoppedState();
+    
+    public void setState(PlayerState state) { this.state = state; }
+    public void play() { state.play(this); }
+    public void stop() { state.stop(this); }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <memory>
+
+class Player;
+
+class PlayerState {
+public:
+    virtual ~PlayerState() = default;
+    virtual void play(Player& player) = 0;
+    virtual void stop(Player& player) = 0;
+};
+
+class StoppedState : public PlayerState {
+public:
+    void play(Player& player) override;
+    void stop(Player& player) override;
+};
+
+class PlayingState : public PlayerState {
+public:
+    void play(Player& player) override;
+    void stop(Player& player) override;
+};
+
+class Player {
+private:
+    std::shared_ptr<PlayerState> state;
+public:
+    Player();
+    void setState(std::shared_ptr<PlayerState> nextState) { state = nextState; }
+    void play() { state->play(*this); }
+    void stop() { state->stop(*this); }
+};
+
+// Implementations separated to avoid circular reference compiler issues
+Player::Player() { state = std::make_shared<StoppedState>(); }
+void StoppedState::play(Player& player) {
+    player.setState(std::make_shared<PlayingState>());
+    std::cout << "Now playing.\n";
+}
+void StoppedState::stop(Player& player) { std::cout << "Already stopped.\n"; }
+void PlayingState::play(Player& player) { std::cout << "Already playing.\n"; }
+void PlayingState::stop(Player& player) {
+    player.setState(std::make_shared<StoppedState>());
+    std::cout << "Stopped.\n";
+}
+```
+
+The `Player` has zero `if (status === …)` branches: each state encapsulates its own transitions. Adding a `Paused` state is one new class, not an edit to five methods — that's Open/Closed in action.
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why would you choose the State Pattern over a switch statement checking an internal state enum?",
+    options: [
+      "The State pattern operates in O(1) complexity, whereas switch statements are O(N).",
+      "The State pattern encapsulates state-specific behavior and transitions in distinct classes, satisfying the Open/Closed Principle when adding states.",
+      "The State pattern reduces memory usage by sharing state instance allocations."
+    ],
+    answer: "The State pattern encapsulates state-specific behavior and transitions in distinct classes, satisfying the Open/Closed Principle when adding states.",
+    explanation: "With the State pattern, adding a new state requires creating a new class rather than modifying every method containing state switches, protecting existing logic."
+  },
+  {
+    question: "In the Observer Pattern, which component is decoupled from the concrete types of the subscribers?",
+    options: [
+      "The Subject (or Publisher).",
+      "The Concrete Observer class.",
+      "The client that triggers the notification."
+    ],
+    answer: "The Subject (or Publisher).",
+    explanation: "The Subject only knows about the Observer interface, allowing any class to register and receive updates without the Subject knowing its concrete implementation."
+  },
+  {
+    question: "What is the primary trade-off of introducing the Strategy Pattern to inject algorithms?",
+    options: [
+      "It violates the Single Responsibility Principle.",
+      "It increases the complexity and count of interfaces/classes in the codebase, which may be over-engineering for a static algorithm that never changes.",
+      "It prevents optimization compilers from executing functions inline."
+    ],
+    answer: "It increases the complexity and count of interfaces/classes in the codebase, which may be over-engineering for a static algorithm that never changes.",
+    explanation: "Strategy pattern adds layers of abstraction. If the algorithm is fixed and has no potential to vary, a simple function or conditional statement is more clean and direct."
+  }
+]} />
+
+---
 
 ## Singleton — handle with care
 
-It guarantees one instance, but it's global mutable state in disguise: it hides
-dependencies, complicates tests, and is a footgun under concurrency (use
-lazy-init with proper locking or eager init). Often dependency injection of a
-single shared instance is the better answer.
+It guarantees one instance, but it's global mutable state in disguise: it hides dependencies, complicates tests, and is a footgun under concurrency (use lazy-init with proper locking or eager init). Often dependency injection of a single shared instance is the better answer.
 
 <QA q="When do you use Strategy vs just an if/else?">
 
-Use Strategy when the *algorithm* varies and you expect to add more variants:
-encapsulate each behind a common interface and inject the chosen one. That
-removes the growing `if/else`/`switch` on type, satisfies Open/Closed (add a new
-strategy class, don't edit existing code), and makes each algorithm unit-testable
-in isolation. For a single, fixed two-way branch that won't grow, a plain
-`if/else` is fine — don't over-engineer.
+Use Strategy when the *algorithm* varies and you expect to add more variants: encapsulate each behind a common interface and inject the chosen one. That removes the growing `if/else`/`switch` on type, satisfies Open/Closed (add a new strategy class, don't edit existing code), and makes each algorithm unit-testable in isolation. For a single, fixed two-way branch that won't grow, a plain `if/else` is fine — don't over-engineer.
 
 </QA>
 
 <QA q="Why is Singleton considered an anti-pattern by many?">
 
-Because it's global mutable state wearing a pattern's clothes. It hides
-dependencies (callers reach in via `getInstance()` instead of receiving it), so
-code is harder to reason about and test (you can't easily substitute a fake), and
-it invites concurrency bugs if lazily initialized without care. When you truly
-need one instance, prefer creating it once and injecting it (DI container) so the
-dependency is explicit and swappable.
+Because it's global mutable state wearing a pattern's clothes. It hides dependencies (callers reach in via `getInstance()` instead of receiving it), so code is harder to reason about and test (you can't easily substitute a fake), and it invites concurrency bugs if lazily initialized without care. When you truly need one instance, prefer creating it once and injecting it (DI container) so the dependency is explicit and swappable.
 
 </QA>
 
+---
+
 ## Practice — model state & transitions
 
-These are *design* problems, not algorithm puzzles. Each one is really "name the
-states and the events between them" — exactly the State pattern. Write the
-transition table first, then the code falls out.
+These are *design* problems, not algorithm puzzles. Each one is really "name the states and the events between them" — exactly the State pattern. Write the transition table first, then the code falls out.
 
 <PracticeLadder
   topic="Modeling state explicitly"
@@ -187,11 +484,6 @@ transition table first, then the code falls out.
 
 <QA q="Decorator vs inheritance for adding behavior?">
 
-Decorator wraps an object and adds behavior at runtime, so you can compose
-features in any combination (e.g. a buffered, compressed, encrypted stream)
-without a class explosion. Inheritance fixes the combination at compile time and
-forces a single hierarchy — adding N optional features via subclasses needs 2^N
-classes. Decorator keeps each feature a small wrapper that conforms to the same
-interface.
+Decorator wraps an object and adds behavior at runtime, so you can compose features in any combination (e.g. a buffered, compressed, encrypted stream) without a class explosion. Inheritance fixes the combination at compile time and forces a single hierarchy — adding N optional features via subclasses needs 2^N classes. Decorator keeps each feature a small wrapper that conforms to the same interface.
 
 </QA>

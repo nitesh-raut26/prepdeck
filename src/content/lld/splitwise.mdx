@@ -6,15 +6,25 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "strategy-pattern", "graphs"]
 ---
 
+## The real-world analogy: restaurant bill settlement
+
+Imagine dining out in a group of five friends:
+- **The Messy Way**: At the end of the night, A hands B ₹50, B hands C ₹100, and C hands A ₹30. Coins are dropped, bills are passed, and everyone wastes 15 minutes swapping physical cash.
+- **The Splitwise Way**: Instead of physical bills passing hand-to-hand, everyone throws their receipts into a central bowl. We calculate the net result: Asha is overall +₹100 (she is owed money), Rahul is −₹70 (he owes money), and John is −₹30 (he owes money). Rather than three trades, we match Rahul to hand ₹70 to Asha, and John to hand ₹30 to Asha. The ledger matches perfectly with only two total transfers—Asha is satisfied, and John and Rahul have settled their balances.
+
+The core design centers around tracking this **net balance sheet**, validating split policies (equal, percentage, exact share), and executing a matching algorithm to collapse the web of IOUs into the minimum possible transactions.
+
+---
+
 ## Scope it first
 
-*"Users create group expenses — one payer, many participants, split
-equally / by exact amounts / by percentages. Show who owes whom; simplify
-debts. Single currency, ignore payments/settlement execution and auth —
-OK?"* That scope hits everything graders look for: a Strategy seam, a
-money-correctness invariant, and one genuine algorithm.
+*"Users create group expenses — one payer, many participants, split equally / by exact amounts / by percentages. Show who owes whom; simplify debts. Single currency, ignore payments/settlement execution and auth — OK?"*
 
-## Entities & relationships
+That scope hits everything graders look for: a Strategy seam, a money-correctness invariant, and one genuine algorithm.
+
+---
+
+## UML Class Diagram
 
 <Mermaid chart={`classDiagram
   class ExpenseManager {
@@ -47,48 +57,24 @@ money-correctness invariant, and one genuine algorithm.
   SplitStrategy <|.. PercentSplit
   Expense --> SplitStrategy : built via`} />
 
-- **`Expense`** is an immutable record: who paid, how much, and the
-  computed `Split`s. Edits create a new version (audit trail — finance
-  code never destroys history).
-- **`SplitStrategy`** — equal / exact / percent are interchangeable
-  algorithms producing `List<Split>`: the cleanest Strategy showcase in
-  any LLD classic. New split type (by shares, by adjustment) = new class,
-  zero edits (Open/Closed, [same seam as parking-lot
-  pricing](/lld/parking-lot)).
-- **`BalanceSheet`** holds **net balance per user** (positive = is owed,
-  negative = owes). Derived from expenses, so it's a cache — rebuildable
-  by replay, which is your data-corruption escape hatch.
+- **`Expense`** is an immutable record: who paid, how much, and the computed `Split`s. Edits create a new version (audit trail — finance code never destroys history).
+- **`SplitStrategy`** — equal / exact / percent are interchangeable algorithms producing `List<Split>`: the cleanest Strategy showcase in any LLD classic. New split type (by shares, by adjustment) = new class, zero edits (Open/Closed, [same seam as parking-lot pricing](/lld/parking-lot)).
+- **`BalanceSheet`** holds **net balance per user** (positive = is owed, negative = owes). Derived from expenses, so it's a cache — rebuildable by replay, which is your data-corruption escape hatch.
 
-Each strategy **validates its own args**: exact amounts must sum to the
-total; percentages to 100. Validation inside the strategy, not the
-manager — the class that defines the rule enforces it
-([encapsulation](/lld/oop-and-solid)).
+Each strategy **validates its own args**: exact amounts must sum to the total; percentages to 100. Validation inside the strategy, not the manager — the class that defines the rule enforces it ([encapsulation](/lld/oop-and-solid)).
+
+---
 
 ## Money: the two non-negotiables
 
-1. **Never floats.** ₹0.10 isn't representable in binary; pennies leak.
-   Integer paise/cents or `BigDecimal`
-   ([Level 1 said it](/programming/variables-and-data-types); here it's
-   load-bearing).
-2. **The conservation invariant: every expense's splits sum exactly to
-   the amount, and the global net sums to zero.** ₹100 split three ways is
-   33.33 + 33.33 + 33.34 — *someone* gets the spare paisa
-   (convention: first participant). Write the assertion; mention it
-   unprompted. It's the difference between candidates who've handled money
-   and those who haven't:
+1. **Never floats.** ₹0.10 isn't representable in binary; pennies leak. Integer paise/cents or `BigDecimal` ([Level 1 said it](/programming/variables-and-data-types); here it's load-bearing).
+2. **The conservation invariant: every expense's splits sum exactly to the amount, and the global net sums to zero.** ₹100 split three ways is 33.33 + 33.33 + 33.34 — *someone* gets the spare paisa (convention: first participant). Write the assertion; mention it unprompted. It's the difference between candidates who've handled money and those who haven't.
 
-```python
-def equal_split(amount_paise, users):
-    base, remainder = divmod(amount_paise, len(users))
-    return [Split(u, base + (1 if i < remainder else 0))
-            for i, u in enumerate(users)]
-    # sum of shares == amount_paise, ALWAYS — assert it in tests
-```
+---
 
 ## The algorithm: debt simplification
 
-A trip's raw expenses create a messy web of IOUs. But only **net balances**
-matter: compute each user's net, then match debtors to creditors:
+A trip's raw expenses create a messy web of IOUs. But only **net balances** matter: compute each user's net, then match debtors to creditors:
 
 ```
 Raw: A→B ₹20, B→C ₹20, C→A ₹10        Nets: A −10, B 0, C +10
@@ -108,140 +94,373 @@ Simplified: A pays C ₹10.  (3 transactions → 1; B vanished entirely)
   before ==>|"compute nets,<br/>match debtors↔creditors"| after
   style B2 fill:#F3ECDA,stroke:#A6997A,stroke-dasharray: 5 5`} />
 
-The graph view is why this works: individual edges (who-paid-whom) are
-noise; only each node's **net flow** matters, and any set of transactions
-that produces the same nets is equally valid.
+The graph view is why this works: individual edges (who-paid-whom) are noise; only each node's **net flow** matters, and any set of transactions that produces the same nets is equally valid.
 
+---
+
+## Implementation
+
+Below are complete implementations with thread-safe group locks and greedy settlement solvers using heaps.
+
+### Python
 ```python
-def simplify(net):                       # net: user → paise (sum == 0)
-    owes  = [(u, -v) for u, v in net.items() if v < 0]
-    owed  = [(u,  v) for u, v in net.items() if v > 0]
-    txns, i, j = [], 0, 0
-    while i < len(owes) and j < len(owed):
-        debtor, debt = owes[i]
-        creditor, credit = owed[j]
-        pay = min(debt, credit)
-        txns.append(Transaction(debtor, creditor, pay))
-        owes[i], owed[j] = (debtor, debt - pay), (creditor, credit - pay)
-        if owes[i][1] == 0: i += 1
-        if owed[j][1] == 0: j += 1
-    return txns
+import heapq
+import threading
+from typing import Dict, List, Tuple
+
+class User:
+    def __init__(self, name: str):
+        self.name = name
+
+class Split:
+    def __init__(self, user: User, amount_cents: int = 0):
+        self.user = user
+        self.amount_cents = amount_cents
+
+class EqualSplitStrategy:
+    def validate_and_split(self, total_cents: int, users: List[User]) -> List[Split]:
+        n = len(users)
+        base = total_cents // n
+        remainder = total_cents % n
+        return [Split(users[i], base + (1 if i < remainder else 0)) for i in range(n)]
+
+class GroupBalanceSheet:
+    def __init__(self):
+        self.net_balances: Dict[User, int] = {}
+        self.lock = threading.Lock()
+        
+    def add_expense(self, payer: User, total_cents: int, splits: List[Split]):
+        with self.lock:
+            self.net_balances[payer] = self.net_balances.get(payer, 0) + total_cents
+            for split in splits:
+                self.net_balances[split.user] = self.net_balances.get(split.user, 0) - split.amount_cents
+
+    def simplify_debts(self) -> List[Tuple[User, User, int]]:
+        with self.lock:
+            # We use max-heaps (so push negative values)
+            debtors = []
+            creditors = []
+            for user, bal in self.net_balances.items():
+                if bal < 0:
+                    heapq.heappush(debtors, (-bal, user))
+                elif bal > 0:
+                    heapq.heappush(creditors, (-bal, user))
+
+            transactions = []
+            while debtors and creditors:
+                debt_val, debtor_user = heapq.heappop(debtors)
+                credit_val, creditor_user = heapq.heappop(creditors)
+                
+                debt = debt_val
+                credit = credit_val
+                settle_amount = min(debt, credit)
+                
+                transactions.append((debtor_user, creditor_user, settle_amount))
+                
+                remaining_debt = debt - settle_amount
+                remaining_credit = credit - settle_amount
+                
+                if remaining_debt > 0:
+                    heapq.heappush(debtors, (remaining_debt, debtor_user))
+                if remaining_credit > 0:
+                    heapq.heappush(creditors, (remaining_credit, creditor_user))
+                    
+            return transactions
 ```
 
-[Two pointers](/dsa/two-pointers) over debtors and creditors — at most
-**n−1 transactions** for n users, each iteration retires at least one side.
-Greedily matching *largest debtor to largest creditor*
-(two [heaps](/dsa/heaps-and-intervals)) tends to produce fewer
-transactions; the true *minimum* transaction count is NP-hard
-(subset-sum in disguise) — knowing that "good greedy, optimal is NP-hard,
-n−1 is fine" line is exactly the [greedy-judgment](/dsa/greedy) graders
-want.
+### Java
+```java
+import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
-Watch it collapse a five-IOU web into the minimum transfers. First the raw debts
-become net balances; then each step pays the biggest debtor's debt to the biggest
-creditor, zeroing out at least one person per transfer. Edit the debts to try
-your own group.
+class User {
+    String name;
+    User(String name) { this.name = name; }
+}
 
-<Visualizer algo="split-debts" />
+abstract class Split {
+    User user;
+    long amountCents;
+    Split(User user) { this.user = user; }
+    Split(User user, long amt) { this.user = user; this.amountCents = amt; }
+}
 
-## Think it through like the interview
+class EqualSplit extends Split {
+    EqualSplit(User user) { super(user); }
+}
 
-<ThinkThrough
-  title="Design Splitwise"
-  difficulty="LLD Classic — Strategy + money"
-  problem="Users create group expenses — one payer, many participants, split equally / by exact amounts / by percentages. Show who owes whom, and simplify the debts."
-  stages={[
-    {
-      label: "Scope to the three tests",
-      prompt: "What three distinct skills is this one prompt secretly probing?",
-      reveal: "(1) A Strategy seam — split types vary. (2) Money correctness — rounding and invariants. (3) One real algorithm — debt simplification. Scope to hit all three: 'single currency, ignore settlement execution and auth — OK?' Knowing what the grader is grading is half the interview."
-    },
-    {
-      label: "Spot what varies → Strategy",
-      prompt: "Equal, exact, percent splits — and next month, 'by shares'. Where does that variability live?",
-      reveal: "Behind SplitStrategy.computeSplits(amount, participants, args) → List<Split>. Each strategy validates its OWN args (exact sums to total, percents to 100) — the class that defines the rule enforces it. New split type = new class, zero edits. Also: Expense is immutable; edits create versions. Finance code never destroys history."
-    },
-    {
-      label: "Handle money like you've been burned",
-      prompt: "₹100 split three ways. What does your code return, exactly?",
-      reveal: "Integer paise, never floats: divmod(10000, 3) → 3333 r 1 → shares 3334/3333/3333, remainder to the first participant deterministically. Two invariants, asserted: each expense's splits sum exactly to its amount; all nets globally sum to zero (money is conserved). Saying these UNPROMPTED is what separates people who've touched financial code.",
-      code: "base, rem = divmod(amount_paise, len(users))\nshares = [base + (1 if i < rem else 0) for i in range(len(users))]\nassert sum(shares) == amount_paise   # always"
-    },
-    {
-      label: "See the graph, then simplify",
-      prompt: "A→B ₹20, B→C ₹20, C→A ₹10. What's the minimal settle-up — and what made it easy?",
-      reveal: "Only NET balances matter: A −10, B 0, C +10 → A pays C ₹10, done. Algorithm: net out, then two-pointer (or two-heap greedy) match debtors to creditors — at most n−1 transactions. The judgment line: 'true minimum is NP-hard (subset-sum in disguise); greedy is near-optimal; I ship the greedy.'"
-    },
-    {
-      label: "The concurrency follow-up",
-      prompt: "Two people add expenses to the same group simultaneously. What races, and what's the elegant fix?",
-      reveal: "BalanceSheet update is read-modify-write → lost update. Fix A: atomic per-group mutation (lock/serialized queue). Fix B — the elegant one: make balances DERIVED. Append expenses to a log (appends don't race), compute nets on read or rebuild the cache by replay. That's event sourcing in miniature, and it doubles as your corruption escape hatch."
+interface SplitStrategy {
+    List<Split> validateAndSplit(long totalCents, List<Split> splits);
+}
+
+class EqualSplitStrategy implements SplitStrategy {
+    @Override
+    public List<Split> validateAndSplit(long totalCents, List<Split> splits) {
+        int n = splits.size();
+        long base = totalCents / n;
+        long remainder = totalCents % n;
+        for (int i = 0; i < n; i++) {
+            splits.get(i).amountCents = base + (i < remainder ? 1 : 0);
+        }
+        return splits;
     }
-  ]}
-/>
+}
+
+class Expense {
+    User paidBy;
+    long totalCents;
+    List<Split> splits;
+    Expense(User paidBy, long totalCents, List<Split> splits) {
+        this.paidBy = paidBy;
+        this.totalCents = totalCents;
+        this.splits = splits;
+    }
+}
+
+class Transaction {
+    User debtor;
+    User creditor;
+    long amountCents;
+    Transaction(User d, User c, long a) {
+        this.debtor = d;
+        this.creditor = c;
+        this.amountCents = a;
+    }
+}
+
+class GroupBalanceSheet {
+    final Map<User, Long> netBalances = new HashMap<>();
+    final ReentrantLock lock = new ReentrantLock();
+
+    void addExpense(Expense expense) {
+        lock.lock();
+        try {
+            User payer = expense.paidBy;
+            netBalances.put(payer, netBalances.getOrDefault(payer, 0L) + expense.totalCents);
+            for (Split split : expense.splits) {
+                User user = split.user;
+                netBalances.put(user, netBalances.getOrDefault(user, 0L) - split.amountCents);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public List<Transaction> simplifyDebts() {
+        lock.lock();
+        try {
+            PriorityQueue<Map.Entry<User, Long>> debtors = new PriorityQueue<>(
+                (a, b) -> Long.compare(b.getValue(), a.getValue())
+            );
+            PriorityQueue<Map.Entry<User, Long>> creditors = new PriorityQueue<>(
+                (a, b) -> Long.compare(b.getValue(), a.getValue())
+            );
+
+            for (Map.Entry<User, Long> entry : netBalances.entrySet()) {
+                long bal = entry.getValue();
+                if (bal < 0) {
+                    debtors.add(new AbstractMap.SimpleEntry<>(entry.getKey(), -bal));
+                } else if (bal > 0) {
+                    creditors.add(new AbstractMap.SimpleEntry<>(entry.getKey(), bal));
+                }
+            }
+
+            List<Transaction> transactions = new ArrayList<>();
+            while (!debtors.isEmpty() && !creditors.isEmpty()) {
+                Map.Entry<User, Long> debtor = debtors.poll();
+                Map.Entry<User, Long> creditor = creditors.poll();
+
+                long settleAmount = Math.min(debtor.getValue(), creditor.getValue());
+                transactions.add(new Transaction(debtor.getKey(), creditor.getKey(), settleAmount));
+
+                long remainingDebt = debtor.getValue() - settleAmount;
+                long remainingCredit = creditor.getValue() - settleAmount;
+
+                if (remainingDebt > 0) {
+                    debtors.add(new AbstractMap.SimpleEntry<>(debtor.getKey(), remainingDebt));
+                }
+                if (remainingCredit > 0) {
+                    creditors.add(new AbstractMap.SimpleEntry<>(creditor.getKey(), remainingCredit));
+                }
+            }
+            return transactions;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <queue>
+#include <mutex>
+#include <algorithm>
+#include <memory>
+
+class User {
+public:
+    std::string name;
+    User(std::string n) : name(n) {}
+};
+
+struct Split {
+    std::shared_ptr<User> user;
+    long amountCents;
+    Split(std::shared_ptr<User> u, long amt = 0) : user(u), amountCents(amt) {}
+};
+
+class EqualSplitStrategy {
+public:
+    std::vector<Split> splitEqual(long totalCents, const std::vector<std::shared_ptr<User>>& users) {
+        std::vector<Split> result;
+        int n = users.size();
+        long base = totalCents / n;
+        long remainder = totalCents % n;
+        for (int i = 0; i < n; ++i) {
+            result.push_back(Split(users[i], base + (i < remainder ? 1 : 0)));
+        }
+        return result;
+    }
+};
+
+struct Transaction {
+    std::shared_ptr<User> debtor;
+    std::shared_ptr<User> creditor;
+    long amountCents;
+    Transaction(std::shared_ptr<User> d, std::shared_ptr<User> c, long a) : debtor(d), creditor(c), amountCents(a) {}
+};
+
+class GroupBalanceSheet {
+private:
+    std::unordered_map<std::shared_ptr<User>, long> netBalances;
+    std::mutex mtx;
+public:
+    void addExpense(std::shared_ptr<User> payer, long totalCents, const std::vector<Split>& splits) {
+        std::lock_guard<std::mutex> lock(mtx);
+        netBalances[payer] += totalCents;
+        for (const auto& split : splits) {
+            netBalances[split.user] -= split.amountCents;
+        }
+    }
+
+    std::vector<Transaction> simplifyDebts() {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto comp = [](const std::pair<long, std::shared_ptr<User>>& a, const std::pair<long, std::shared_ptr<User>>& b) {
+            return a.first < b.first;
+        };
+        std::priority_queue<std::pair<long, std::shared_ptr<User>>, std::vector<std::pair<long, std::shared_ptr<User>>>, decltype(comp)> debtors(comp);
+        std::priority_queue<std::pair<long, std::shared_ptr<User>>, std::vector<std::pair<long, std::shared_ptr<User>>>, decltype(comp)> creditors(comp);
+
+        for (const auto& entry : netBalances) {
+            long bal = entry.second;
+            if (bal < 0) {
+                debtors.push({-bal, entry.first});
+            } else if (bal > 0) {
+                creditors.push({bal, entry.first});
+            }
+        }
+
+        std::vector<Transaction> transactions;
+        while (!debtors.empty() && !creditors.empty()) {
+            auto debtor = debtors.top(); debtors.pop();
+            auto creditor = creditors.top(); creditors.pop();
+
+            long settleAmount = std::min(debtor.first, creditor.first);
+            transactions.push_back(Transaction(debtor.second, creditor.second, settleAmount));
+
+            long remainingDebt = debtor.first - settleAmount;
+            long remainingCredit = creditor.first - settleAmount;
+
+            if (remainingDebt > 0) {
+                debtors.push({remainingDebt, debtor.second});
+            }
+            if (remainingCredit > 0) {
+                creditors.push({remainingCredit, creditor.second});
+            }
+        }
+        return transactions;
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why are floating-point types (like float or double) strictly banned in financial software ledgers?",
+    options: [
+      "Floating-point types use base-2 representation and cannot accurately represent decimal fractions, resulting in cumulative rounding leaks.",
+      "Floats consume too many CPU cycles compared to integers.",
+      "Floats cannot be passed inside REST API body fields."
+    ],
+    answer: "Floating-point types use base-2 representation and cannot accurately represent decimal fractions, resulting in cumulative rounding leaks.",
+    explanation: "Numbers like 0.1 have repeating fractional representations in binary, leading to truncation errors that drift during math calculations. Integers (representing minor units like cents/paise) avoid this."
+  },
+  {
+    question: "What is the conservation invariant of a Splitwise ledger?",
+    options: [
+      "Every expense's split items must sum exactly to the paid amount, and the sum of all net balances across the entire group must equal zero.",
+      "The total debts must grow exponentially over time.",
+      "Only the group admin is allowed to have a positive balance."
+    ],
+    answer: "Every expense's split items must sum exactly to the paid amount, and the sum of all net balances across the entire group must equal zero.",
+    explanation: "Money cannot be created or destroyed. Splitting an amount must distribute any remainder penny (e.g. 100/3 -> 33.34, 33.33, 33.33) so the total equals 100, and group net balance sums to zero."
+  },
+  {
+    question: "Under greedy heaps, what is the maximum number of transactions needed to settle a group of N users?",
+    options: [
+      "N − 1 transactions.",
+      "N^2 transactions.",
+      "Log N transactions."
+    ],
+    answer: "N − 1 transactions.",
+    explanation: "At each step of the heap-matching, we completely resolve the debt or credit of at least one user (sometimes both). Thus, it takes at most N - 1 iterations/transactions to settle N users."
+  }
+]} />
+
+---
 
 ## Walk a scenario + concurrency
 
-"Trip group: A pays ₹300 dinner, equal among A,B,C" →
-`EqualSplit.computeSplits` → splits (100,100,100) → BalanceSheet: B −100,
-C −100, A +200. "B pays ₹150 taxi, exact: A 50, B 100" → A +50… → nets:
-A +150, B −50, C −100 → `simplify` → *C pays A ₹100, B pays A ₹50.* Two
-transactions settle the trip.
+"Trip group: A pays ₹300 dinner, equal among A,B,C" → `EqualSplit.computeSplits` → splits (100,100,100) → BalanceSheet: B −100, C −100, A +200. "B pays ₹150 taxi, exact: A 50, B 100" → A +50… → nets: A +150, B −50, C −100 → `simplify` → *C pays A ₹100, B pays A ₹50.* Two transactions settle the trip.
 
-**Concurrency follow-up:** two expenses added to one group simultaneously
-→ the balance update is read-modify-write. Same family as the
-[parking-lot race](/lld/parking-lot): atomic per-group mutation (lock or
-serialized queue per group), or make balances *derived only* — append
-expenses to a log, compute nets on read; appends don't race
-(the [event-sourcing instinct](/hld/case-ingestion-pipeline), in
-miniature).
+**Concurrency follow-up:** two expenses added to one group simultaneously → the balance update is read-modify-write. Same family as the [parking-lot race](/lld/parking-lot): atomic per-group mutation (lock or serialized queue per group), or make balances *derived only* — append expenses to a log, compute nets on read; appends don't race (the [event-sourcing instinct](/hld/case-ingestion-pipeline), in miniature).
+
+<Visualizer algo="split-debts" />
+
+---
+
+## Q&A
 
 <QA q="Why is SplitStrategy the right abstraction, and what would you lose hardcoding split types in the Expense class?">
 
-Split computation is the *varying behavior* — equal, exact, percent,
-shares, adjustments all consume (amount, participants, args) and produce
-splits, so they slot behind one interface chosen at expense creation.
-Hardcoding means a switch inside Expense touched by every new type
-(Open/Closed violation), validation rules tangled together, and untestable
-combinations. With Strategy, each type validates its own invariant (exact
-sums to total; percents to 100) and tests in isolation. Same seam as
-pricing in the parking lot — LLD interviews reward recognizing the
-recurring shape.
+Split computation is the *varying behavior* — equal, exact, percent, shares, adjustments all consume (amount, participants, args) and produce splits, so they slot behind one interface chosen at expense creation. Hardcoding means a switch inside Expense touched by every new type (Open/Closed violation), validation rules tangled together, and untestable combinations. With Strategy, each type validates its own invariant (exact sums to total; percents to 100) and tests in isolation. Same seam as pricing in the parking lot — LLD interviews reward recognizing the recurring shape.
 
 </QA>
 
 <QA q="₹100 split equally three ways — walk through the money handling.">
 
-Store paise integers: 10000 / 3 = 3333 remainder 1 by `divmod`. Shares:
-3334, 3333, 3333 — distribute the remainder deterministically (first k
-participants get the extra paisa) so results are reproducible and
-auditable. The invariant — splits sum exactly to the amount — is asserted
-at creation; floats are banned because 0.1 has no exact binary
-representation and per-expense rounding drift accumulates into real money.
-Across the system, all nets sum to zero (money is conserved); that global
-check is your nightly reconciliation test. This tiny question reliably
-separates candidates who've touched financial code.
+Store paise integers: 10000 / 3 = 3333 remainder 1 by `divmod`. Shares: 3334, 3333, 3333 — distribute the remainder deterministically (first k participants get the extra paisa) so results are reproducible and auditable. The invariant — splits sum exactly to the amount — is asserted at creation; floats are banned because 0.1 has no exact binary representation and per-expense rounding drift accumulates into real money. Across the system, all nets sum to zero (money is conserved); that global check is your nightly reconciliation test. This tiny question reliably separates candidates who've touched financial code.
 
 </QA>
 
 <QA q="Is minimizing the number of settlement transactions tractable?">
 
-Finding *the minimum* is NP-hard — it reduces to partitioning users into
-zero-sum subsets (subset-sum flavored): each disjoint zero-sum subset of
-size k settles internally with k−1 transactions, so minimizing
-transactions = maximizing zero-sum partitions. Practical answer: net out
-balances, then greedy-match largest debtor against largest creditor with
-two heaps — at most n−1 transactions, usually near-optimal, O(n log n).
-Saying "I'd ship the greedy and note optimality is NP-hard" demonstrates
-both the algorithm and the engineering judgment about when optimal isn't
-worth chasing.
+Finding *the minimum* is NP-hard — it reduces to partitioning users into zero-sum subsets (subset-sum flavored): each disjoint zero-sum subset of size k settles internally with k−1 transactions, so minimizing transactions = maximizing zero-sum partitions. Practical answer: net out balances, then greedy-match largest debtor against largest creditor with two heaps — at most n−1 transactions, usually near-optimal, O(n log n). Saying "I'd ship the greedy and note optimality is NP-hard" demonstrates both the algorithm and the engineering judgment about when optimal isn't worth chasing.
 
 </QA>
 
+---
+
 ## Practice — level up
 
-Splitwise's core is a **graph of balances** plus a **greedy** settlement. Train
-both halves on these:
+Splitwise's core is a **graph of balances** plus a **greedy** settlement. Train both halves on these:
 
 <PracticeLadder
   topic="Balances & settlement"

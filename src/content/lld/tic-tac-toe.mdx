@@ -6,27 +6,69 @@ difficulty: "Classic"
 tags: ["LLD", "oop", "game", "strategy-pattern"]
 ---
 
+## The real-world analogy: a physical grid layout
+
+Imagine sitting across a wooden board marked with a 3x3 grid.
+- **The Board**: A physical grid that holds wooden tokens. It has 3 horizontal channels, 3 vertical channels, and 2 diagonals.
+- **The Counters**: Instead of leaning over the board to check all lines every time someone places a token, we place a set of physical weight balances along the edges. When player X puts a token, we drop a 1-pound weight on the corresponding row and column balance. When player O plays, we drop a 1-pound balloon (negative weight). If any balance tilts completely to +3 pounds or -3 pounds, a bell rings—that player has won.
+- **The Rules (Strategy)**: You play standard Tic-Tac-Toe. If tomorrow you decide to play Connect-4, you keep the same board grid, but you add a physical gravity slot guide (placement rule) and change the win detector rule from "3-in-a-row" to "4-in-a-row" with gravity.
+
+---
+
 ## The ask
 
-Two players alternate marking an `N×N` grid; the first to place `N` in a row
-(horizontal, vertical, or diagonal) wins; a full board with no winner is a draw. Build it
-with clean OOP, and be ready to extend it to bigger boards and other win rules.
+Two players alternate marking an `N×N` grid; the first to place `N` in a row (horizontal, vertical, or diagonal) wins; a full board with no winner is a draw. Build it with clean OOP, and be ready to extend it to bigger boards and other win rules.
 
 <Callout type="info" title="Why this one, and at what level">
-It's tiny, so interviewers judge **how** you build it, not whether it works. **SDE-1:** a
-correct, playable game with turn handling. **SDE-2:** O(1) win detection and clean class
-boundaries. **SDE-3:** an extensibility seam (Strategy for the win rule) so Connect-4 and
-Gomoku reuse the design, plus input validation and turn enforcement. Asked at **Amazon,
-Microsoft, Adobe, Atlassian**; siblings include Snake, Chess, and Minesweeper.
+It's tiny, so interviewers judge **how** you build it, not whether it works. **SDE-1:** a correct, playable game with turn handling. **SDE-2:** O(1) win detection and clean class boundaries. **SDE-3:** an extensibility seam (Strategy for the win rule) so Connect-4 and Gomoku reuse the design, plus input validation and turn enforcement. Asked at **Amazon, Microsoft, Adobe, Atlassian**; siblings include Snake, Chess, and Minesweeper.
 </Callout>
+
+---
 
 ## The insight — don't rescan the board
 
-The naive win check rescans rows, columns, and diagonals after every move. Even scanning
-only the affected lines is O(N) per move. You can do **O(1)**: keep a running counter for
-each row, each column, and the two diagonals. Mark `+1` for player X and `−1` for player
-O. After a move, if any counter the move touched hits `|counter| == N`, that line is
-complete — that player just won.
+The naive win check rescans rows, columns, and diagonals after every move. Even scanning only the affected lines is O(N) per move. You can do **O(1)**: keep a running counter for each row, each column, and the two diagonals. Mark `+1` for player X and `−1` for player O. After a move, if any counter the move touched hits `|counter| == N`, that line is complete — that player just won.
+
+---
+
+## UML Class Diagram
+
+<Mermaid chart={`classDiagram
+  class Game {
+    -board: Board
+    -players: Player[]
+    -turnIndex: int
+    -winningStrategy: WinningStrategy
+    +playTurn(row: int, col: int)
+  }
+  class Board {
+    -grid: int[][]
+    -rows: int[]
+    -cols: int[]
+    -diag: int
+    -antiDiag: int
+    +placeMark(row: int, col: int, playerId: int): bool
+  }
+  class Player {
+    -id: int
+    -name: String
+    -symbol: char
+  }
+  class WinningStrategy {
+    <<interface>>
+    +checkWin(board: Board, row: int, col: int, val: int): bool
+  }
+  class NRowWinningStrategy {
+    +checkWin(board: Board, row: int, col: int, val: int): bool
+  }
+
+  Game *-- Board
+  Game *-- Player
+  Game o-- WinningStrategy
+  WinningStrategy <|.. NRowWinningStrategy
+`} />
+
+---
 
 ## Think it through like the interview
 
@@ -58,8 +100,128 @@ complete — that player just won.
   ]}
 />
 
+---
+
 ## Implementation
 
+Below are complete, clean implementations featuring O(1) win checking and thread-safety locks to prevent concurrent turn races.
+
+### Python
+```python
+import threading
+from typing import List, Optional
+
+class Board:
+    def __init__(self, n: int):
+        self.n = n
+        self.grid = [[None] * n for _ in range(n)]
+        self.rows = [0] * n
+        self.cols = [0] * n
+        self.diag = 0
+        self.anti_diag = 0
+        self.lock = threading.Lock()
+        
+    def place_mark(self, r: int, c: int, player_id: int) -> bool:
+        with self.lock:
+            if r < 0 or r >= self.n or c < 0 or c >= self.n or self.grid[r][c] is not None:
+                raise ValueError("Invalid move location")
+            
+            self.grid[r][c] = player_id
+            val = 1 if player_id == 1 else -1
+            
+            self.rows[r] += val
+            self.cols[c] += val
+            if r == c:
+                self.diag += val
+            if r + c == self.n - 1:
+                self.anti_diag += val
+                
+            return (abs(self.rows[r]) == self.n or 
+                    abs(self.cols[c]) == self.n or 
+                    abs(self.diag) == self.n or 
+                    abs(self.anti_diag) == self.n)
+```
+
+### Java
+```java
+import java.util.concurrent.locks.ReentrantLock;
+
+public class Board {
+    private final int n;
+    private final Integer[][] grid;
+    private final int[] rows;
+    private final int[] cols;
+    private int diag = 0;
+    private int antiDiag = 0;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public Board(int n) {
+        this.n = n;
+        this.grid = new Integer[n][n];
+        this.rows = new int[n];
+        this.cols = new int[n];
+    }
+
+    public boolean placeMark(int r, int c, int playerId) {
+        lock.lock();
+        try {
+            if (r < 0 || r >= n || c < 0 || c >= n || grid[r][c] != null) {
+                throw new IllegalArgumentException("Invalid move location");
+            }
+            grid[r][c] = playerId;
+            int val = (playerId == 1) ? 1 : -1;
+            rows[r] += val;
+            cols[c] += val;
+            if (r == c) diag += val;
+            if (r + c == n - 1) antiDiag += val;
+
+            return Math.abs(rows[r]) == n || Math.abs(cols[c]) == n ||
+                   Math.abs(diag) == n || Math.abs(antiDiag) == n;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <vector>
+#include <mutex>
+#include <cmath>
+#include <stdexcept>
+
+class Board {
+private:
+    int n;
+    std::vector<std::vector<int>> grid;
+    std::vector<int> rows;
+    std::vector<int> cols;
+    int diag = 0;
+    int antiDiag = 0;
+    std::mutex mtx;
+public:
+    Board(int size) : n(size), grid(size, std::vector<int>(size, 0)), rows(size, 0), cols(size, 0) {}
+
+    bool placeMark(int r, int c, int playerId) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (r < 0 || r >= n || c < 0 || c >= n || grid[r][c] != 0) {
+            throw std::invalid_argument("Invalid move location");
+        }
+        grid[r][c] = playerId;
+        int val = (playerId == 1) ? 1 : -1;
+        rows[r] += val;
+        cols[c] += val;
+        if (r == c) diag += val;
+        if (r + c == n - 1) antiDiag += val;
+
+        return std::abs(rows[r]) == n || std::abs(cols[c]) == n ||
+               std::abs(diag) == n || std::abs(antiDiag) == n;
+    }
+};
+```
+
+### TypeScript
 ```ts
 type Mark = "X" | "O";
 
@@ -114,24 +276,56 @@ class Game {
 ```
 
 <Callout type="tip" title="Counters = O(1) win detection">
-Tracking a running sum per row/column/diagonal turns "did this move win?" into four
-comparisons. Mention the complexity out loud: naive rescans are O(N) per move; counters
-are O(1) with O(N) space. It's a small board, but the interviewer is checking whether you
-*think* about cost.
+Tracking a running sum per row/column/diagonal turns "did this move win?" into four comparisons. Mention the complexity out loud: naive rescans are O(N) per move; counters are O(1) with O(N) space. It's a small board, but the interviewer is checking whether you *think* about cost.
 </Callout>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "What is the time and space complexity of the running-counter win checking algorithm?",
+    options: [
+      "Time: O(1) per move, Space: O(N) to store row/column/diagonal counters.",
+      "Time: O(N) per move, Space: O(1) extra space.",
+      "Time: O(N^2) per move, Space: O(N^2) to copy grid cells."
+    ],
+    answer: "Time: O(1) per move, Space: O(N) to store row/column/diagonal counters.",
+    explanation: "Updating a move only changes the index values of the pre-allocated rows/cols arrays, plus the diagonals, taking O(1) operations. It uses two arrays of size N."
+  },
+  {
+    question: "How should you model the Board class if the game must support Connect-4 next?",
+    options: [
+      "Keep the Board as a grid holder, but decouple the placement gravity rules and WinningStrategy into pluggable components (Strategy Pattern).",
+      "Subclass the Board class to build Connect4Board.",
+      "Rewrite the entire class structures since Connect-4 is too different."
+    ],
+    answer: "Keep the Board as a grid holder, but decouple the placement gravity rules and WinningStrategy into pluggable components (Strategy Pattern).",
+    explanation: "Using Strategy pattern keeps the grid representation clean while delegating the win check (4-in-a-row) and movement (falling coins) to interchangeable classes."
+  },
+  {
+    question: "Why do we add synchronization locks to the Board class's place_mark method?",
+    options: [
+      "To prevent race conditions where two players concurrently claim the same coordinate grid slot.",
+      "To improve CPU caching speed.",
+      "To ensure players take turns in the exact order."
+    ],
+    answer: "To prevent race conditions where two players concurrently claim the same coordinate grid slot.",
+    explanation: "If two threads try to claim cell (r, c) at the exact same time, thread-safe synchronization locks ensure only one caller can check-and-insert successfully."
+  }
+]} />
+
+---
 
 ## Complexity & follow-ups
 
-- **Gomoku (K-in-a-row on a big M×N):** counters don't generalize (a line of K can sit
-  anywhere). Instead, check only the four directions **through the last move**, counting
-  contiguous same-marks — O(K) per move.
-- **Connect-4:** add gravity (a move drops to the lowest empty row in its column) and check
-  around the landing cell. Board + Game stay; the **placement rule** and **WinningStrategy**
-  change.
-- **Bot player:** a `Player` interface with a human and a minimax/alpha-beta AI
-  implementation — Strategy again.
-- **Networked play:** turn tokens + authoritative server state so two clients can't both
-  move.
+- **Gomoku (K-in-a-row on a big M×N):** counters don't generalize (a line of K can sit anywhere). Instead, check only the four directions **through the last move**, counting contiguous same-marks — O(K) per move.
+- **Connect-4:** add gravity (a move drops to the lowest empty row in its column) and check around the landing cell. Board + Game stay; the **placement rule** and **WinningStrategy** change.
+- **Bot player:** a `Player` interface with a human and a minimax/alpha-beta AI implementation — Strategy again.
+- **Networked play:** turn tokens + authoritative server state so two clients can't both move.
+
+---
 
 ## Design drills
 
@@ -170,21 +364,12 @@ are O(1) with O(N) space. It's a small board, but the interviewer is checking wh
 
 <QA q="How do you detect a win in O(1) instead of rescanning the board?">
 
-Keep a running counter for each row, each column, and the two diagonals; player X adds
-`+1` and player O adds `−1`. A move updates at most four counters (its row, its column, and
-each diagonal it lies on). If any of those reaches `+N` or `−N`, the move just completed
-that line. That's O(1) time per move and O(N) extra space, versus O(N) (or O(N²)) for
-rescanning lines.
+Keep a running counter for each row, each column, and the two diagonals; player X adds `+1` and player O adds `−1`. A move updates at most four counters (its row, its column, and each diagonal it lies on). If any of those reaches `+N` or `−N`, the move just completed that line. That's O(1) time per move and O(N) extra space, versus O(N) (or O(N²)) for rescanning lines.
 
 </QA>
 
 <QA q="How would you extend this to Connect-4 or Gomoku without rewriting it?">
 
-Isolate what varies behind interfaces. The **win rule** becomes a `WinningStrategy`
-(takes the board + last move, returns whether it won), and the **placement rule** becomes
-its own seam (Connect-4 adds gravity). `Board` and `Game` — the grid storage and the turn
-loop — stay fixed; a new game is a new strategy pair. For Gomoku's K-in-a-row, the strategy
-checks the four directions through the last move in O(K) rather than using full-line
-counters, since a winning run can appear anywhere on a large board.
+Isolate what varies behind interfaces. The **win rule** becomes a `WinningStrategy` (takes the board + last move, returns whether it won), and the **placement rule** becomes its own seam (Connect-4 adds gravity). `Board` and `Game` — the grid storage and the turn loop — stay fixed; a new game is a new strategy pair. For Gomoku's K-in-a-row, the strategy checks the four directions through the last move in O(K) rather than using full-line counters, since a winning run can appear anywhere on a large board.
 
 </QA>

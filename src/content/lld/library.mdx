@@ -6,38 +6,35 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "entity-modeling"]
 ---
 
+## The real-world analogy: physical books vs inventory barcodes
+
+Imagine walking into a large municipal library:
+1. **The Card Catalog (Book)**: You pull open a long wooden drawer and browse index cards. You find the card for *1984 by George Orwell*. The card lists the publisher, pages, and ISBN. This represents a **Book**—a single logical entity representing the metadata. You cannot take the card home and read it.
+2. **The Bookshelf Stack (BookCopy)**: You walk back to shelf 4-B. There stand five physical paperback copies of *1984*. Each copy has its own unique sticky barcode pasted on the back (e.g. `4471`, `4472`). These represent **BookCopies**—physical assets with their own status (available, on loan, damaged, lost).
+
+If you merge these two concepts in code, you are violating the first rule of database normalization: you would have to write the title and author five times, and you wouldn't be able to easily track when copy `4471` is returned while copy `4472` remains checked out.
+
+---
+
 ## Scope it first
 
-*"Members search the catalog, borrow and return physical copies,
-reserve books that are out, and pay late fines. Librarians manage
-inventory. Single branch — multi-branch as a follow-up. OK?"*
+*"Members search the catalog, borrow and return physical copies, reserve books that are out, and pay late fines. Librarians manage inventory. Single branch — multi-branch as a follow-up. OK?"*
 
-This is the friendliest LLD classic, which is exactly why it's asked:
-with no concurrency fireworks to hide behind, the grading falls
-entirely on **entity modeling** — and one distinction decides the
-interview.
+This is the friendliest LLD classic, which is exactly why it's asked: with no concurrency fireworks to hide behind, the grading falls entirely on **entity modeling** — and one distinction decides the interview.
+
+---
 
 ## The one big idea: Book vs BookCopy
 
-"1984 by Orwell" and "the physical copy with barcode #4471" are
-different things. The catalog entry (title, author, ISBN) exists
-*once*; the library owns *five copies* of it, each with its own
-condition, shelf and loan history:
+"1984 by Orwell" and "the physical copy with barcode #4471" are different things. The catalog entry (title, author, ISBN) exists *once*; the library owns *five copies* of it, each with its own condition, shelf and loan history:
+- Search and reservations are about the **Book** ("is 1984 available?" = does *any* copy stand free).
+- Borrowing, returning, damage and fines are about the **BookCopy** (*which* physical object is in whose hands).
 
-- Search and reservations are about the **Book** ("is 1984
-  available?" = does *any* copy stand free).
-- Borrowing, returning, damage and fines are about the **BookCopy**
-  (*which* physical object is in whose hands).
+Merge them and everything breaks: five copies means five duplicate title rows ([the normalization sin](/basics/what-is-a-database)), and "who has the book?" has no answer because *the book* isn't a thing anyone can hold. This is the same item-vs-instance split as [BookMyShow's Seat vs per-show SeatState](/lld/bookmyshow) and a flight vs a specific departure — interviewers reuse the test endlessly because so many candidates fail it.
 
-Merge them and everything breaks: five copies means five duplicate
-title rows ([the normalization sin](/basics/what-is-a-database)), and
-"who has the book?" has no answer because *the book* isn't a thing
-anyone can hold. This is the same item-vs-instance split as
-[BookMyShow's Seat vs per-show SeatState](/lld/bookmyshow) and a
-flight vs a specific departure — interviewers reuse the test
-endlessly because so many candidates fail it.
+---
 
-## Entities & relationships
+## UML Class Diagram
 
 <Mermaid chart={`classDiagram
   class Book {
@@ -78,32 +75,16 @@ endlessly because so many candidates fail it.
   Library --> Loan : creates`} />
 
 The supporting decisions worth saying out loud:
+- **`Loan` is its own entity**, not fields on Member or Copy — it's the *relationship with history* (who, what, when, due, returned). Past loans are the audit trail; fines compute from them. Whenever two entities relate *with attributes*, the relationship is a class.
+- **`Reservation` targets the Book, not a copy** — the member wants *any* copy of 1984; binding to copy #4471 would make them wait for that one while #4472 sits free. A FIFO queue per book; on return, the head reservation converts to a hold.
+- **`BookCopy.status` is a small state machine** (`ON_SHELF → ON_LOAN → ON_SHELF`, with `RESERVED`/`LOST` branches) — guard transitions; "checkout a LOST copy" should be unrepresentable ([the State discipline](/lld/elevator)).
+- **Fines as records, not arithmetic on the fly** — a `Fine` is created at return-time (days late × rate via a [Strategy](/lld/design-patterns) — children's books may differ from DVDs), then *persists* until paid. Money facts are [append-only](/lld/splitwise).
 
-- **`Loan` is its own entity**, not fields on Member or Copy — it's
-  the *relationship with history* (who, what, when, due, returned).
-  Past loans are the audit trail; fines compute from them. Whenever
-  two entities relate *with attributes*, the relationship is a class.
-- **`Reservation` targets the Book, not a copy** — the member wants
-  *any* copy of 1984; binding to copy #4471 would make them wait for
-  that one while #4472 sits free. A FIFO
-  [queue](/dsa/stacks-and-queues) per book; on return, the head
-  reservation converts to a hold.
-- **`BookCopy.status` is a small state machine**
-  (`ON_SHELF → ON_LOAN → ON_SHELF`, with `RESERVED`/`LOST` branches) —
-  guard transitions; "checkout a LOST copy" should be unrepresentable
-  ([the State discipline](/lld/elevator)).
-- **Fines as records, not arithmetic on the fly** — a `Fine` is
-  created at return-time (days late × rate via a
-  [Strategy](/lld/design-patterns) — children's books may differ from
-  DVDs), then *persists* until paid. Money facts are
-  [append-only](/lld/splitwise).
-
-A `BookCopy` is a small state machine — here it is. Walk a normal loan
-(`Shelf → OnLoan → Shelf`), then the reservation path where a return skips the
-shelf and goes straight to a hold (`returnToHold`); then try an illegal move — a
-`checkout` while it's already on loan — and watch the copy simply refuse it.
+A `BookCopy` is a small state machine — here it is. Walk a normal loan (`Shelf → OnLoan → Shelf`), then the reservation path where a return skips the shelf and goes straight to a hold (`returnToHold`); then try an illegal move — a `checkout` while it's already on loan — and watch the copy simply refuse it.
 
 <Visualizer algo="state-machine" problem="book-loan" />
+
+---
 
 ## Think it through like the interview
 
@@ -140,22 +121,366 @@ shelf and goes straight to a hold (`returnToHold`); then try an illegal move —
   ]}
 />
 
+---
+
+## Implementation
+
+Below are complete implementations featuring inventory structures and fine-grained concurrent lock checking.
+
+### Python
+```python
+import threading
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Dict, List, Optional
+
+class CopyStatus(Enum):
+    ON_SHELF = 1
+    ON_LOAN = 2
+    RESERVED = 3
+    LOST = 4
+
+class Book:
+    def __init__(self, isbn: str, title: str, author: str):
+        self.isbn = isbn
+        self.title = title
+        self.author = author
+        self.copies: List['BookCopy'] = []
+        self.reservations: List['Reservation'] = []
+        self.lock = threading.Lock()
+
+class BookCopy:
+    def __init__(self, barcode: str, book: Book):
+        self.barcode = barcode
+        self.book = book
+        self.status = CopyStatus.ON_SHELF
+        self.lock = threading.Lock()
+
+class Member:
+    def __init__(self, member_id: str, name: str):
+        self.member_id = member_id
+        self.name = name
+        self.loans: List['Loan'] = []
+        self.fines_owed = 0.0
+        self.lock = threading.Lock()
+
+class Loan:
+    def __init__(self, copy: BookCopy, member: Member, duration_days: int = 14):
+        self.copy = copy
+        self.member = member
+        self.checkout_date = datetime.now()
+        self.due_date = self.checkout_date + timedelta(days=duration_days)
+        self.return_date: Optional[datetime] = None
+
+class Reservation:
+    def __init__(self, book: Book, member: Member):
+        self.book = book
+        self.member = member
+        self.reserved_at = datetime.now()
+
+class Library:
+    def __init__(self):
+        self.books: Dict[str, Book] = {}
+        self.copies: Dict[str, BookCopy] = {}
+        self.members: Dict[str, Member] = {}
+        self.lock = threading.Lock()
+
+    def checkout_copy(self, member_id: str, barcode: str) -> Loan:
+        with self.lock:
+            member = self.members.get(member_id)
+            copy = self.copies.get(barcode)
+            if not member or not copy:
+                raise ValueError("Invalid member or copy")
+            
+        # Prevent deadlocks by acquiring locks in consistent order
+        with member.lock, copy.lock:
+            if copy.status != CopyStatus.ON_SHELF:
+                raise ValueError("Copy is not available")
+            if member.fines_owed > 100.0:
+                raise ValueError("Outstanding fines exceed borrowing limit")
+            if len(member.loans) >= 5:
+                raise ValueError("Maximum loan limit reached")
+                
+            copy.status = CopyStatus.ON_LOAN
+            loan = Loan(copy, member)
+            member.loans.append(loan)
+            return loan
+```
+
+### Java
+```java
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
+
+enum CopyStatus { ON_SHELF, ON_LOAN, RESERVED, LOST }
+
+class Book {
+    String isbn;
+    String title;
+    String author;
+    List<BookCopy> copies = new ArrayList<>();
+    Queue<Reservation> reservations = new LinkedList<>();
+    final ReentrantLock lock = new ReentrantLock();
+
+    Book(String isbn, String title, String author) {
+        this.isbn = isbn;
+        this.title = title;
+        this.author = author;
+    }
+}
+
+class BookCopy {
+    String barcode;
+    Book book;
+    CopyStatus status = CopyStatus.ON_SHELF;
+    final ReentrantLock lock = new ReentrantLock();
+
+    BookCopy(String barcode, Book book) {
+        this.barcode = barcode;
+        this.book = book;
+    }
+}
+
+class Member {
+    String id;
+    String name;
+    List<Loan> loans = new ArrayList<>();
+    double finesOwed = 0.0;
+    final ReentrantLock lock = new ReentrantLock();
+
+    Member(String id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+}
+
+class Loan {
+    BookCopy copy;
+    Member member;
+    LocalDateTime checkoutDate = LocalDateTime.now();
+    LocalDateTime dueDate = checkoutDate.plusDays(14);
+    LocalDateTime returnedDate;
+
+    Loan(BookCopy copy, Member member) {
+        this.copy = copy;
+        this.member = member;
+    }
+}
+
+class Reservation {
+    Book book;
+    Member member;
+    LocalDateTime reservedAt = LocalDateTime.now();
+
+    Reservation(Book book, Member member) {
+        this.book = book;
+        this.member = member;
+    }
+}
+
+public class Library {
+    private final Map<String, Book> books = new HashMap<>();
+    private final Map<String, BookCopy> copies = new HashMap<>();
+    private final Map<String, Member> members = new HashMap<>();
+    private final ReentrantLock libraryLock = new ReentrantLock();
+
+    public Loan checkoutBook(String memberId, String barcode) {
+        libraryLock.lock();
+        Member member;
+        BookCopy copy;
+        try {
+            member = members.get(memberId);
+            copy = copies.get(barcode);
+            if (member == null || copy == null) {
+                throw new IllegalArgumentException("Invalid member or copy");
+            }
+        } finally {
+            libraryLock.unlock();
+        }
+
+        member.lock.lock();
+        try {
+            copy.lock.lock();
+            try {
+                if (copy.status != CopyStatus.ON_SHELF) {
+                    throw new IllegalStateException("Copy is not available");
+                }
+                if (member.finesOwed > 100.0) {
+                    throw new IllegalStateException("Fines exceed borrowing threshold limit");
+                }
+                if (member.loans.size() >= 5) {
+                    throw new IllegalStateException("Maximum borrow limit reached");
+                }
+                copy.status = CopyStatus.ON_LOAN;
+                Loan loan = new Loan(copy, member);
+                member.loans.add(loan);
+                return loan;
+            } finally {
+                copy.lock.unlock();
+            }
+        } finally {
+            member.lock.unlock();
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <string>
+#include <vector>
+#include <queue>
+#include <memory>
+#include <mutex>
+#include <chrono>
+#include <stdexcept>
+#include <unordered_map>
+
+enum class CopyStatus { ON_SHELF, ON_LOAN, RESERVED, LOST };
+
+class BookCopy;
+class Reservation;
+class Loan;
+
+class Book {
+public:
+    std::string isbn;
+    std::string title;
+    std::string author;
+    std::vector<std::shared_ptr<BookCopy>> copies;
+    std::queue<std::shared_ptr<Reservation>> reservations;
+    std::mutex mtx;
+
+    Book(std::string i, std::string t, std::string a) : isbn(i), title(t), author(a) {}
+};
+
+class BookCopy {
+public:
+    std::string barcode;
+    std::shared_ptr<Book> book;
+    CopyStatus status = CopyStatus::ON_SHELF;
+    std::mutex mtx;
+
+    BookCopy(std::string b, std::shared_ptr<Book> bk) : barcode(b), book(bk) {}
+};
+
+class Member {
+public:
+    std::string id;
+    std::string name;
+    std::vector<std::shared_ptr<Loan>> loans;
+    double finesOwed = 0.0;
+    std::mutex mtx;
+
+    Member(std::string i, std::string n) : id(i), name(n) {}
+};
+
+class Loan {
+public:
+    std::shared_ptr<BookCopy> copy;
+    std::shared_ptr<Member> member;
+    std::chrono::system_clock::time_point checkoutDate = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point dueDate = checkoutDate + std::chrono::hours(24 * 14);
+    std::chrono::system_clock::time_point returnedDate;
+
+    Loan(std::shared_ptr<BookCopy> c, std::shared_ptr<Member> m) : copy(c), member(m) {}
+};
+
+class Reservation {
+public:
+    std::shared_ptr<Book> book;
+    std::shared_ptr<Member> member;
+    std::chrono::system_clock::time_point reservedAt = std::chrono::system_clock::now();
+
+    Reservation(std::shared_ptr<Book> b, std::shared_ptr<Member> m) : book(b), member(m) {}
+};
+
+class Library {
+private:
+    std::unordered_map<std::string, std::shared_ptr<Book>> books;
+    std::unordered_map<std::string, std::shared_ptr<BookCopy>> copies;
+    std::unordered_map<std::string, std::shared_ptr<Member>> members;
+    std::mutex libraryMtx;
+
+public:
+    std::shared_ptr<Loan> checkoutBook(const std::string& memberId, const std::string& barcode) {
+        std::shared_ptr<Member> member;
+        std::shared_ptr<BookCopy> copy;
+        {
+            std::lock_guard<std::mutex> lock(libraryMtx);
+            if (members.find(memberId) == members.end() || copies.find(barcode) == copies.end()) {
+                throw std::invalid_argument("Invalid member or copy");
+            }
+            member = members[memberId];
+            copy = copies[barcode];
+        }
+
+        std::lock_guard<std::mutex> lockMem(member->mtx);
+        std::lock_guard<std::mutex> lockCopy(copy->mtx);
+
+        if (copy->status != CopyStatus::ON_SHELF) {
+            throw std::runtime_error("Copy is not available");
+        }
+        if (member->finesOwed > 100.0) {
+            throw std::runtime_error("Outstanding fines exceed borrowing threshold limit");
+        }
+        if (member->loans.size() >= 5) {
+            throw std::runtime_error("Maximum loan limit reached");
+        }
+
+        copy->status = CopyStatus::ON_LOAN;
+        auto loan = std::make_shared<Loan>(copy, member);
+        member->loans.push_back(loan);
+        return loan;
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why is it critical to separate Book and BookCopy into two different entities?",
+    options: [
+      "Because Book models static catalog metadata, whereas BookCopy models individual physical item instances with separate statuses, histories, and lifecycles.",
+      "Because compilers require distinct class mappings to optimize relational queries.",
+      "To restrict members from searching books from home."
+    ],
+    answer: "Because Book models static catalog metadata, whereas BookCopy models individual physical item instances with separate statuses, histories, and lifecycles.",
+    explanation: "If merged, you would duplicate Book metadata (title, author) for every physical copy, violating normalization. It also makes tracking per-copy status (lost, damaged, loaned) unworkable."
+  },
+  {
+    question: "At which level should a Reservation attach — Book or BookCopy?",
+    options: [
+      "The Book, because members want any copy of the title, not a specific barcode copy that might circulate slowly.",
+      "The BookCopy, to reserve a specific barcode physical block.",
+      "The Loan history ledger directly."
+    ],
+    answer: "The Book, because members want any copy of the title, not a specific barcode copy that might circulate slowly.",
+    explanation: "A reservation is for a title. If copy #1 is returned, it should satisfy the reservation. Tying it to a specific copy means members wait indefinitely while other copies are free."
+  },
+  {
+    question: "How do you prevent a deadlock when locking the Member and BookCopy resources during checkouts?",
+    options: [
+      "Acquire the locks in a globally consistent order (e.g., always lock the Member first, then the BookCopy).",
+      "Avoid locking the entities entirely and use thread sleeps.",
+      "Lock only the database transaction schema."
+    ],
+    answer: "Acquire the locks in a globally consistent order (e.g., always lock the Member first, then the BookCopy).",
+    explanation: "Deadlocks occur when thread A locks resource 1 and wants resource 2, while thread B locks resource 2 and wants resource 1. Ordering locks consistently guarantees thread execution completes sequentially."
+  }
+]} />
+
+---
+
 ## Walk a scenario
 
-"Asha borrows 1984": search finds the Book with
-`availableCopies() = 2` → librarian scans copy #4471 →
-`Library.checkout(asha, copy4471)` validates the *business rules*
-(member in good standing? under the 5-loan limit? no unpaid fines
-over ₹100?) → copy `ON_SHELF → ON_LOAN`, a `Loan` with dueDate = +14
-days. Return three days late → Loan closes, fine strategy creates a
-₹15 `Fine` on Asha → copy's status checks the reservation queue:
-Rahul reserved 1984, so `ON_SHELF` is skipped for `RESERVED`, Rahul
-gets a [notification](/lld/notification-system) and 48 hours to
-collect, expiry releases it ([TTL self-healing](/lld/bookmyshow),
-the library edition).
+"Asha borrows 1984": search finds the Book with `availableCopies() = 2` → librarian scans copy #4471 → `Library.checkout(asha, copy4471)` validates the *business rules* (member in good standing? under the 5-loan limit? no unpaid fines over ₹100?) → copy `ON_SHELF → ON_LOAN`, a `Loan` with dueDate = +14 days. Return three days late → Loan closes, fine strategy creates a ₹15 `Fine` on Asha → copy's status checks the reservation queue: Rahul reserved 1984, so `ON_SHELF` is skipped for `RESERVED`, Rahul gets a [notification](/lld/notification-system) and 48 hours to collect, expiry releases it ([TTL self-healing](/lld/bookmyshow), the library edition).
 
-That late-return path is the busiest flow in the system — worth seeing
-end to end:
+That late-return path is the busiest flow in the system — worth seeing end to end:
 
 <Mermaid chart={`sequenceDiagram
   participant L as Librarian
@@ -173,50 +498,36 @@ end to end:
   LIB->>N: notify Rahul — 48h hold timer starts
   Note over BC,RQ: timer expiry → next reservation,<br/>or release to shelf (TTL self-healing)`} />
 
-Business-rule placement is the quiet test here: the loan-limit check
-lives in `Library.checkout` (it spans member + loans), the
-status-transition guards live in `BookCopy` — rules sit with the data
-they protect ([encapsulation](/lld/oop-and-solid)), not in one god
-method.
+Business-rule placement is the quiet test here: the loan-limit check lives in `Library.checkout` (it spans member + loans), the status-transition guards live in `BookCopy` — rules sit with the data they protect ([encapsulation](/lld/oop-and-solid)), not in one god method.
+
+---
+
+## Q&A
 
 <QA q="Why must Book and BookCopy be separate classes? What breaks if they aren't?">
 
-They have different identity, lifecycle and relationships. Book is
-catalog: one row per title (ISBN, authors), the unit of search and
-reservation. BookCopy is inventory: one row per physical object
-(barcode, condition, status), the unit of loans, damage and loss.
-Merged, you either duplicate title data per copy (update anomalies —
-fix an author typo in five places) or you can't represent five copies
-with independent statuses at all; "reserve the book" and "loan this
-copy" become the same confused operation, and the loan history loses
-its target. The pattern generalizes — product vs stock unit, flight
-vs departure, [seat vs seat-state-per-show](/lld/bookmyshow) — and
-interviewers test it because conflating type with instance is the
-most common real-world modeling bug.
+They have different identity, lifecycle and relationships. Book is catalog: one row per title (ISBN, authors), the unit of search and reservation. BookCopy is inventory: one row per physical object (barcode, condition, status), the unit of loans, damage and loss. Merged, you either duplicate title data per copy (update anomalies — fix an author typo in five places) or you can't represent five copies with independent statuses at all; "reserve the book" and "loan this copy" become the same confused operation, and the loan history loses its target. The pattern generalizes — product vs stock unit, flight vs departure, [seat vs seat-state-per-show](/lld/bookmyshow) — and interviewers test it because conflating type with instance is the most common real-world modeling bug.
 
 </QA>
 
 <QA q="Where do reservations attach, and how does a returned copy meet the queue?">
 
-Reservations attach to the **Book** — the member wants any copy, so a
-per-book FIFO queue (with the member's position visible). On return,
-the copy's transition consults the book's queue before going
-ON_SHELF: if non-empty, dequeue the head, set the copy RESERVED for
-that member, notify them, and start a 48-hour hold timer; expiry
-either passes the copy to the next reservation or releases it to the
-shelf — TTL-based self-healing so no human cleanup is ever required.
-Edge cases worth naming: a member can't reserve a book with copies
-available (they should just borrow), can't hold duplicate
-reservations, and cancellation must heal queue positions. Attaching
-reservations to a copy is the trap: it strands members behind one
-specific barcode while identical copies circulate freely.
+Reservations attach to the **Book** — the member wants any copy, so a per-book FIFO queue (with the member's position visible). On return, the copy's transition consults the book's queue before going ON_SHELF: if non-empty, dequeue the head, set the copy RESERVED for that member, notify them, and start a 48-hour hold timer; expiry either passes the copy to the next reservation or releases it to the shelf — TTL-based self-healing so no human cleanup is ever required. Edge cases worth naming: a member can't reserve a book with copies available (they should just borrow), can't hold duplicate reservations, and cancellation must heal queue positions. Attaching reservations to a copy is the trap: it strands members behind one specific barcode while identical copies circulate freely.
 
 </QA>
 
+---
+
+## Complexity & follow-ups
+
+### Multi-Branch Extension
+The catalog doesn't change: Book stays global (1984 is 1984 everywhere). Inventory gains a dimension: BookCopy gets a `branch` (and transfer states like IN_TRANSIT for inter-branch loans), and availability becomes a per-branch question — `availableCopies(branch)` — while search may aggregate across branches. Reservations need a policy decision: per-branch queues (simple, members pick a pickup branch) vs global queue with routing (better availability, more moving parts) — say the trade-off, pick per-branch for v1. Loans, fines and members stay branch-agnostic (a member is one member everywhere). The meta-answer interviewers want: because Book/BookCopy were separated from the start, the multi-branch change touches only the inventory side — good entity boundaries are what make follow-ups cheap, and that's precisely what the follow-up is probing.
+
+---
+
 ## Practice — level up
 
-A library is **inventory + lending**: allocate a copy, return it, track who has
-what for how long. These drills rehearse those moves.
+A library is **inventory + lending**: allocate a copy, return it, track who has what for how long. These drills rehearse those moves.
 
 <PracticeLadder
   topic="Inventory & lending"
@@ -242,21 +553,3 @@ what for how long. These drills rehearse those moves.
     }
   ]}
 />
-
-<QA q="Follow-up: extend to multiple branches. What changes — and what doesn't?">
-
-The catalog doesn't change: Book stays global (1984 is 1984
-everywhere). Inventory gains a dimension: BookCopy gets a `branch`
-(and transfer states like IN_TRANSIT for inter-branch loans), and
-availability becomes a per-branch question — `availableCopies(branch)`
-— while search may aggregate across branches. Reservations need a
-policy decision: per-branch queues (simple, members pick a pickup
-branch) vs global queue with routing (better availability, more
-moving parts) — say the trade-off, pick per-branch for v1. Loans,
-fines and members stay branch-agnostic (a member is one member
-everywhere). The meta-answer interviewers want: because Book/BookCopy
-were separated from the start, the multi-branch change touches only
-the inventory side — good entity boundaries are what make follow-ups
-cheap, and that's precisely what the follow-up is probing.
-
-</QA>

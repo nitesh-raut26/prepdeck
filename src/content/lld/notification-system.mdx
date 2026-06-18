@@ -6,28 +6,32 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "patterns", "async"]
 ---
 
+## The real-world analogy: sorting bins and courier runner dispatchers
+
+Imagine a massive corporate mailroom handling outgoing client messaging:
+1. **The Inbound Request (Event)**: Callers do not walk in carrying full letters or hardcoded paper mail envelopes. They simply slide a standard index card under the window containing an event slip (e.g. `Event: ORDER_SHIPPED, data: {order_id: 123}`).
+2. **Preference Routing Store**: The mail clerk looks up the recipient's file folder (Preference Store) to determine routing: "John wants this by SMS, email, and push."
+3. **Dedicated Couriers (Strategy Adapters)**: The mailroom has three specialized courier drivers standing ready: an Email courier, an SMS courier, and a Push courier. Each courier speaks the specific language of their delivery medium (SMTP, Twilio SDK, FCM SDK).
+4. **Idempotency Stamp (Deduplication)**: To ensure that network glitches or duplicate queue messages do not send John two SMS notifications, the mail clerk stamps each outgoing slip with a unique request ID. If a courier attempts to log out a letter with a stamped ID that has already been dispatched in the ledger, the mail clerk halts the delivery as a no-op.
+
+---
+
 ## Scope it first
 
-*"A service other teams call to notify users — email, SMS, push.
-Templates with variables, user channel preferences and opt-outs,
-retries on provider failure, no duplicates, rate limits so we don't
-spam. OK?"*
+*"A service other teams call to notify users — email, SMS, push. Templates with variables, user channel preferences and opt-outs, retries on provider failure, no duplicates, rate limits so we don't spam. OK?"*
 
-Why this one matters disproportionately: you will almost certainly
-*build or extend one at work* — every product notifies — and it's the
-LLD where the [pattern vocabulary](/lld/patterns-in-depth) stops being
-academic: Strategy, Factory, Decorator, Observer and a queue all earn
-their keep in one design. It's also the cleanest **LLD→HLD bridge** in
-the catalog.
+Why this one matters disproportionately: you will almost certainly *build or extend one at work* — every product notifies — and it's the LLD where the [pattern vocabulary](/lld/patterns-in-depth) stops being academic: Strategy, Factory, Decorator, Observer and a queue all earn their keep in one design. It's also the cleanest **LLD→HLD bridge** in the catalog.
 
-## Entities & relationships
+---
+
+## UML Class Diagram
 
 <Mermaid chart={`classDiagram
   class NotificationService {
     +notify(userId, event, payload)
   }
   class NotificationRequest {
-    +id (idempotency key)
+    +id
     +user, event, payload
   }
   class Template {
@@ -43,98 +47,35 @@ the catalog.
   class EmailChannel
   class SmsChannel
   class PushChannel
+  class RetryingChannelDecorator
   NotificationService --> NotificationRequest : enqueues
   NotificationService --> PreferenceStore
   NotificationService --> Template
   Channel <|.. EmailChannel
   Channel <|.. SmsChannel
   Channel <|.. PushChannel
+  Channel <|.. RetryingChannelDecorator
+  RetryingChannelDecorator o-- Channel
   NotificationService --> Channel : via factory`} />
 
-The flow: a caller says `notify(user, ORDER_SHIPPED, {orderId: 42})` —
-note callers speak in **events**, never in channels or copy; that
-decision is the whole API. The service resolves preferences ("Asha:
-push for shipping, email for billing, never SMS"), renders the
-template per channel, and dispatches.
+The flow: a caller says `notify(user, ORDER_SHIPPED, {orderId: 42})` — note callers speak in **events**, never in channels or copy; that decision is the whole API. The service resolves preferences ("Asha: push for shipping, email for billing, never SMS"), renders the template per channel, and dispatches.
+
+---
 
 ## Where the patterns live (the showcase)
 
-- **Strategy — `Channel`.** One interface, three (then ten)
-  implementations. Adding WhatsApp = one class
-  ([Open/Closed](/lld/oop-and-solid), again).
-- **Factory + registry** — `ChannelFactory.for(channelType)` so the
-  dispatch loop never names a concrete class
-  ([patterns-in-depth](/lld/patterns-in-depth)).
-- **Adapter** — each channel wraps a vendor SDK (SES, Twilio, FCM)
-  behind the `Channel` port; swapping SMS providers touches one file.
-- **Decorator** — retries, rate limiting and metrics wrap any channel:
-  `Metered(RateLimited(Retrying(SmsChannel)))` — assembled at startup,
-  testable in isolation.
-- **Observer — the caller side.** Product code *publishes*
-  `OrderShipped`; the notification service is one subscriber.
-  Shipping code knows nothing about emails — which is why marketing
-  can add a "review your purchase" notification without touching the
-  orders team ([event-driven decoupling](/backend/microservices) in
-  miniature).
-- **Template Method-ish rendering** — one `Template` per (event,
-  locale), rendering per channel: email gets HTML + subject, SMS gets
-  160 chars, push gets title + body. Content shaping is a *template*
-  concern, never an if-chain in the channel.
+- **Strategy — `Channel`.** One interface, three (then ten) implementations. Adding WhatsApp = one class ([Open/Closed](/lld/oop-and-solid), again).
+- **Factory + registry** — `ChannelFactory.for(channelType)` so the dispatch loop never names a concrete class ([patterns-in-depth](/lld/patterns-in-depth)).
+- **Adapter** — each channel wraps a vendor SDK (SES, Twilio, FCM) behind the `Channel` port; swapping SMS providers touches one file.
+- **Decorator** — retries, rate limiting and metrics wrap any channel: `Metered(RateLimited(Retrying(SmsChannel)))` — assembled at startup, testable in isolation.
+- **Observer — the caller side.** Product code *publishes* `OrderShipped`; the notification service is one subscriber. Shipping code knows nothing about emails — which is why marketing can add a "review your purchase" notification without touching the orders team ([event-driven decoupling](/backend/microservices) in miniature).
+- **Template Method-ish rendering** — one `Template` per (event, locale), rendering per channel: email gets HTML + subject, SMS gets 160 chars, push gets title + body. Content shaping is a *template* concern, never an if-chain in the channel.
 
-That **Observer** seam is the decoupling that makes the whole thing extensible —
-the orders service publishes one event and never learns who listens. Step through
-a publish fanning out to subscribers, then `unsubscribe` one (a user opts out) and
-publish again:
+That **Observer** seam is the decoupling that makes the whole thing extensible — the orders service publishes one event and never learns who listens.
 
 <Visualizer algo="observer" />
 
-## The reliability core (where seniors are graded)
-
-The naive version sends synchronously in the request path. The real
-version is **asynchronous by construction**:
-
-1. `notify()` validates, assigns a **request id**, persists the
-   request, **enqueues**, returns. (Caller latency: milliseconds.
-   Provider outages: invisible to callers —
-   [the queue's job](/hld/messaging-and-queues).)
-2. Workers consume, resolve preferences, render, dispatch per channel.
-3. **Retries with exponential backoff + jitter** on transient
-   failures (Decorator); after N attempts → **dead-letter queue** for
-   inspection, never silent drop.
-4. **Idempotency end-to-end:** the queue is at-least-once, so workers
-   may see a request twice; a `(request id, channel)` sent-record
-   makes redelivery a no-op — *"no duplicate notifications"* is a
-   dedup-key promise, not a hope
-   ([the same move as WhatsApp messages](/hld/design-whatsapp)).
-5. **Status tracking:** per (request, channel):
-   `PENDING → SENT → DELIVERED/FAILED` — provider delivery callbacks
-   ([webhooks](/basics/what-is-an-api)) advance it. A small
-   [state machine](/lld/atm), one more time.
-
-<Mermaid chart={`flowchart LR
-  CALLER[Orders service<br/>publishes OrderShipped] --> NS[NotificationService<br/>validate · assign id · persist]
-  NS --> Q[[Queue<br/>at-least-once]]
-  Q --> W[Worker]
-  W --> PREF[(Preferences<br/>checked at SEND time)]
-  W --> T[Template<br/>renders per channel]
-  W --> DEDUP{"(request id, channel)<br/>already sent?"}
-  DEDUP -->|yes| NOOP[no-op — dedup]
-  DEDUP -->|no| CH[Channel decorators:<br/>Metered → RateLimited → Retrying]
-  CH --> EMAIL[SES adapter]
-  CH --> SMS[Twilio adapter]
-  CH --> PUSH[FCM adapter]
-  CH -->|N retries exhausted| DLQ[[Dead-letter queue —<br/>never silent drop]]
-  style DEDUP fill:#E0E7FF,stroke:#4F46E5
-  style DLQ fill:#FFE4E6,stroke:#E11D48`} />
-
-Plus the two product-integrity rules that distinguish people who've
-run one: **opt-outs are checked at send time, not enqueue time** (a
-user who unsubscribes between enqueue and send must not be messaged —
-compliance, not courtesy), and **rate limiting is per-user as well as
-per-provider** (a bug upstream must not let one user get 400 pushes —
-the [token bucket](/hld/rate-limiting), applied with empathy). For
-ordering ("OTP must beat marketing"): separate queues per priority
-class, never one queue with sorting.
+---
 
 ## Think it through like the interview
 
@@ -171,80 +112,428 @@ class, never one queue with sorting.
   ]}
 />
 
+---
+
+## Implementation
+
+Below are complete implementations with thread-safe message queues and retry decorator mechanics.
+
+### Python
+```python
+import time
+import queue
+import threading
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
+
+class NotificationRequest:
+    def __init__(self, request_id: str, user_id: str, event_type: str, payload: dict):
+        self.request_id = request_id
+        self.user_id = user_id
+        self.event_type = event_type
+        self.payload = payload
+
+class Channel(ABC):
+    @abstractmethod
+    def send(self, user_id: str, content: str) -> bool:
+        pass
+
+class EmailChannel(Channel):
+    def send(self, user_id: str, content: str) -> bool:
+        print(f"[Email] Sending to {user_id}: {content}")
+        return True
+
+class SmsChannel(Channel):
+    def send(self, user_id: str, content: str) -> bool:
+        print(f"[SMS] Sending to {user_id}: {content}")
+        return True
+
+# Decorator pattern for retry logic
+class RetryingChannelDecorator(Channel):
+    def __init__(self, inner: Channel, retries: int = 3):
+        self.inner = inner
+        self.retries = retries
+        
+    def send(self, user_id: str, content: str) -> bool:
+        for attempt in range(self.retries):
+            try:
+                if self.inner.send(user_id, content):
+                    return True
+            except Exception:
+                time.sleep(2 ** attempt)
+        return False
+
+class PreferenceStore:
+    def __init__(self):
+        self.preferences: Dict[str, List[str]] = {} # user_id -> allowed channels
+        self.lock = threading.Lock()
+        
+    def get_preferred_channels(self, user_id: str) -> List[str]:
+        with self.lock:
+            return self.preferences.get(user_id, ["email", "sms"])
+
+class NotificationDispatcher:
+    def __init__(self, preference_store: PreferenceStore):
+        self.queue = queue.Queue()
+        self.pref_store = preference_store
+        self.channels: Dict[str, Channel] = {
+            "email": RetryingChannelDecorator(EmailChannel()),
+            "sms": RetryingChannelDecorator(SmsChannel())
+        }
+        self.sent_records = set()
+        self.lock = threading.Lock()
+        self.running = False
+        
+    def enqueue(self, request: NotificationRequest):
+        self.queue.put(request)
+        
+    def start_worker(self):
+        self.running = True
+        self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.worker_thread.start()
+
+    def _process_queue(self):
+        while self.running:
+            try:
+                request = self.queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+                
+            preferred = self.pref_store.get_preferred_channels(request.user_id)
+            for ch_name in preferred:
+                dedup_key = (request.request_id, ch_name)
+                with self.lock:
+                    if dedup_key in self.sent_records:
+                        continue # Already processed
+                    self.sent_records.add(dedup_key)
+                
+                channel = self.channels.get(ch_name)
+                if channel:
+                    content = f"Event {request.event_type} triggered. Payload: {request.payload}"
+                    channel.send(request.user_id, content)
+            self.queue.task_done()
+```
+
+### Java
+```java
+import java.util.*;
+import java.util.concurrent.*;
+
+class NotificationRequest {
+    String requestId;
+    String userId;
+    String eventType;
+    Map<String, String> payload;
+
+    NotificationRequest(String id, String user, String event, Map<String, String> payload) {
+        this.requestId = id;
+        this.userId = user;
+        this.eventType = event;
+        this.payload = payload;
+    }
+}
+
+interface Channel {
+    boolean send(String userId, String content);
+}
+
+class EmailChannel implements Channel {
+    public boolean send(String userId, String content) {
+        System.out.println("[Email] Sent to " + userId + ": " + content);
+        return true;
+    }
+}
+
+class SmsChannel implements Channel {
+    public boolean send(String userId, String content) {
+        System.out.println("[SMS] Sent to " + userId + ": " + content);
+        return true;
+    }
+}
+
+class RetryingChannel implements Channel {
+    private final Channel inner;
+    private final int maxRetries = 3;
+
+    RetryingChannel(Channel inner) { this.inner = inner; }
+
+    public boolean send(String userId, String content) {
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                if (inner.send(userId, content)) return true;
+            } catch (Exception e) {
+                try {
+                    Thread.sleep((long) Math.pow(2, i) * 1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        return false;
+    }
+}
+
+class PreferenceStore {
+    private final Map<String, List<String>> userPrefs = new ConcurrentHashMap<>();
+    
+    public List<String> getPreferredChannels(String userId) {
+        return userPrefs.getOrDefault(userId, Arrays.asList("email", "sms"));
+    }
+}
+
+public class NotificationDispatcher {
+    private final BlockingQueue<NotificationRequest> queue = new LinkedBlockingQueue<>();
+    private final PreferenceStore prefStore;
+    private final Map<String, Channel> channels = new HashMap<>();
+    private final Set<String> sentRecords = ConcurrentHashMap.newKeySet();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    public NotificationDispatcher(PreferenceStore store) {
+        this.prefStore = store;
+        channels.put("email", new RetryingChannel(new EmailChannel()));
+        channels.put("sms", new RetryingChannel(new SmsChannel()));
+    }
+
+    public void enqueue(NotificationRequest req) {
+        queue.add(req);
+    }
+
+    public void start() {
+        executor.submit(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    NotificationRequest req = queue.take();
+                    List<String> preferred = prefStore.getPreferredChannels(req.userId);
+                    for (String chName : preferred) {
+                        String dedupKey = req.requestId + ":" + chName;
+                        if (sentRecords.add(dedupKey)) { // Atomically add to set
+                            Channel channel = channels.get(chName);
+                            if (channel != null) {
+                                String content = "Event: " + req.eventType + ", Data: " + req.payload;
+                                channel.send(req.userId, content);
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+    }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <queue>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <memory>
+#include <cmath>
+
+struct NotificationRequest {
+    std::string requestId;
+    std::string userId;
+    std::string eventType;
+    std::unordered_map<std::string, std::string> payload;
+};
+
+class Channel {
+public:
+    virtual ~Channel() = default;
+    virtual bool send(const std::string& userId, const std::string& content) = 0;
+};
+
+class EmailChannel : public Channel {
+public:
+    bool send(const std::string& userId, const std::string& content) override {
+        std::cout << "[Email] Sent to " << userId << ": " << content << std::endl;
+        return true;
+    }
+};
+
+class SmsChannel : public Channel {
+public:
+    bool send(const std::string& userId, const std::string& content) override {
+        std::cout << "[SMS] Sent to " << userId << ": " << content << std::endl;
+        return true;
+    }
+};
+
+class RetryingChannel : public Channel {
+private:
+    std::shared_ptr<Channel> inner;
+    int maxRetries = 3;
+public:
+    RetryingChannel(std::shared_ptr<Channel> in) : inner(in) {}
+    bool send(const std::string& userId, const std::string& content) override {
+        for (int i = 0; i < maxRetries; ++i) {
+            try {
+                if (inner->send(userId, content)) return true;
+            } catch (...) {
+                int sleep_sec = static_cast<int>(std::pow(2, i));
+                std::this_thread::sleep_for(std::chrono::seconds(sleep_sec));
+            }
+        }
+        return false;
+    }
+};
+
+class PreferenceStore {
+private:
+    std::unordered_map<std::string, std::vector<std::string>> preferences;
+    std::mutex mtx;
+public:
+    std::vector<std::string> getPreferredChannels(const std::string& userId) {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = preferences.find(userId);
+        if (it != preferences.end()) return it->second;
+        return {"email", "sms"};
+    }
+};
+
+class NotificationDispatcher {
+private:
+    std::queue<NotificationRequest> requestQueue;
+    std::shared_ptr<PreferenceStore> prefStore;
+    std::unordered_map<std::string, std::shared_ptr<Channel>> channels;
+    std::unordered_set<std::string> sentRecords;
+    std::mutex mtx;
+    std::thread workerThread;
+    bool running = false;
+
+    void processQueue() {
+        while (running) {
+            NotificationRequest req;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (requestQueue.empty()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+                req = requestQueue.front();
+                requestQueue.pop();
+            }
+
+            auto preferred = prefStore->getPreferredChannels(req.userId);
+            for (const auto& chName : preferred) {
+                std::string dedupKey = req.requestId + ":" + chName;
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    if (sentRecords.find(dedupKey) != sentRecords.end()) {
+                        continue; // Already processed
+                    }
+                    sentRecords.insert(dedupKey);
+                }
+
+                auto it = channels.find(chName);
+                if (it != channels.end()) {
+                    std::string content = "Event: " + req.eventType;
+                    it->second->send(req.userId, content);
+                }
+            }
+        }
+    }
+
+public:
+    NotificationDispatcher(std::shared_ptr<PreferenceStore> store) : prefStore(store) {
+        channels["email"] = std::make_shared<RetryingChannel>(std::make_shared<EmailChannel>());
+        channels["sms"] = std::make_shared<RetryingChannel>(std::make_shared<SmsChannel>());
+    }
+
+    ~NotificationDispatcher() {
+        running = false;
+        if (workerThread.joinable()) workerThread.join();
+    }
+
+    void enqueue(const NotificationRequest& req) {
+        std::lock_guard<std::mutex> lock(mtx);
+        requestQueue.push(req);
+    }
+
+    void start() {
+        running = true;
+        workerThread = std::thread(&NotificationDispatcher::processQueue, this);
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why should a notification service accept client request event names (e.g. ORDER_SHIPPED) rather than raw message strings?",
+    options: [
+      "It abstracts away implementation details, allowing formatting template versions, channel choices, and localization to be managed centrally at one chokepoint without caller adjustments.",
+      "Events are parsed faster by compiled execution layers.",
+      "Events bypass opt-out preference stores entirely."
+    ],
+    answer: "It abstracts away implementation details, allowing formatting template versions, channel choices, and localization to be managed centrally at one chokepoint without caller adjustments.",
+    explanation: "If callers pass raw text messages, the calling team determines content, translation, and channel selection, which ruins global opt-outs and layout unified audits."
+  },
+  {
+    question: "At what point in the dispatch flow should the user opt-out preference check be performed?",
+    options: [
+      "At send time (immediately before dispatch), to respect modifications that occurred after the item was originally enqueued.",
+      "At enqueue time (when the caller invokes notify()), to skip queue space allocation.",
+      "At templating rendering build compilation time."
+    ],
+    answer: "At send time (immediately before dispatch), to respect modifications that occurred after the item was originally enqueued.",
+    explanation: "If a user opts out while an event sits in the message queue, checking at send time ensures compliance. Checking at enqueue time risks sending spam to users who recently unsubscribed."
+  },
+  {
+    question: "How does the system ensure 'no duplicate' delivery when dealing with at-least-once queues?",
+    options: [
+      "By atomically checking and recording the unique pair '(request_id, channel)' in a persistent dedup store before executing the dispatch runner.",
+      "By only using single-threaded local loops.",
+      "By compressing templates with static hashes."
+    ],
+    answer: "By atomically checking and recording the unique pair '(request_id, channel)' in a persistent dedup store before executing the dispatch runner.",
+    explanation: "Because queues can redeliver items, recording the dispatched task atomically ensures duplicate worker evaluations hit a cache hit and short-circuit."
+  }
+]} />
+
+---
+
 ## Walk a scenario
 
-Order ships → orders service publishes `OrderShipped{user, orderId}` →
-notification service (subscriber) creates request `n-7741`, persists,
-enqueues, acks. Worker picks it up: preferences say push + email;
-template `order_shipped` renders both shapes; `PushChannel` (wrapped
-in retry/ratelimit decorators) sends — FCM times out, retry #2
-succeeds → status SENT; email passes through SES adapter → SENT;
-webhook later marks DELIVERED. Same afternoon, a redelivered queue
-message replays `n-7741` — the sent-record short-circuits both
-channels. Nobody got two pushes; the orders team never knew any of
-this happened. That mutual invisibility *is* the design working.
+Order ships → orders service publishes `OrderShipped{user, orderId}` → notification service (subscriber) creates request `n-7741`, persists, enqueues, acks. Worker picks it up: preferences say push + email; template `order_shipped` renders both shapes; `PushChannel` (wrapped in retry/ratelimit decorators) sends — FCM times out, retry #2 succeeds → status SENT; email passes through SES adapter → SENT; webhook later marks DELIVERED. Same afternoon, a redelivered queue message replays `n-7741` — the sent-record short-circuits both channels. Nobody got two pushes; the orders team never knew any of this happened. That mutual invisibility *is* the design working.
+
+---
+
+## Q&A
 
 <QA q="Why must the notification API accept events rather than messages — i.e., notify(user, ORDER_SHIPPED, data) and not send(user, 'email', 'Your order...')?">
 
-Because the caller knows *what happened*; the notification system owns
-*how users hear about it*. Event-based APIs centralize channel
-selection (preferences change per user without caller changes), copy
-(templates versioned, localized, A/B-tested in one place), compliance
-(opt-outs enforced at one chokepoint), and evolution (adding a digest
-mode or WhatsApp channel touches zero callers). Message-based APIs
-scatter all of that across every team — fifty services each
-hardcoding subject lines and channel choices, and an unsubscribe bug
-in each. It's the [API-as-contract principle](/basics/what-is-an-api):
-expose intent, hide mechanism — and it's the first thing reviewers
-check in this design because it determines whether everything else is
-even possible.
+Because the caller knows *what happened*; the notification system owns *how users hear about it*. Event-based APIs centralize channel selection (preferences change per user without caller changes), copy (templates versioned, localized, A/B-tested in one place), compliance (opt-outs enforced at one chokepoint), and evolution (adding a digest mode or WhatsApp channel touches zero callers). Message-based APIs scatter all of that across every team — fifty services each hardcoding subject lines and channel choices, and an unsubscribe bug in each. It's the [API-as-contract principle](/basics/what-is-an-api): expose intent, hide mechanism — and it's the first thing reviewers check in this design because it determines whether everything else is even possible.
 
 </QA>
 
 <QA q="Guarantee 'no duplicate notifications' when your queue is at-least-once and providers time out ambiguously.">
 
-Three layers of the same idea. (1) Producer: every logical
-notification gets a stable request id at creation — the caller
-retrying `notify()` reuses it, so caller retries collapse. (2) Worker:
-before dispatching on a channel, atomically check-and-record
-(request id, channel) in a sent-store; queue redeliveries hit the
-record and no-op — the check-and-set must be atomic or two concurrent
-deliveries race ([check-then-act](/lld/bookmyshow), as always). (3)
-Provider: pass the id as the provider's idempotency key where
-supported, so an ambiguous timeout retried doesn't double-send at
-*their* end ([the ATM's transaction id](/lld/atm), the
-[Stripe pattern](/backend/rest-and-graphql)). The honest caveat that
-earns trust: with a provider that offers no idempotency, an ambiguous
-timeout forces a choice — risk a duplicate or risk a miss — and for
-OTPs you choose duplicate, for marketing you choose miss. Policy per
-notification class, stated explicitly.
+Three layers of the same idea. (1) Producer: every logical notification gets a stable request id at creation — the caller retrying `notify()` reuses it, so caller retries collapse. (2) Worker: before dispatching on a channel, atomically check-and-record (request id, channel) in a sent-store; queue redeliveries hit the record and no-op — the check-and-set must be atomic or two concurrent deliveries race ([check-then-act](/lld/bookmyshow), as always). (3) Provider: pass the id as the provider's idempotency key where supported, so an ambiguous timeout retried doesn't double-send at *their* end ([the ATM's transaction id](/lld/atm), the [Stripe pattern](/backend/rest-and-graphql)). The honest caveat that earns trust: with a provider that offers no idempotency, an ambiguous timeout forces a choice — risk a duplicate or risk a miss — and for OTPs you choose duplicate, for marketing you choose miss. Policy per notification class, stated explicitly.
 
 </QA>
 
 <QA q="Where does this LLD become an HLD problem, and what changes first?">
 
-The class design survives; the numbers attack it. At ~10⁶
-notifications/hour the single queue becomes partitioned
-streams (priority classes get isolation: OTP lanes never queue behind
-campaign blasts); the sent-record store becomes a real
-[key-value system](/hld/caching) with TTLs; per-provider rate limits
-become global coordination (N workers sharing one Twilio quota —
-[distributed rate limiting](/hld/rate-limiting)); template rendering
-for a 10 M-user campaign becomes a batch pipeline; and
-status/delivery callbacks become a webhook-ingestion system with its
-own [queue](/hld/case-ingestion-pipeline). What doesn't change: the
-Channel port, the event-based API, idempotency keys, send-time
-preference checks — the LLD seams *are* the HLD seams, which is the
-deepest reason to get the object design right first. This question is
-the bridge the whole design exists to teach.
+The class design survives; the numbers attack it. At ~10⁶ notifications/hour the single queue becomes partitioned streams (priority classes get isolation: OTP lanes never queue behind campaign blasts); the sent-record store becomes a real [key-value system](/hld/caching) with TTLs; per-provider rate limits become global coordination (N workers sharing one Twilio quota — [distributed rate limiting](/hld/rate-limiting)); template rendering for a 10 M-user campaign becomes a batch pipeline; and status/delivery callbacks become a webhook-ingestion system with its own [queue](/hld/case-ingestion-pipeline). What doesn't change: the Channel port, the event-based API, idempotency keys, send-time preference checks — the LLD seams *are* the HLD seams, which is the deepest reason to get the object design right first. This question is the bridge the whole design exists to teach.
 
 </QA>
 
+---
+
 ## Practice — level up
 
-A notification system is **pub/sub fan-out** with **throttling**: one event
-reaches many subscribers across channels, without spamming or duplicating. These
-drills isolate fan-out and rate control.
+A notification system is **pub/sub fan-out** with **throttling**: one event reaches many subscribers across channels, without spamming or duplicating. These drills isolate fan-out and rate control.
 
 <PracticeLadder
   topic="Fan-out & rate limiting"

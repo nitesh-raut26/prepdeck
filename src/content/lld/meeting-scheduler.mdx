@@ -6,30 +6,53 @@ difficulty: "Classic"
 tags: ["LLD", "oop", "intervals", "heap"]
 ---
 
+## The real-world analogy: conference room clipboard timelines
+
+Imagine walking down the hall of an office building. Outside each conference room door hangs a paper clipboard showing a calendar timeline:
+- **Linear Scan vs. Sorted Registry**: If the clipboard contains a disorganized stack of loose post-it notes with meeting times, you have to read every single note (taking O(N) operations) to check if your new meeting overlaps with any of them. If the clipboard has one single paper sheet pre-ruled with hours sorted from 9:00 AM to 5:00 PM, you immediately slide your eyes to your start time and look only at the slot immediately before and after (taking O(1) focus operations).
+- **Double-booking Prevention (Lock)**: Two people walk up to the clipboard simultaneously, pencils in hand. They both notice the 2:00 PM slot is empty. If they both start writing without acknowledging the other, they will overwrite each other's text. To prevent this, they must agree that only one person holds the clipboard pencil at a time (Mutex Lock).
+
+In software, we model this by sorting room timelines inside self-balancing binary search trees (like `TreeMap` or `std::map`) to perform O(log N) conflict lookups, and applying locks to prevent concurrent race conditions.
+
+---
+
 ## The ask
 
-Book meetings with a start and end time across a set of rooms: reject overlaps in the same
-room, assign a free room when one's available, and answer "how many rooms do we need?"
-(This is **My Calendar I/II** and **Meeting Rooms II / LeetCode 253** as a design problem.)
+Book meetings with a start and end time across a set of rooms: reject overlaps in the same room, assign a free room when one's available, and answer "how many rooms do we need?" (This is **My Calendar I/II** and **Meeting Rooms II / LeetCode 253** as a design problem.)
 
-<Callout type="info" title="Why this one, and at what level">
-It rewards knowing the **interval toolkit** ([heaps & intervals](/dsa/heaps-and-intervals))
-and wrapping it in clean objects. **SDE-1:** book + conflict detection. **SDE-2:** the
-min-rooms sweep-line/heap and a clean Scheduler API. **SDE-3:** recurring events, time
-zones, attendee free-slot intersection, and double-booking under concurrency. Asked at
-**Google, Microsoft, Amazon, Atlassian** (calendars are their bread and butter).
-</Callout>
+---
+
+## UML Class Diagram
+
+<Mermaid chart={`classDiagram
+  class Scheduler {
+    -rooms: List~Room~
+    +addRoom(roomId: String)
+    +bookMeeting(meeting: Meeting): String
+    +minRooms(meetings: List~Meeting~): int
+  }
+  class Room {
+    -roomId: String
+    -bookings: TreeMap~int, Meeting~
+    +book(meeting: Meeting): bool
+  }
+  class Meeting {
+    +start: int
+    +end: int
+    +title: String
+  }
+  Scheduler *-- Room
+  Room o-- Meeting
+`} />
+
+---
 
 ## The two core algorithms
 
-- **Conflict detection (one room):** two intervals `[s1,e1)` and `[s2,e2)` overlap iff
-  `s1 < e2 and s2 < e1`. Keep each room's bookings sorted (a `TreeMap`/balanced BST keyed
-  on start) so you can binary-search the neighbours and check only those — O(log n) per
-  booking instead of scanning all.
-- **Minimum rooms (sweep line + heap):** sort meetings by start; keep a **min-heap of end
-  times** of in-progress meetings. For each meeting, if the earliest end ≤ its start, a room
-  freed up (pop and reuse); else allocate a new room (push). The heap's max size is the
-  answer.
+- **Conflict detection (one room):** two intervals `[s1,e1)` and `[s2,e2)` overlap iff `s1 < e2 and s2 < e1`. Keep each room's bookings sorted (a `TreeMap`/balanced BST keyed on start) so you can binary-search the neighbours and check only those — O(log n) per booking instead of scanning all.
+- **Minimum rooms (sweep line + heap):** sort meetings by start; keep a **min-heap of end times** of in-progress meetings. For each meeting, if the earliest end ≤ its start, a room freed up (pop and reuse); else allocate a new room (push). The heap's max size is the answer.
+
+---
 
 ## Think it through like the interview
 
@@ -56,8 +79,210 @@ zones, attendee free-slot intersection, and double-booking under concurrency. As
   ]}
 />
 
+---
+
 ## Implementation
 
+Below are complete implementations with sorted interval lookups and concurrency protection locks.
+
+### Python
+```python
+import bisect
+import threading
+from typing import List, Tuple, Optional
+
+class Meeting:
+    def __init__(self, start: int, end: int, title: str):
+        self.start = start
+        self.end = end
+        self.title = title
+
+class Room:
+    def __init__(self, room_id: str):
+        self.room_id = room_id
+        self.bookings: List[Tuple[int, int, Meeting]] = []  # Keep sorted by start time
+        self.lock = threading.Lock()
+
+    def book(self, meeting: Meeting) -> bool:
+        with self.lock:
+            # Binary search neighbor index using bisect
+            idx = bisect.bisect_left(self.bookings, (meeting.start, meeting.end))
+            
+            # Check overlap with previous booking (if any)
+            if idx > 0:
+                prev_start, prev_end, _ = self.bookings[idx - 1]
+                if prev_end > meeting.start:
+                    return False  # Overlap!
+                    
+            # Check overlap with next booking (if any)
+            if idx < len(self.bookings):
+                next_start, next_end, _ = self.bookings[idx]
+                if meeting.end > next_start:
+                    return False  # Overlap!
+                    
+            # Insert into sorted list
+            self.bookings.insert(idx, (meeting.start, meeting.end, meeting))
+            return True
+
+class Scheduler:
+    def __init__(self):
+        self.rooms: List[Room] = []
+        self.lock = threading.Lock()
+
+    def add_room(self, room_id: str):
+        with self.lock:
+            self.rooms.append(Room(room_id))
+
+    def book_meeting(self, meeting: Meeting) -> Optional[str]:
+        # Try booking in rooms
+        for room in self.rooms:
+            if room.book(meeting):
+                return room.room_id
+        return None
+```
+
+### Java
+```java
+import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
+
+class Meeting {
+    int start;
+    int end;
+    String title;
+    Meeting(int s, int e, String t) {
+        this.start = s;
+        this.end = e;
+        this.title = t;
+    }
+}
+
+class Room {
+    String roomId;
+    // TreeMap keeps entries sorted by start time, allowing ceiling/floor log(N) operations
+    private final TreeMap<Integer, Meeting> bookings = new TreeMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
+
+    Room(String id) { this.roomId = id; }
+
+    public boolean book(Meeting meeting) {
+        lock.lock();
+        try {
+            // Find booking starting immediately at or after meeting.start
+            Integer nextStart = bookings.ceilingKey(meeting.start);
+            if (nextStart != null && nextStart < meeting.end) {
+                return false; // Overlaps with next meeting
+            }
+            // Find booking starting before meeting.start
+            Integer prevStart = bookings.floorKey(meeting.start);
+            if (prevStart != null) {
+                Meeting prevMeeting = bookings.get(prevStart);
+                if (prevMeeting.end > meeting.start) {
+                    return false; // Overlaps with previous meeting
+                }
+            }
+            bookings.put(meeting.start, meeting);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+
+public class Scheduler {
+    private final List<Room> rooms = new ArrayList<>();
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public void addRoom(String roomId) {
+        lock.lock();
+        try {
+            rooms.add(new Room(roomId));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public String bookMeeting(Meeting meeting) {
+        for (Room room : rooms) {
+            if (room.book(meeting)) {
+                return room.roomId;
+            }
+        }
+        return null; // No available room fits this interval
+    }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <mutex>
+#include <memory>
+
+class Meeting {
+public:
+    int start;
+    int end;
+    std::string title;
+    Meeting(int s, int e, std::string t) : start(s), end(e), title(t) {}
+};
+
+class Room {
+private:
+    std::string roomId;
+    // Map in C++ is a red-black tree, sorted by key (start time)
+    std::map<int, std::shared_ptr<Meeting>> bookings;
+    std::mutex mtx;
+public:
+    Room(std::string id) : roomId(id) {}
+
+    std::string getRoomId() const { return roomId; }
+
+    bool book(std::shared_ptr<Meeting> meeting) {
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        // Find iterator pointing to first element >= meeting->start
+        auto it = bookings.lower_bound(meeting->start);
+        if (it != bookings.end() && it->first < meeting->end) {
+            return false; // Overlap with next meeting
+        }
+        if (it != bookings.begin()) {
+            auto prevIt = std::prev(it);
+            if (prevIt->second->end > meeting->start) {
+                return false; // Overlap with previous meeting
+            }
+        }
+        
+        bookings[meeting->start] = meeting;
+        return true;
+    }
+};
+
+class Scheduler {
+private:
+    std::vector<std::shared_ptr<Room>> rooms;
+    std::mutex mtx;
+public:
+    void addRoom(const std::string& id) {
+        std::lock_guard<std::mutex> lock(mtx);
+        rooms.push_back(std::make_shared<Room>(id));
+    }
+
+    std::string bookMeeting(std::shared_ptr<Meeting> meeting) {
+        for (auto& room : rooms) {
+            if (room->book(meeting)) {
+                return room->getRoomId();
+            }
+        }
+        return "";
+    }
+};
+```
+
+### TypeScript
 ```ts
 type Meeting = { start: number; end: number };
 
@@ -81,40 +306,61 @@ class Scheduler {
     return this.rooms.length - 1;
   }
 }
-
-// Minimum rooms for a fixed set — the sweep-line / min-heap classic.
-function minRooms(meetings: Meeting[]): number {
-  const sorted = [...meetings].sort((a, b) => a.start - b.start);
-  const endHeap: number[] = [];                    // min-heap of end times
-  let peak = 0;
-  for (const m of sorted) {
-    while (endHeap.length && endHeap[0] <= m.start) heapPop(endHeap);
-    heapPush(endHeap, m.end);
-    peak = Math.max(peak, endHeap.length);
-  }
-  return peak;
-}
 ```
 
 <Callout type="tip" title="Half-open intervals remove the off-by-one">
-Treat times as `[start, end)`. A meeting ending at 10:00 and one starting at 10:00 then
-**don't** conflict (`s1 < e2 and s2 < e1` is false), which matches how calendars actually
-behave. State the convention up front — it kills a whole class of boundary bugs.
+Treat times as `[start, end)`. A meeting ending at 10:00 and one starting at 10:00 then **don't** conflict (`s1 < e2 and s2 < e1` is false), which matches how calendars actually behave. State the convention up front — it kills a whole class of boundary bugs.
 </Callout>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why is a sorted TreeMap/Map preferred over an array to hold a room's meeting schedule?",
+    options: [
+      "It allows O(log N) binary search neighbor lookups to identify conflicts instead of checking every booking in an O(N) linear array scan.",
+      "TreeMap automatically compresses meeting strings.",
+      "TreeMap limits memory leaks by locking unused values."
+    ],
+    answer: "It allows O(log N) binary search neighbor lookups to identify conflicts instead of checking every booking in an O(N) linear array scan.",
+    explanation: "With a sorted tree structure, checking for an overlap only requires finding the ceiling (next start) and floor (previous start) of the new interval, bypassing linear searches."
+  },
+  {
+    question: "How does the half-open interval convention '[start, end)' reduce boundary bugs?",
+    options: [
+      "It dictates that a meeting ending at 10:00 does not overlap with a meeting starting at 10:00, naturally reflecting calendar behavior without complex equals check checks.",
+      "It requires time values to be stored in fractional decimals.",
+      "It forces the compiler to run calendar functions in thread-safe processes."
+    ],
+    answer: "It dictates that a meeting ending at 10:00 does not overlap with a meeting starting at 10:00, naturally reflecting calendar behavior without complex equals check checks.",
+    explanation: "By defining meeting intervals as inclusive of start but exclusive of end, the condition 's1 < e2 and s2 < e1' naturally permits meetings to share endpoints without conflict."
+  },
+  {
+    question: "What is the optimal lock granularity for a multi-room meeting scheduler system?",
+    options: [
+      "Per-room locks, so that bookings for Room A do not block concurrent booking operations for Room B.",
+      "A single global lock on the Scheduler class.",
+      "Locking individual Meeting objects."
+    ],
+    answer: "Per-room locks, so that bookings for Room A do not block concurrent booking operations for Room B.",
+    explanation: "A scheduler has disjoint room schedules. Locking per room ensures only requests competing for the *same* room are serialized, optimizing throughput."
+  }
+]} />
+
+---
 
 ## Complexity & follow-ups
 
-- **Booking:** O(log n) per room with a TreeMap; the naive `some()` scan above is O(n) per
-  room — fine to start, then optimize when asked.
+- **Booking:** O(log n) per room with a TreeMap; the naive `some()` scan above is O(n) per room — fine to start, then optimize when asked.
 - **Min rooms:** O(n log n) via the heap.
-- **Recurring meetings:** store a rule (RRULE) + expand lazily into instances within a
-  query window — don't materialize infinite occurrences.
+- **Recurring meetings:** store a rule (RRULE) + expand lazily into instances within a query window — don't materialize infinite occurrences.
 - **Time zones:** store everything in **UTC**, convert at the edges; mind DST transitions.
-- **Find a common slot** across attendees: merge each person's busy intervals, then
-  intersect the free gaps (interval intersection).
-- **Concurrency / double-booking:** two requests for the same room+time race — guard with a
-  per-room lock or an **optimistic** check-and-insert (unique constraint on room+overlap)
-  so the second booking fails cleanly.
+- **Find a common slot** across attendees: merge each person's busy intervals, then intersect the free gaps (interval intersection).
+- **Concurrency / double-booking:** two requests for the same room+time race — guard with a per-room lock or an **optimistic** check-and-insert (unique constraint on room+overlap) so the second booking fails cleanly.
+
+---
 
 ## Design drills
 
@@ -153,22 +399,12 @@ behave. State the convention up front — it kills a whole class of boundary bug
 
 <QA q="How do you compute the minimum number of rooms for a set of meetings?">
 
-It's the **maximum number of overlapping meetings** at any instant. Sort meetings by start
-time and sweep through them with a **min-heap of end times**: before placing each meeting,
-pop every end time `≤` its start (those rooms are now free), then push its end time. The
-peak heap size during the sweep is the minimum rooms needed — O(n log n). Equivalent
-framing: a sweep line over `+1` at each start and `−1` at each end, tracking the running
-peak.
+It's the **maximum number of overlapping meetings** at any instant. Sort meetings by start time and sweep through them with a **min-heap of end times**: before placing each meeting, pop every end time `≤` its start (those rooms are now free), then push its end time. The peak heap size during the sweep is the minimum rooms needed — O(n log n). Equivalent framing: a sweep line over `+1` at each start and `−1` at each end, tracking the running peak.
 
 </QA>
 
 <QA q="How do you stop two simultaneous requests from double-booking the same room?">
 
-Make the "check for conflict, then insert" step **atomic**. Either take a **per-room lock**
-so only one booking evaluates that room's timeline at a time, or use **optimistic
-concurrency** — insert with a database constraint/transaction that rejects overlapping
-intervals and have the loser retry. Add an **idempotency key** so a client retry of the
-same request doesn't create a duplicate. Without atomicity, both requests can see the slot
-free and both insert — the classic race.
+Make the "check for conflict, then insert" step **atomic**. Either take a **per-room lock** so only one booking evaluates that room's timeline at a time, or use **optimistic concurrency** — insert with a database constraint/transaction that rejects overlapping intervals and have the loser retry. Add an **idempotency key** so a client retry of the same request doesn't create a duplicate. Without atomicity, both requests can see the slot free and both insert — the classic race.
 
 </QA>

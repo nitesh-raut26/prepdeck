@@ -6,37 +6,46 @@ difficulty: "Classic"
 tags: ["LLD", "data-structures", "cache"]
 ---
 
+## The real-world analogy: the physical desk stack
+
+Imagine working at a physical office desk. You have a stack of paper folders (representing cache records):
+- **MRU (Most Recently Used)**: Whenever you retrieve a folder to read or update its content, you place it directly on top of the pile.
+- **LRU (Least Recently Used)**: Folders you haven't touched for days slowly sink to the very bottom of the pile.
+- **Eviction**: Your desk only has space to pile 10 folders. If you fetch an 11th folder, you look at the folder sitting at the very bottom of the stack, slide it out, and throw it in the archive bin (evict it) to keep the stack at exactly 10.
+
+If we represent this stack in software, we need a way to pull any folder out of the middle in O(1) time and move it to the top. A singly linked list would require walking from the top down to find the pointer behind the folder—taking O(N) operations. By attaching string loops to the front and back of each folder (forming a **Doubly Linked List**), we can instantly unlink any item from its neighbors and splice it onto the top in O(1) time.
+
+---
+
 ## The ask
 
-A fixed-capacity cache with **O(1)** `get(key)` and `put(key, value)`; when full,
-evict the **least-recently-used** entry.
+A fixed-capacity cache with **O(1)** `get(key)` and `put(key, value)`; when full, evict the **least-recently-used** entry.
+
+---
 
 ## The insight
 
-You need two things in O(1): **lookup by key** and **"move this to most-recent"
-/ "find the least-recent"**. No single structure gives both, so combine:
-
+You need two things in O(1): **lookup by key** and **"move this to most-recent" / "find the least-recent"**. No single structure gives both, so combine:
 - a **hash map** `key → node` for O(1) lookup, and
-- a **doubly linked list** in recency order (head = most recent, tail = least),
-  so moving a node or evicting the tail is O(1).
+- a **doubly linked list** in recency order (head = most recent, tail = least), so moving a node or evicting the tail is O(1).
 
 <Mermaid chart={`flowchart LR
   MAP[HashMap<br/>key → node] --> N2
   HEAD[head/MRU] --> N1[node A] --> N2[node B] --> N3[node C] --> TAIL[tail/LRU]`} />
 
+---
+
 ## See it run
 
-Step through the canonical trace below. Watch how `get` **promotes** a key to the
-front, and how a `put` into a full cache **evicts the tail** (the least-recently-used
-key). The map and the list highlight together — that pairing is the whole trick.
-Edit the capacity or the operations to test your own sequence.
+Step through the canonical trace below. Watch how `get` **promotes** a key to the front, and how a `put` into a full cache **evicts the tail** (the least-recently-used key).
 
 <Visualizer algo="lru-cache" />
 
+---
+
 ## Think it through like the interview
 
-Don't memorize the structure — derive it. The derivation is reusable; the
-memorized answer dies on the first follow-up.
+Don't memorize the structure — derive it. The derivation is reusable; the memorized answer dies on the first follow-up.
 
 <ThinkThrough
   title="LRU Cache"
@@ -72,8 +81,236 @@ memorized answer dies on the first follow-up.
   ]}
 />
 
+---
+
 ## Implementation
 
+Below are complete implementations with sentinel nodes and thread-safe locks.
+
+### Python
+```python
+import threading
+from typing import Dict
+
+class Node:
+    def __init__(self, key: int = 0, val: int = 0):
+        self.key = key
+        self.val = val
+        self.prev = None
+        self.next = None
+
+class LRUCache:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.map: Dict[int, Node] = {}
+        self.head = Node()  # Sentinel MRU
+        self.tail = Node()  # Sentinel LRU
+        self.head.next = self.tail
+        self.tail.prev = self.head
+        self.lock = threading.Lock()
+        
+    def _remove(self, node: Node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        
+    def _add_front(self, node: Node):
+        node.next = self.head.next
+        node.prev = self.head
+        self.head.next.prev = node
+        self.head.next = node
+
+    def get(self, key: int) -> int:
+        with self.lock:
+            if key not in self.map:
+                return -1
+            node = self.map[key]
+            self._remove(node)
+            self._add_front(node)
+            return node.val
+
+    def put(self, key: int, value: int) -> None:
+        with self.lock:
+            if key in self.map:
+                node = self.map[key]
+                node.val = value
+                self._remove(node)
+                self._add_front(node)
+                return
+                
+            if len(self.map) == self.capacity:
+                lru_node = self.tail.prev
+                self._remove(lru_node)
+                del self.map[lru_node.key]
+                
+            new_node = Node(key, value)
+            self._add_front(new_node)
+            self.map[key] = new_node
+```
+
+### Java
+```java
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+
+class Node {
+    int key;
+    int val;
+    Node prev;
+    Node next;
+    Node() {}
+    Node(int k, int v) { this.key = k; this.val = v; }
+}
+
+public class LRUCache {
+    private final int capacity;
+    private final Map<Integer, Node> map = new HashMap<>();
+    private final Node head = new Node(); // Sentinel MRU
+    private final Node tail = new Node(); // Sentinel LRU
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    private void remove(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void addFront(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    public int get(int key) {
+        lock.lock();
+        try {
+            if (!map.containsKey(key)) return -1;
+            Node node = map.get(key);
+            remove(node);
+            addFront(node);
+            return node.val;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void put(int key, int value) {
+        lock.lock();
+        try {
+            if (map.containsKey(key)) {
+                Node node = map.get(key);
+                node.val = value;
+                remove(node);
+                addFront(node);
+                return;
+            }
+            if (map.size() == capacity) {
+                Node lruNode = tail.prev;
+                remove(lruNode);
+                map.remove(lruNode.key);
+            }
+            Node newNode = new Node(key, value);
+            addFront(newNode);
+            map.put(key, newNode);
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <unordered_map>
+#include <mutex>
+#include <memory>
+#include <cmath>
+
+struct Node {
+    int key;
+    int val;
+    Node* prev = nullptr;
+    Node* next = nullptr;
+    Node(int k = 0, int v = 0) : key(k), val(v) {}
+};
+
+class LRUCache {
+private:
+    int capacity;
+    std::unordered_map<int, Node*> map;
+    Node* head;
+    Node* tail;
+    std::mutex mtx;
+
+    void remove(Node* node) {
+        node->prev->next = node->next;
+        node->next->prev = node->prev;
+    }
+
+    void addFront(Node* node) {
+        node->next = head->next;
+        node->prev = head;
+        head->next->prev = node;
+        head->next = node;
+    }
+
+public:
+    LRUCache(int cap) : capacity(cap) {
+        head = new Node();
+        tail = new Node();
+        head->next = tail;
+        tail->prev = head;
+    }
+
+    ~LRUCache() {
+        Node* curr = head;
+        while (curr) {
+            Node* next = curr->next;
+            delete curr;
+            curr = next;
+        }
+    }
+
+    int get(int key) {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = map.find(key);
+        if (it == map.end()) return -1;
+        Node* node = it->second;
+        remove(node);
+        addFront(node);
+        return node->val;
+    }
+
+    void put(int key, int value) {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = map.find(key);
+        if (it != map.end()) {
+            Node* node = it->second;
+            node->val = value;
+            remove(node);
+            addFront(node);
+            return;
+        }
+        if (map.size() == capacity) {
+            Node* lruNode = tail->prev;
+            remove(lruNode);
+            map.erase(lruNode->key);
+            delete lruNode;
+        }
+        Node* newNode = new Node(key, value);
+        addFront(newNode);
+        map[key] = newNode;
+    }
+};
+```
+
+### TypeScript
 ```ts
 class Node {
   constructor(
@@ -129,25 +366,60 @@ class LRUCache {
 ```
 
 <Callout type="tip" title="Sentinel nodes remove the edge cases">
-The dummy `head`/`tail` nodes mean `remove`/`addFront` never check for null
-neighbors — no special-casing the empty list or single element. Mention this; it
-shows you write clean pointer code.
+The dummy `head`/`tail` nodes mean `remove`/`addFront` never check for null neighbors — no special-casing the empty list or single element. Mention this; it shows you write clean pointer code.
 </Callout>
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "Why is a doubly linked list used instead of a singly linked list in an LRU Cache?",
+    options: [
+      "A doubly linked list allows O(1) removal of any arbitrary node because it contains direct references to both its previous and next neighbors.",
+      "A doubly linked list consumes less memory than a singly linked list.",
+      "A doubly linked list is natively thread-safe in Java and C++."
+    ],
+    answer: "A doubly linked list allows O(1) removal of any arbitrary node because it contains direct references to both its previous and next neighbors.",
+    explanation: "If you only have a singly linked list, unlinking a node requires scanning from the head to find its parent node, yielding O(N) complexity."
+  },
+  {
+    question: "Under heavy multi-threaded read/write workloads, how can you optimize the performance of an LRU Cache beyond standard global locking?",
+    options: [
+      "Shard the cache into N different lock buckets using the hash value of the key to reduce thread lock contention.",
+      "Use recursive pointers to bypass lock checks.",
+      "Convert the doubly linked list into a binary search tree."
+    ],
+    answer: "Shard the cache into N different lock buckets using the hash value of the key to reduce thread lock contention.",
+    explanation: "Sharding splits lock ownership across disjoint sub-buckets. Unless threads hit the exact same shard index, they do not contend on locks."
+  },
+  {
+    question: "What benefit do sentinel (dummy) nodes bring to the linked list implementation?",
+    options: [
+      "They eliminate pointer boundary null-checks when executing additions or removals, making the code clean and preventing NullPointerExceptions.",
+      "They double pointer traversal speed.",
+      "They automatically evict nodes after their TTL expires."
+    ],
+    answer: "They eliminate pointer boundary null-checks when executing additions or removals, making the code clean and preventing NullPointerExceptions.",
+    explanation: "Since head and tail are guaranteed to exist, a node in the list always has a non-null prev and next neighbor, meaning pointer updates are constant and unconditional."
+  }
+]} />
+
+---
 
 ## Complexity & follow-ups
 
 - **Time:** O(1) for both `get` and `put`. **Space:** O(capacity).
-- **Thread-safety:** wrap operations in a lock, or use a concurrent structure;
-  note the lock is the contention point at scale (shard the cache to reduce it).
+- **Thread-safety:** wrap operations in a lock, or use a concurrent structure; note the lock is the contention point at scale (shard the cache to reduce it).
 - **TTL:** store an expiry per node and treat expired as a miss (lazy) + a sweeper.
-- **LFU instead of LRU:** evict least-*frequently*-used — needs frequency
-  buckets; more complex, better for skewed access.
+- **LFU instead of LRU:** evict least-*frequently*-used — needs frequency buckets; more complex, better for skewed access.
+
+---
 
 ## Practice — level up
 
-The whole skill here is *pairing a hash map with a second structure to make every
-operation O(1)*. Climb this ladder and that move becomes automatic — every rung is
-the same idea under a new disguise.
+The whole skill here is *pairing a hash map with a second structure to make every operation O(1)*. Climb this ladder and that move becomes automatic — every rung is the same idea under a new disguise.
 
 <PracticeLadder
   topic="O(1) cache design"
@@ -181,21 +453,12 @@ the same idea under a new disguise.
 
 <QA q="Why a doubly (not singly) linked list for LRU?">
 
-Because eviction and promotion need O(1) removal of an arbitrary node. To unlink
-a node in O(1) you must splice its neighbors, which requires the *previous*
-pointer — a singly linked list would need an O(n) scan to find it. The doubly
-linked list plus the hash map (which hands you the node directly) is what makes
-both operations O(1).
+Because eviction and promotion need O(1) removal of an arbitrary node. To unlink a node in O(1) you must splice its neighbors, which requires the *previous* pointer — a singly linked list would need an O(n) scan to find it. The doubly linked list plus the hash map (which hands you the node directly) is what makes both operations O(1).
 
 </QA>
 
 <QA q="How would you make this cache thread-safe and still fast?">
 
-The simplest correct version guards `get`/`put` with a single lock, but that lock
-serializes all access and becomes the bottleneck under load. To keep it fast I'd
-**shard** the cache into N independent segments keyed by `hash(key) % N`, each
-with its own lock, so unrelated keys don't contend (this is how concurrent caches
-like Caffeine/striped maps work). For read-heavy workloads, finer-grained or
-lock-free techniques help, but sharded locks usually get you most of the win.
+The simplest correct version guards `get`/`put` with a single lock, but that lock serializes all access and becomes the bottleneck under load. To keep it fast I'd **shard** the cache into N independent segments keyed by `hash(key) % N`, each with its own lock, so unrelated keys don't contend (this is how concurrent caches like Caffeine/striped maps work). For read-heavy workloads, finer-grained or lock-free techniques help, but sharded locks usually get you most of the win.
 
 </QA>

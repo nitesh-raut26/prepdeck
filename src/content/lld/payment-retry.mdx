@@ -6,200 +6,474 @@ difficulty: "Core"
 tags: ["LLD", "payments", "idempotency", "retries", "state-machine"]
 ---
 
+## The real-world analogy: household circuit breakers and thundering stampedes
+
+Imagine the electrical wiring system of your home:
+1. **The Circuit Breaker**: You plug in three heavy space heaters. A massive current spike triggers. The physical metal strip inside the wall switch panel heats up and trips open (**OPEN State**), stopping all electricity flow to prevent a house fire. You can't just flip it back instantly; you must let it cool down (**HALF-OPEN State**), check for remaining shorts, and finally reset it fully (**CLOSED State**).
+2. **Synchronized Retries (Stampeding)**: Imagine a city-wide power outage. Suddenly, at 3:00 PM, the lights flicker back on. Instantly, 10,000 refrigerators, air conditioners, and TVs hum to life at the exact same millisecond. This synchronized startup creates a second power grid surge, tripping the neighborhood substations again. If appliances random-delayed their startups (using **Jitter**), the grid load would scale up smoothly instead of collapsing.
+
+In LLD, we handle flaky network connections using a polymorphic State-based **Circuit Breaker** to reject calls early when the server is down, and append **Full Jitter** to exponential backoff delay formulas to prevent synchronized stampedes.
+
+---
+
 ## Why this is really a correctness problem
 
-A payment call crosses a network that **lies**: it can succeed while the response
-is lost, fail cleanly, or hang ambiguously. Naive retries then either
-**double-charge** the customer or **lose the payment**. So a "retry system" is
-not a `for` loop with `sleep` — it's a small state machine wrapped around two
-guarantees: *every attempt is idempotent*, and *retries back off without
-stampeding*. Get those two right and the rest is bookkeeping.
+A payment call crosses a network that **lies**: it can succeed while the response is lost, fail cleanly, or hang ambiguously. Naive retries then either **double-charge** the customer or **lose the payment**. So a "retry system" is not a `for` loop with `sleep` — it's a small state machine wrapped around two guarantees: *every attempt is idempotent*, and *retries back off without stampeding*. Get those two right and the rest is bookkeeping.
 
-**Clarify scope first:** *"One payment, many attempts against a flaky gateway.
-I'll design the per-payment retry lifecycle, idempotency, the backoff policy, and
-where exhausted payments go (DLQ). Out of scope: the ledger and reconciliation,
-though I'll note where they hook in — OK?"*
+**Clarify scope first:** *"One payment, many attempts against a flaky gateway. I'll design the per-payment retry lifecycle, idempotency, the backoff policy, and where exhausted payments go (DLQ). Out of scope: the ledger and reconciliation, though I'll note where they hook in — OK?"*
+
+---
+
+## UML Class Diagram
+
+<Mermaid chart={`classDiagram
+  class PaymentRequest {
+    +requestId: String
+    +idempotencyKey: String
+    +amount: double
+    +attempt: int
+    +state: PaymentState
+  }
+  class RetryEngine {
+    -breaker: CircuitBreaker
+    +executePayment(req: PaymentRequest, gateway: Gateway)
+  }
+  class CircuitBreaker {
+    -state: CircuitState
+    -failureCount: int
+    -lastFailureTime: long
+    +allowExecution(): bool
+    +recordSuccess()
+    +recordFailure()
+  }
+  class Gateway {
+    <<interface>>
+    +call(key: String, amt: double): bool
+    +isTransient(): bool
+  }
+  RetryEngine *-- CircuitBreaker
+  RetryEngine --> PaymentRequest
+  RetryEngine --> Gateway : delegates`} />
+
+---
 
 ## The lifecycle is a state machine
 
-Model the attempt explicitly so illegal moves are *unrepresentable*: you can't
-"retry" a `Done` payment, and a non-retryable rejection skips straight to the
-dead-letter state. Walk a transient failure that recovers, then try an illegal
-event and watch the machine refuse it:
+Model the attempt explicitly so illegal moves are *unrepresentable*: you can't "retry" a `Done` payment, and a non-retryable rejection skips straight to the dead-letter state.
 
 <Visualizer algo="state-machine" problem="payment-retry" />
 
 - **Pending → Sending** (`send`): claim the work, attach the idempotency key.
 - **Sending → Done** (`ok`): the gateway confirmed success.
-- **Sending → Backoff** (`fail`): a *transient* error (timeout, 5xx, network) —
-  schedule a retry after a delay.
-- **Backoff → Sending** (`retry`): the delay elapsed; try again with the **same**
-  idempotency key.
-- **Sending → Dead** (`reject`): a *permanent* error (4xx like "card declined") —
-  retrying can never help, so don't.
-- **Backoff → Dead** (`exhaust`): max attempts reached → dead-letter for a human
-  or a separate recovery flow.
+- **Sending → Backoff** (`fail`): a *transient* error (timeout, 5xx, network) — schedule a retry after a delay.
+- **Backoff → Sending** (`retry`): the delay elapsed; try again with the **same** idempotency key.
+- **Sending → Dead** (`reject`): a *permanent* error (4xx like "card declined") — retrying can never help, so don't.
+- **Backoff → Dead** (`exhaust`): max attempts reached → dead-letter for a human or a separate recovery flow.
+
+---
 
 ## The two hard parts
 
 ### 1. Idempotency across retries
-
-Because delivery is **at-least-once** (you retry on ambiguity), the *effect* must
-be **at-most-once**. Every payment carries a unique **idempotency key**, generated
-once and reused on every retry. The gateway's idempotent endpoint either applies
-the charge once or returns the original result — so a retry after an ambiguous
-timeout is safe ([the same Stripe pattern as the ATM](/lld/atm) and
-[REST idempotency](/backend/rest-and-graphql)). Locally you journal the key
-*before* sending, so a crash mid-flight still knows the attempt is in flight.
+Because delivery is **at-least-once** (you retry on ambiguity), the *effect* must be **at-most-once**. Every payment carries a unique **idempotency key**, generated once and reused on every retry. The gateway's idempotent endpoint either applies the charge once or returns the original result — so a retry after an ambiguous timeout is safe ([the same Stripe pattern as the ATM](/lld/atm) and [REST idempotency](/backend/rest-and-graphql)). Locally you journal the key *before* sending, so a crash mid-flight still knows the attempt is in flight.
 
 ### 2. Exponential backoff with jitter
-
-Retrying immediately hammers an already-struggling gateway. Back off
-exponentially — `base * 2^attempt` — capped at a ceiling. Then add **jitter**
-(randomness): without it, a thousand payments that failed in the same outage all
-retry at the *exact same instant* and re-create the spike — a
-[thundering herd](/hld/design-whatsapp). Full jitter: `sleep = random(0, min(cap,
-base * 2^attempt))`.
+Retrying immediately hammers an already-struggling gateway. Back off exponentially — `base * 2^attempt` — capped at a ceiling. Then add **jitter** (randomness): without it, a thousand payments that failed in the same outage all retry at the *exact same instant* and re-create the spike — a [thundering herd](/hld/design-whatsapp). Full jitter: `sleep = random(0, min(cap, base * 2^attempt))`.
 
 <Callout type="tip" title="Make the policy a Strategy, not an if-ladder">
-Backoff schedule, max attempts, and which errors are retryable all vary by
-gateway and by payment type. Put them behind a `RetryPolicy` interface so a new
-gateway is a new policy class, not edits to the retry engine (Open/Closed).
+Backoff schedule, max attempts, and which errors are retryable all vary by gateway and by payment type. Put them behind a `RetryPolicy` interface so a new gateway is a new policy class, not edits to the retry engine (Open/Closed).
 </Callout>
 
-## Entities & responsibilities
+---
 
-<Mermaid chart={`classDiagram
-  class PaymentRequest {
-    +id
-    +idempotencyKey
-    +amount
-    +attempt: int
-    +state: PaymentState
-  }
-  class RetryEngine {
-    +submit(req)
-    +onResult(req, outcome)
-  }
-  class RetryPolicy {
-    <<interface>>
-    +nextDelay(attempt) Duration
-    +isRetryable(error) bool
-    +maxAttempts() int
-  }
-  class PaymentGateway {
-    <<interface>>
-    +charge(req, idempotencyKey) Outcome
-  }
-  class IdempotencyStore {
-    +seen(key) Outcome?
-    +record(key, outcome)
-  }
-  class Scheduler {
-    +scheduleAfter(delay, req)
-  }
-  class DeadLetterQueue {
-    +park(req, reason)
-  }
-  RetryEngine --> RetryPolicy : injects
-  RetryEngine --> PaymentGateway : calls
-  RetryEngine --> IdempotencyStore : guards
-  RetryEngine --> Scheduler : defers retries
-  RetryEngine --> DeadLetterQueue : parks exhausted`} />
+## Implementation
 
-- **`RetryEngine`** is the orchestrator — it owns *no* policy detail; it asks the
-  injected `RetryPolicy` and drives the state machine.
-- **`RetryPolicy`** (Strategy) decides delay, retryability and the attempt cap.
-- **`PaymentGateway`** (port) is the boundary to the outside world; a
-  `StripeGateway`/`MockGateway` adapter implements it (and tests use the mock).
-- **`IdempotencyStore`** makes retries safe; **`Scheduler`** defers a `Backoff`
-  attempt without blocking a thread; **`DeadLetterQueue`** catches the exhausted.
+Below are complete implementations featuring state transitions, backoff math with full jitter, and a Circuit Breaker model.
 
-## Think it through like the interview
+### Python
+```python
+import random
+import time
+from enum import Enum
+from typing import Optional
 
-<ThinkThrough
-  title="Design a Payment Retry System"
-  difficulty="LLD Core — payments"
-  problem="A payment must be charged against a flaky third-party gateway. Calls can time out ambiguously. Design the retry lifecycle, idempotency, backoff, and where failed payments end up. ~40 minutes."
-  stages={[
-    {
-      label: "Find the real problem",
-      prompt: "Why isn't this just retry in a loop until it works?",
-      reveal: "Because the network is ambiguous: a timed-out charge may have SUCCEEDED. A blind retry double-charges. So the core isn't 'retry' — it's 'make every attempt idempotent so a retry is safe', plus 'don't retry what can't succeed'. Name those two invariants first; they drive the whole design."
-    },
-    {
-      label: "Model the lifecycle",
-      prompt: "What are the states, and which transitions are illegal?",
-      reveal: "Pending → Sending → Done | Backoff | Dead. Backoff → Sending (retry) or Dead (exhausted). Illegal: retrying a Done payment, or retrying a permanent rejection. Modeling it as an explicit state machine makes those illegal moves unrepresentable instead of a tangle of booleans."
-    },
-    {
-      label: "Idempotency",
-      prompt: "A charge times out. You don't know if it landed. What do you send?",
-      reveal: "The SAME idempotency key you generated for attempt 1, journaled before the first send. The gateway's idempotent endpoint applies it once or replays the original outcome. At-least-once delivery + idempotent effect = at-most-once charge. Without the key, retrying-on-ambiguity is a double-charge bug."
-    },
-    {
-      label: "Backoff that doesn't stampede",
-      prompt: "An outage fails 10,000 payments at 12:00:00. They all retry. When?",
-      reveal: "Not all at 12:00:01. Exponential backoff (base·2^attempt, capped) spreads them across time; JITTER (randomize the delay) breaks the synchronized herd that would otherwise re-spike the gateway the instant it recovers. Full jitter = random(0, min(cap, base·2^attempt))."
-    },
-    {
-      label: "Give up well",
-      prompt: "Retries are exhausted. Now what — drop it? Retry forever?",
-      reveal: "Neither. A capped attempt count → dead-letter queue: the payment is parked with its failure reason for a human or a slower recovery flow, never silently dropped and never retried infinitely. Separately, classify errors: 4xx 'card declined' is permanent → straight to Dead, don't waste attempts. Ending on 'no payment is ever lost or double-charged; failures are visible' is the senior signal."
+class PaymentState(Enum):
+    PENDING = 1
+    SENDING = 2
+    DONE = 3
+    BACKOFF = 4
+    DEAD = 5
+
+class CircuitState(Enum):
+    CLOSED = 1
+    OPEN = 2
+    HALF_OPEN = 3
+
+class CircuitBreaker:
+    def __init__(self, failure_threshold: int = 3, recovery_time_sec: float = 10.0):
+        self.failure_threshold = failure_threshold
+        self.recovery_time_sec = recovery_time_sec
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = 0.0
+
+    def record_success(self):
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
+
+    def allow_execution(self) -> bool:
+        now = time.time()
+        if self.state == CircuitState.OPEN:
+            if now - self.last_failure_time > self.recovery_time_sec:
+                self.state = CircuitState.HALF_OPEN
+                return True
+            return False
+        return True
+
+class PaymentRequest:
+    def __init__(self, request_id: str, amount: float):
+        self.request_id = request_id
+        self.amount = amount
+        self.attempt = 0
+        self.state = PaymentState.PENDING
+        self.idempotency_key = f"{request_id}_key"
+
+class RetryEngine:
+    def __init__(self, breaker: CircuitBreaker):
+        self.breaker = breaker
+        self.base_delay = 1.0
+        self.max_delay = 60.0
+        
+    def execute_payment(self, req: PaymentRequest, gateway_mock_send) -> None:
+        if not self.breaker.allow_execution():
+            req.state = PaymentState.BACKOFF
+            print(f"Circuit open. Rejecting request {req.request_id} early.")
+            return
+
+        req.state = PaymentState.SENDING
+        req.attempt += 1
+        
+        try:
+            success, is_transient = gateway_mock_send(req.idempotency_key, req.amount)
+            if success:
+                req.state = PaymentState.DONE
+                self.breaker.record_success()
+            else:
+                self.breaker.record_failure()
+                if is_transient and req.attempt < 3:
+                    req.state = PaymentState.BACKOFF
+                    # Calculate exponential backoff with full jitter
+                    raw_delay = min(self.max_delay, self.base_delay * (2 ** req.attempt))
+                    jitter_delay = random.uniform(0, raw_delay)
+                    print(f"Transient failure. Backing off for {jitter_delay:.2f} seconds.")
+                else:
+                    req.state = PaymentState.DEAD
+        except Exception:
+            self.breaker.record_failure()
+            req.state = PaymentState.DEAD
+```
+
+### Java
+```java
+import java.time.Instant;
+import java.util.Random;
+import java.util.concurrent.locks.ReentrantLock;
+
+enum PaymentState { PENDING, SENDING, DONE, BACKOFF, DEAD }
+enum CircuitState { CLOSED, OPEN, HALF_OPEN }
+
+class CircuitBreaker {
+    private final int failureThreshold = 3;
+    private final long recoveryTimeSec = 10;
+    private CircuitState state = CircuitState.CLOSED;
+    private int failureCount = 0;
+    private long lastFailureTime = 0;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public boolean allowExecution() {
+        lock.lock();
+        try {
+            long now = Instant.now().getEpochSecond();
+            if (state == CircuitState.OPEN) {
+                if (now - lastFailureTime > recoveryTimeSec) {
+                    state = CircuitState.HALF_OPEN;
+                    return true;
+                }
+                return false;
+            }
+            return true;
+        } finally {
+            lock.unlock();
+        }
     }
-  ]}
-/>
+
+    public void recordSuccess() {
+        lock.lock();
+        try {
+            failureCount = 0;
+            state = CircuitState.CLOSED;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void recordFailure() {
+        lock.lock();
+        try {
+            failureCount++;
+            lastFailureTime = Instant.now().getEpochSecond();
+            if (failureCount >= failureThreshold) {
+                state = CircuitState.OPEN;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+
+class PaymentRequest {
+    String requestId;
+    double amount;
+    int attempt = 0;
+    PaymentState state = PaymentState.PENDING;
+    String idempotencyKey;
+
+    PaymentRequest(String id, double amt) {
+        this.requestId = id;
+        this.amount = amt;
+        this.idempotencyKey = id + "_key";
+    }
+}
+
+public class RetryEngine {
+    private final CircuitBreaker breaker;
+    private final double baseDelay = 1.0;
+    private final double maxDelay = 60.0;
+    private final Random random = new Random();
+
+    public RetryEngine(CircuitBreaker breaker) { this.breaker = breaker; }
+
+    public interface GatewayMock {
+        boolean call(String key, double amt) throws Exception;
+        boolean isTransient();
+    }
+
+    public void executePayment(PaymentRequest req, GatewayMock gateway) {
+        if (!breaker.allowExecution()) {
+            req.state = PaymentState.BACKOFF;
+            return;
+        }
+
+        req.state = PaymentState.SENDING;
+        req.attempt++;
+
+        try {
+            boolean success = gateway.call(req.idempotencyKey, req.amount);
+            if (success) {
+                req.state = PaymentState.DONE;
+                breaker.recordSuccess();
+            } else {
+                breaker.recordFailure();
+                if (gateway.isTransient() && req.attempt < 3) {
+                    req.state = PaymentState.BACKOFF;
+                    double rawDelay = Math.min(maxDelay, baseDelay * Math.pow(2, req.attempt));
+                    double jitterDelay = random.nextDouble() * rawDelay;
+                    System.out.println("Backing off for " + jitterDelay + " seconds.");
+                } else {
+                    req.state = PaymentState.DEAD;
+                }
+            }
+        } catch (Exception e) {
+            breaker.recordFailure();
+            req.state = PaymentState.DEAD;
+        }
+    }
+}
+```
+
+### C++
+```cpp
+#include <iostream>
+#include <string>
+#include <chrono>
+#include <mutex>
+#include <cmath>
+#include <random>
+#include <stdexcept>
+#include <memory>
+
+enum class PaymentState { PENDING, SENDING, DONE, BACKOFF, DEAD };
+enum class CircuitState { CLOSED, OPEN, HALF_OPEN };
+
+class CircuitBreaker {
+private:
+    int failureThreshold = 3;
+    long long recoveryTimeSec = 10;
+    CircuitState state = CircuitState::CLOSED;
+    int failureCount = 0;
+    long long lastFailureTime = 0;
+    std::mutex mtx;
+
+public:
+    bool allowExecution() {
+        std::lock_guard<std::mutex> lock(mtx);
+        long long now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        if (state == CircuitState::OPEN) {
+            if (now - lastFailureTime > recoveryTimeSec) {
+                state = CircuitState::HALF_OPEN;
+                return true;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    void recordSuccess() {
+        std::lock_guard<std::mutex> lock(mtx);
+        failureCount = 0;
+        state = CircuitState::CLOSED;
+    }
+
+    void recordFailure() {
+        std::lock_guard<std::mutex> lock(mtx);
+        failureCount++;
+        lastFailureTime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        if (failureCount >= failureThreshold) {
+            state = CircuitState::OPEN;
+        }
+    }
+};
+
+class PaymentRequest {
+public:
+    std::string requestId;
+    double amount;
+    int attempt = 0;
+    PaymentState state = PaymentState::PENDING;
+    std::string idempotencyKey;
+
+    PaymentRequest(std::string id, double amt) : requestId(id), amount(amt), idempotencyKey(id + "_key") {}
+};
+
+class RetryEngine {
+private:
+    std::shared_ptr<CircuitBreaker> breaker;
+    double baseDelay = 1.0;
+    double maxDelay = 60.0;
+    std::mt19937 rng{std::random_device{}()};
+
+public:
+    RetryEngine(std::shared_ptr<CircuitBreaker> cb) : breaker(cb) {}
+
+    void executePayment(std::shared_ptr<PaymentRequest> req, bool success, bool isTransient) {
+        if (!breaker->allowExecution()) {
+            req->state = PaymentState::BACKOFF;
+            return;
+        }
+
+        req->state = PaymentState::SENDING;
+        req->attempt++;
+
+        if (success) {
+            req->state = PaymentState::DONE;
+            breaker->recordSuccess();
+        } else {
+            breaker->recordFailure();
+            if (isTransient && req->attempt < 3) {
+                req->state = PaymentState::BACKOFF;
+                double rawDelay = std::min(maxDelay, baseDelay * std::pow(2, req->attempt));
+                std::uniform_real_distribution<double> dist(0.0, rawDelay);
+                double jitterDelay = dist(rng);
+                std::cout << "Backing off for " << jitterDelay << " seconds.\n";
+            } else {
+                req->state = PaymentState::DEAD;
+            }
+        }
+    }
+};
+```
+
+---
+
+## Interactive Quiz
+
+<Quiz questions={[
+  {
+    question: "What is the primary difference between a transient error and a permanent error in payment retries?",
+    options: [
+      "Transient errors (e.g. timeout, rate limits, 5xx status) are retryable because they represent temporary network issues, while permanent errors (e.g. card declined, invalid numbers) will fail consistently on all retries.",
+      "Transient errors require manual ledger reconciliation, whereas permanent errors do not.",
+      "Permanent errors automatically reboot the gateway router."
+    ],
+    answer: "Transient errors (e.g. timeout, rate limits, 5xx status) are retryable because they represent temporary network issues, while permanent errors (e.g. card declined, invalid numbers) will fail consistently on all retries.",
+    explanation: "Declined cards or incorrect CVVs are logical failures. Retrying them only wastes computing resources and incurs API overhead without any chance of success."
+  },
+  {
+    question: "Why do we add randomized 'Jitter' to exponential backoff delays?",
+    options: [
+      "To spread out concurrent retries over a sliding window, preventing a thundering herd storm from overwhelming a recovering server.",
+      "To compress network payloads dynamically.",
+      "To ensure payment amounts are encrypted."
+    ],
+    answer: "To spread out concurrent retries over a sliding window, preventing a thundering herd storm from overwhelming a recovering server.",
+    explanation: "If an outage triggers a synchronized failure of thousands of requests, a deterministic backoff will schedule all retries at the exact same instant, recreating the load spike."
+  },
+  {
+    question: "Under the Circuit Breaker pattern, what occurs during the HALF-OPEN state?",
+    options: [
+      "The system allows a limited number of trial executions to test if the failing subsystem has recovered, returning to CLOSED on success or OPEN on failure.",
+      "The system closes the queue and discards all pending transactions.",
+      "The system doubles the payment amount."
+    ],
+    answer: "The system allows a limited number of trial executions to test if the failing subsystem has recovered, returning to CLOSED on success or OPEN on failure.",
+    explanation: "Half-Open is a probe state. It tests the downstream service health. If the test calls succeed, the circuit heals; if they fail, it trips back to Open to save resources."
+  }
+]} />
+
+---
+
+## Q&A
 
 <QA q="A charge request times out — you can't tell if the money moved. How do you retry safely?">
 
-Reuse the idempotency key from the first attempt (generated once, journaled
-before sending). The gateway's idempotent endpoint either applies the charge
-exactly once or returns the original result, so the retry can't double-charge.
-The general principle: you can't remove ambiguity over a network, so you make the
-operation idempotent and ambiguity becomes *retriable*. If the local journal
-shows the attempt was in flight when we crashed, we re-drive it by the same key
-on recovery.
+Reuse the idempotency key from the first attempt (generated once, journaled before sending). The gateway's idempotent endpoint either applies the charge exactly once or returns the original result, so the retry can't double-charge. The general principle: you can't remove ambiguity over a network, so you make the operation idempotent and ambiguity becomes *retriable*. If the local journal shows the attempt was in flight when we crashed, we re-drive it by the same key on recovery.
 
 </QA>
 
 <QA q="How do you decide whether to retry a failure at all?">
 
-Classify the error. **Transient** (network timeout, connection reset, HTTP 429/5xx)
-→ retry with backoff. **Permanent** (HTTP 4xx like card declined, invalid account)
-→ retrying can never succeed, so transition straight to dead-letter and surface it
-to the caller. Encoding this in `RetryPolicy.isRetryable(error)` keeps the
-classification in one place and out of the engine. Burning all your attempts on a
-declined card is the classic naive-retry bug.
+Classify the error. **Transient** (network timeout, connection reset, HTTP 429/5xx) → retry with backoff. **Permanent** (HTTP 4xx like card declined, invalid account) → retrying can never succeed, so transition straight to dead-letter and surface it to the caller. Encoding this in `RetryPolicy.isRetryable(error)` keeps the classification in one place and out of the engine. Burning all your attempts on a declined card is the classic naive-retry bug.
 
 </QA>
 
 <QA q="Why jitter, and what breaks without it?">
 
-Without jitter, every payment that failed during the same outage computes the
-*same* backoff delay and retries at the *same instant* — a synchronized
-thundering herd that re-overloads the gateway the moment it recovers, causing
-another wave of failures. Jitter randomizes each delay so retries spread out.
-It's the same fix as randomizing cache TTLs to avoid an
-[avalanche](/hld/caching).
+Without jitter, every payment that failed during the same outage computes the *same* backoff delay and retries at the *same instant* — a synchronized thundering herd that re-overloads the gateway the moment it recovers, causing another wave of failures. Jitter randomizes each delay so retries spread out. It's the same fix as randomizing cache TTLs to avoid an [avalanche](/hld/caching).
 
 </QA>
 
 <QA q="Where does this LLD become an HLD problem?">
 
-The classes survive; scale attacks them. The in-process `Scheduler` becomes a
-[durable delayed queue](/hld/messaging-and-queues) (or Kafka with delay topics);
-the `IdempotencyStore` becomes a real [key-value store](/hld/caching) with TTLs;
-the `DeadLetterQueue` becomes an actual DLQ with replay; and "charge a payment"
-generalizes to "deliver any side-effect reliably" — which is exactly the
-[Webhook Delivery System](/hld/design-webhooks) at the HLD tier. The retry +
-idempotency + DLQ seams are identical.
+The classes survive; scale attacks them. The in-process `Scheduler` becomes a [durable delayed queue](/hld/messaging-and-queues) (or Kafka with delay topics); the `IdempotencyStore` becomes a real [key-value store](/hld/caching) with TTLs; the `DeadLetterQueue` becomes an actual DLQ with replay; and "charge a payment" generalizes to "deliver any side-effect reliably" — which is exactly the [Webhook Delivery System](/hld/design-webhooks) at the HLD tier. The retry + idempotency + DLQ seams are identical.
 
 </QA>
 
+---
+
 ## Practice — level up
 
-A payment retry engine is **idempotent at-least-once delivery** wrapped in a
-**state machine**. These drills train the pieces.
+A payment retry engine is **idempotent at-least-once delivery** wrapped in a **state machine**. These drills train the pieces.
 
 <PracticeLadder
   topic="Idempotency, state & retries"
