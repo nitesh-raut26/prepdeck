@@ -197,6 +197,64 @@ open-for-extension quality is the heart of the design patterns in Level 5.
 *(This diagram style is **UML** — the standard sketch language for class
 design, and the whiteboard language of Level 5 interviews.)*
 
+## Python Conventions: Underscores & Dunder Methods
+
+Python objects are highly dynamic, and the language relies on specific variable naming conventions and special methods (called "dunders", short for double underscore) to manage object behavior.
+
+### 1. The Underscore Conventions (`_` vs `__`)
+- **Single Underscore (`_variable`)**: A convention indicating that a variable or method is intended for **internal use only** (protected/private). Python does not prevent outside access, but developers respect it as a "keep out" sign.
+- **Double Underscores (`__variable`)**: Triggers **name mangling**, where Python automatically renames the variable to `_ClassName__variable` to prevent accidental overriding in child classes.
+
+```python
+class Node:
+    def __init__(self, val):
+        self.val = val
+        self._internal_id = 123  # internal use only (protected convention)
+        self.__private_key = "abc" # name mangled (private)
+
+n = Node(5)
+print(n._internal_id)   # 123 (works, but frowned upon)
+# print(n.__private_key) # ❌ Raises AttributeError (name is mangled!)
+print(n._Node__private_key) # "abc" (how to access the mangled name)
+```
+
+### 2. Dunder Methods (Magic Methods)
+Dunder methods are special pre-defined methods that start and end with double underscores. They allow your custom classes to integrate with Python's built-in syntax (operators, functions):
+
+- **`__str__` and `__repr__` (Print representation)**: Determines what is displayed when you print an object or view it in a list. In DSA, defining `__repr__` makes debugging custom node structures (trees, lists) incredibly easy.
+- **`__len__` (Sizing)**: Allows calling `len(obj)` on your custom collection.
+- **`__lt__` (Less Than)**: Defines the `<` comparison logic. This is **critical in DSA** when pushing custom objects into a min-heap or priority queue using `heapq`.
+
+```python
+import heapq
+
+class Student:
+    def __init__(self, name, score):
+        self.name = name
+        self.score = score
+
+    # Debug representation
+    def __repr__(self):
+        return f"{self.name}({self.score})"
+
+    # Less-than comparison (compares students by score)
+    def __lt__(self, other):
+        return self.score < other.score
+
+s1 = Student("Asha", 91)
+s2 = Student("Rahul", 84)
+
+print(s1) # Prints: Asha(91) - uses __repr__
+
+# Heap queue uses < under the hood to organize elements
+heap = []
+heapq.heappush(heap, s1)
+heapq.heappush(heap, s2)
+
+# Pops student with smallest score (Rahul) because we defined __lt__
+print(heapq.heappop(heap)) # Prints: Rahul(84)
+```
+
 ## Industry perspective
 
 - Java is OOP-mandatory (all code lives in classes); Python and C++ are

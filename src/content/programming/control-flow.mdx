@@ -121,6 +121,43 @@ for (const std::string& item : {"bread", "milk", "eggs"}) {
 }
 ```
 
+### Loop Conventions & Modern Syntax in DSA
+
+When writing loops in DSA, you will frequently see specific conventions and shortcuts:
+
+#### 1. The Throwaway Variable (`_` in Python)
+In Python, if you need to repeat an action `N` times but do not actually use the loop counter, use a single underscore `_` as the variable name. This tells other developers (and the interpreter) that the index variable is deliberately ignored.
+```python
+# Create a list of size 5 filled with zeros
+zeros = [0 for _ in range(5)]
+
+# Repeat an action 3 times
+for _ in range(3):
+    print("Hello")
+```
+
+#### 2. C++ `auto` and Range-Based Loops
+In C++, specifying container types (like `std::unordered_map<std::string, std::vector<int>>::iterator`) can be extremely verbose. C++ provides the `auto` keyword to let the compiler infer the type for you.
+
+When iterating over collections, use the range-based for loop combined with `auto` and references:
+- **`for (auto x : vec)`**: Copies each element (slow for large objects).
+- **`for (auto& x : vec)`**: Accesses each element by reference, allowing you to edit the element in place without copying.
+- **`for (const auto& x : vec)`**: Accesses by reference, but makes it read-only (highly efficient, the standard read-only iteration in C++).
+
+```cpp
+std::vector<int> nums = {1, 2, 3};
+
+// Read-only reference iteration (most efficient for viewing elements)
+for (const auto& x : nums) {
+    std::cout << x << " ";
+}
+
+// Modify elements in place using references
+for (auto& x : nums) {
+    x *= 2; // doubles each element in the vector
+}
+```
+
 ### `while` — when you only know the stopping condition
 
 ```python

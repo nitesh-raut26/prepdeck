@@ -63,6 +63,42 @@ or library calls.
 Use a list when **order matters** or you'll iterate everything: a feed, a
 queue of steps, last-10 search results.
 
+### List Comprehensions & Loop Helpers (Python)
+
+#### 1. List Comprehensions
+A **list comprehension** is a concise way to build a new list from an existing collection.
+```python
+# Traditional loop
+squares = []
+for x in range(1, 6):
+    squares.append(x * x)
+
+# Comprehension equivalent
+squares = [x * x for x in range(1, 6)] # [1, 4, 9, 16, 25]
+
+# With a condition filter (e.g., only keep even squares)
+even_squares = [x * x for x in range(1, 6) if x % 2 == 0] # [4, 16]
+
+# If-Else inside comprehension (conditional mapping)
+labels = ["even" if x % 2 == 0 else "odd" for x in range(1, 6)]
+```
+
+#### 2. Loop Helpers: `enumerate()` and `zip()`
+- **`enumerate(collection)`**: In DSA, we often need both the **index** and the **value** of elements in a loop. `enumerate()` provides both without having to manually manage a counter.
+```python
+names = ["Asha", "Rahul", "Meera"]
+for index, name in enumerate(names):
+    print(f"Index {index} belongs to {name}")
+```
+- **`zip(col1, col2)`**: Loops over multiple collections in parallel, yielding tuples of matched elements.
+```python
+names = ["Asha", "Rahul"]
+scores = [91, 84]
+for name, score in zip(names, scores):
+    print(f"{name} scored {score}")
+```
+
+
 ## Dictionaries — label every value
 
 A **dictionary** (also called *map* or *hash map* — same idea) stores
@@ -103,6 +139,20 @@ regardless of size. *Why* that's true — hashing — is exactly
 Use a dict when you **look things up by identity**: user by id, price by
 product, count by word. The moment you write a loop to *find* something in a
 list repeatedly, you probably wanted a dict.
+
+### Dict & Set Comprehensions (Python)
+
+Just like lists, you can build dictionaries and sets inline:
+```python
+# Dict comprehension: mapping a list to their lengths
+words = ["apple", "banana"]
+word_lens = {w: len(w) for w in words} # {"apple": 5, "banana": 6}
+
+# Set comprehension: extract unique squares
+nums = [1, -2, 2, 3]
+unique_squares = {x * x for x in nums} # {1, 4, 9}
+```
+
 
 ## Sets — membership and uniqueness
 
@@ -166,6 +216,76 @@ And the performance intuition to carry into Level 2 (full version:
 
 That one row — membership: O(n) vs O(1) — explains half of all real-world
 slow code, and half of all DSA interview optimizations.
+
+### Java & C++ Collection Mechanics
+
+In statically typed languages, using collections requires some specific syntax:
+
+#### 1. Java Generics
+Java collections store objects of a specific type using **Generics** (indicated inside `< >` angle brackets). You cannot use primitive types (`int`, `char`, `double`) directly as type arguments; instead, use their object wrappers (`Integer`, `Character`, `Double`):
+```java
+// List of Integers
+List<Integer> nums = new ArrayList<>(); // <> is the diamond operator (type inferred)
+
+// Map from String to Integer
+Map<String, Integer> counts = new HashMap<>();
+```
+
+#### 2. C++ Structured Bindings
+When looping over maps in C++, you can unpack the key and value directly using structured bindings:
+```cpp
+std::unordered_map<std::string, int> prices = {{"bread", 40}, {"milk", 60}};
+
+// Access key and value directly
+for (const auto& [item, price] : prices) {
+    std::cout << item << " costs " << price << "\n";
+}
+```
+
+## Advanced DSA Collections
+
+When solving DSA problems, the basic List/Dict/Set are not always enough. You will constantly use these specialized collections for stack, queue, and heap operations:
+
+### 1. Double-Ended Queue (Deque)
+A **deque** allows O(1) insertion and deletion at *both* ends (a normal list/ArrayList takes O(N) to insert at the front because elements must shift).
+
+- **Python**: `from collections import deque`
+  - `q.append(x)` (push right), `q.popleft()` (pop left — essential for BFS queue).
+  - `q.appendleft(x)` (push left), `q.pop()` (pop right).
+- **Java**: `ArrayDeque` (implements both `Queue` and `Deque` interfaces)
+  - `q.addLast(x)` / `q.pollFirst()` (standard queue FIFO).
+  - `q.addFirst(x)` / `q.pollFirst()` (standard stack LIFO).
+- **C++**: `std::deque` (or `std::queue` wrapper)
+  - `q.push_back(x)`, `q.pop_front()` (FIFO).
+
+### 2. Default Dictionary
+In Python, looking up a missing key in a dict raises a `KeyError`. `defaultdict` automatically creates a default value (like an empty list or integer 0) for missing keys.
+- **Python**: `from collections import defaultdict`
+```python
+# Automatically initializes missing keys to an empty list
+adj_list = defaultdict(list)
+adj_list["nodeA"].append("nodeB") # Works instantly without checking if key exists!
+```
+- **Java/C++ equivalents**: In Java, use `.putIfAbsent()` or `.computeIfAbsent()`. In C++, the map bracket operator `map[key]` automatically default-constructs the value if it doesn't exist.
+```java
+// Java
+adjList.putIfAbsent("nodeA", new ArrayList<>()).add("nodeB");
+```
+```cpp
+// C++
+adj_list["nodeA"].push_back("nodeB"); // automatically creates empty vector if nodeA missing
+```
+
+### 3. Heaps / Priority Queues
+A **Priority Queue** (or Heap) allows you to retrieve the minimum (or maximum) element in O(1) time and insert in O(log N) time.
+- **Python**: `import heapq`
+  - `heapq.heappush(heap, item)`
+  - `heapq.heappop(heap)` (returns the smallest item — min-heap).
+  - *Tip: To make a max-heap in Python, push negative values (`-value`).*
+- **Java**: `PriorityQueue<Integer> minHeap = new PriorityQueue<>();`
+  - For max-heap: `PriorityQueue<Integer> maxHeap = new PriorityQueue<>(Collections.reverseOrder());`
+- **C++**: `std::priority_queue<int> maxHeap;` (default is **max-heap** in C++!).
+  - For min-heap: `std::priority_queue<int, std::vector<int>, std::greater<int>> minHeap;`
 
 ## Nesting: collections of collections
 

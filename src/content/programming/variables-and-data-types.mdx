@@ -79,6 +79,34 @@ Two beginner-critical details:
   in decimal. Rule: never use floats for money; store paise/cents as
   integers. (Yes, this is an interview question.)
 
+### Contiguous Memory: Arrays (Java & C++)
+
+Before looking at growable lists, we must understand the raw hardware container: the **Array**. An array is a fixed-size row of boxes in memory, all of the same type.
+
+```java
+// Java: Declare and allocate an array of size 5
+int[] arr = new int[5]; // initialized to [0, 0, 0, 0, 0] by default
+arr[0] = 42;            // store at index 0
+
+// Array literal (size is inferred as 3)
+int[] primes = {2, 3, 5};
+
+// 2D Arrays (Matrix / Grid - very common in DSA)
+int[][] grid = new int[3][4]; // 3 rows, 4 columns
+grid[1][2] = 99;
+```
+
+```cpp
+// C++: Array on the stack (fixed size must be a compile-time constant)
+int arr[5] = {0}; // initialize all to 0
+arr[0] = 42;
+
+// 2D Arrays
+int grid[3][4] = {0};
+grid[1][2] = 99;
+```
+Note: In C++, stack arrays are fixed. For dynamic sizing, we use `std::vector` (covered on the [Collections](/programming/collections) page), which manages a raw heap array for us.
+
 ### Converting between types
 
 ```python
@@ -121,6 +149,27 @@ Dynamic typing is freedom (fast to write, easy to start); static typing is a
 seatbelt (a whole bug category — wrong type reaching distant code — cannot
 exist). Industry verdict, worth internalizing early: on large codebases the
 seatbelt wins, which is why typed Python and TypeScript took over.
+
+### Python Type Hints in DSA
+
+Python is dynamically typed, but standard DSA templates use **type hints** to document function inputs and outputs. Since you will encounter them in every practice platform (like LeetCode), you must recognize this syntax:
+
+```python
+from typing import List, Dict, Optional
+
+class Solution:
+    def twoSum(self, nums: List[int], target: int) -> List[int]:
+        # 'nums' must be a list of integers
+        # 'target' must be an integer
+        # The function returns (->) a list of integers
+        return []
+
+    def get_node(self, val: int) -> Optional[ListNode]:
+        # Optional[T] means the return value is either a ListNode OR None
+        # This is extremely common in linked list and tree problems!
+        return None
+```
+*Note: In modern Python (3.9+), you can write `list[int]` and `dict[str, int]` directly without importing from the `typing` module.*
 
 ## Naming: the first skill interviewers actually judge
 
@@ -169,6 +218,62 @@ If that surprised you, good — hold the thought. Copying a reference copies
 *access to* the thing, not the thing. This single fact explains a huge family
 of bugs in every language, and we'll formalize it on the
 [Functions](/programming/functions) page (pass-by-value vs pass-by-reference).
+
+## Pointers and References: Memory Addresses Under the Hood
+
+For simple types like `int`, the variable contains the actual value. For complex objects, Python and Java variables contain **references** (pointers to memory addresses under the hood). C++ is unique because it forces you to deal with memory addresses explicitly.
+
+You must master four concepts in C++ pointers and references to write linked lists, trees, and graphs:
+
+### 1. Pointer Variables (`*`)
+A pointer is a variable whose value is the **memory address** of another variable. We declare a pointer using the asterisk symbol `*`.
+```cpp
+int x = 42;
+int* ptr = &x; // ptr stores the memory address of x (ptr "points to" x)
+```
+
+### 2. Address-Of (`&`) and Dereferencing (`*`)
+- **`&` (Address-Of)**: Returns the memory address of a variable.
+- **`*` (Dereference)**: Goes to the address stored in a pointer and reads/modifies the value there.
+```cpp
+std::cout << ptr;  // Prints something like 0x7ffd58bb12c (the address)
+std::cout << *ptr; // Prints 42 (goes to that address and reads the value)
+*ptr = 99;         // Changes x to 99!
+```
+
+### 3. The Arrow Operator (`->`)
+If a pointer points to an object/struct, we use the arrow operator `->` to access its members. It is a shorthand for dereferencing followed by member access.
+```cpp
+struct Node {
+    int val;
+    Node* next;
+};
+
+Node* head = new Node{10, nullptr};
+std::cout << head->val;   // Prints 10 (shorthand for (*head).val)
+```
+
+### 4. References (`&` in a type)
+A reference is an **alias** (another name) for an existing variable. It does not store an address and cannot be repointed.
+```cpp
+int x = 42;
+int& ref = x; // ref is another name for x (any edit to ref edits x)
+ref = 99;     // x is now 99!
+```
+
+### 5. `nullptr`
+`nullptr` represents a pointer that points to nothing (the equivalent of `None` in Python or `null` in Java). In DSA, the end of a linked list or an empty tree node is always signaled by `nullptr`.
+
+#### Summary of Box-and-Address Models:
+```
+[Value Variable]       [Pointer Variable]
+┌───────────┐          ┌───────────┐
+│    42     │          │ 0x7ffd... │ ───┐  (Points to x)
+└───────────┘          └───────────┘    │
+x (at 0x7ffd...)       ptr              ▼
+                                     [x's box]
+```
+
 
 ## Common beginner mistakes
 

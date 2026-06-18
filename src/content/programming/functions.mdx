@@ -169,6 +169,50 @@ reference" — true of Python and Java; C++ lets you choose explicitly with `&`.
 
 </QA>
 
+
+
+## Lambdas & Custom Sorting in DSA
+
+In DSA, we frequently need to write quick, one-off functions to define custom sorting logic (e.g., sorting meeting intervals by their end times). Instead of defining a full helper function with name and signature, we use **Lambdas** (anonymous functions).
+
+Let's look at how to sort a list of intervals `[[1, 3], [5, 6], [2, 4]]` by their second element:
+
+### 1. Python Lambdas
+In Python, lambdas are declared with the `lambda` keyword: `lambda arguments: expression`.
+```python
+intervals = [[1, 3], [5, 6], [2, 4]]
+
+# Sort by the second element (index 1) of each sublist
+intervals.sort(key=lambda x: x[1])
+# intervals is now [[1, 3], [2, 4], [5, 6]]
+
+# Sort by first element descending, then second element ascending (tie-breaker)
+intervals.sort(key=lambda x: (-x[0], x[1]))
+```
+
+### 2. Java Lambda Comparators
+In Java, lambdas use the arrow syntax `(parameters) -> expression`. We pass a comparator lambda to `Arrays.sort` or `Collections.sort`:
+```java
+int[][] intervals = {{1, 3}, {5, 6}, {2, 4}};
+
+// Sort by the second element (index 1)
+Arrays.sort(intervals, (a, b) -> Integer.compare(a[1], b[1]));
+
+// Note: (a, b) -> a[1] - b[1] is also common, but can cause integer overflow 
+// if values are large or negative. Integer.compare is always safe.
+```
+
+### 3. C++ Lambdas
+In C++, lambdas have a capture clause `[]`, parameters, and body: `[](parameters) { return expression; }`.
+```cpp
+std::vector<std::vector<int>> intervals = {{1, 3}, {5, 6}, {2, 4}};
+
+// Sort by the second element
+std::sort(intervals.begin(), intervals.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
+    return a[1] < b[1]; // returns true if 'a' should come before 'b'
+});
+```
+
 ## Writing functions people thank you for
 
 Four rules, learnable now, judged in every interview and code review forever:
