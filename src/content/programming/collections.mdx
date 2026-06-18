@@ -206,6 +206,95 @@ countless interview problems, and it's your first real
 - **Relying on order in a set.** Sets (and Java's HashMap keys) have no
   useful order; if order matters, you wanted a list (or sort at the end).
 
+## Think it through
+
+The counting-dict is the most reusable collections pattern there is. Derive a
+classic that needs it — plus one extra idea (a second pass to keep order).
+Think before each reveal.
+
+<ThinkThrough
+  title="First non-repeating character"
+  difficulty="Beginner — the counting dict"
+  problem="Return the first character that appears exactly once in a string. s = 'leetcode' → 'l'. s = 'aabb' → None."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What two things must the answer satisfy?",
+      reveal: "It must (1) appear exactly once and (2) be the leftmost such character. Edges: no unique character ('aabb') → None; all unique → the first character; empty string → None. The word 'first' means order matters — hold that thought."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct solution and its cost?",
+      reveal: "For each character, scan the whole string to count how many times it appears; return the first with a count of 1. That's O(n²) — every character re-counts the same string. The repeated work is the counting, so compute all counts ONCE up front."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "A counting dict gives me frequencies. But why do I still need a SECOND pass?",
+      reveal: "Pass 1 builds char → count. But a dict's counts alone don't tell me which qualifying character is leftmost (insertion order helps in modern Python, but the clean, language-agnostic move is): pass 2 walks the ORIGINAL string left to right and returns the first character whose count is 1. Two passes: one to tally, one to respect order."
+    },
+    {
+      label: "Code the template",
+      prompt: "Tally in pass 1, then walk the string (not the dict) in pass 2 — why the string?",
+      reveal: "Walking the original string guarantees left-to-right order, so the first count-1 character you hit is THE answer.",
+      code: "def first_unique(s):\n    counts = {}\n    for ch in s:                       # pass 1: tally every character\n        counts[ch] = counts.get(ch, 0) + 1\n    for ch in s:                       # pass 2: walk in original order\n        if counts[ch] == 1:\n            return ch\n    return None"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and trace 'leetcode'?",
+      reveal: "O(n) time (two linear passes), O(k) space for k distinct characters. Trace 'leetcode': counts l:1, e:3, t:1, c:1, o:1, d:1; pass 2 hits 'l' first with count 1 → 'l'. ✓ 'aabb' → every count is 2 → None. This count-then-scan shape underlies anagrams, top-k, and two-sum's complement lookup."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Checking `x in my_list` for a million-item list, inside a loop over a million events, is slow because:",
+    options: [
+      "`in` on a list is O(n); inside an m-loop that's O(m·n). Build a set/dict once (O(n)), then each check is O(1)",
+      "Lists can't be searched at all",
+      "The list isn't sorted",
+      "`in` only works on dictionaries"
+    ],
+    answer: 0,
+    explain: "A list membership test scans element by element. Converting the lookup collection to a set or dict once turns O(m·n) into O(n + m) — the most common optimization in interviews and code review."
+  },
+  {
+    q: "Why can a tuple (lat, lon) be a dict key but a list [lat, lon] cannot?",
+    options: [
+      "Dict keys must be immutable (hashable); tuples are immutable, lists are mutable",
+      "Lists are too long to hash",
+      "Tuples are simply faster",
+      "Lists have no defined order"
+    ],
+    answer: 0,
+    explain: "A mutable key could change after insertion and become unfindable, so Python only allows hashable (immutable) keys. Tuples qualify; lists don't."
+  },
+  {
+    q: "`b = a` where a is a list, then `b.append(5)`. What happens to a?",
+    options: [
+      "a also gets the 5 — b is another reference to the SAME list; copy with a.copy() to avoid it",
+      "a is unchanged — b is an independent copy",
+      "It raises an error",
+      "a becomes [5]"
+    ],
+    answer: 0,
+    explain: "Assignment copies the reference, not the list (aliasing). For an independent copy use a.copy(), or copy.deepcopy for nested data."
+  },
+  {
+    q: "You repeatedly look up users by their id. The right collection is:",
+    options: [
+      "A dict keyed by id — O(1) lookups, versus O(n) scanning a list each time",
+      "A list you scan on every lookup",
+      "A set containing the ids",
+      "A tuple holding all the users"
+    ],
+    answer: 0,
+    explain: "Lookup-by-identity is the dict's whole purpose. The moment you write a loop to find something in a list repeatedly, you wanted a dict."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Given a list of a million user records, code checks 'user in list' inside a loop over another million events. Why is this slow, and what's the fix?">
