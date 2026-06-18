@@ -205,6 +205,46 @@ the *actual* KMP interview appearances:
   window](/dsa/sliding-window); "subsequence" = gaps allowed →
   [DP](/dsa/dp-patterns). Misfiling wastes ten minutes.
 
+## Think it through
+
+The failure function answers questions with no searching at all. Reason
+through the cleanest one — detecting whether a string is just a smaller block
+repeated — and meet the famous s+s one-liner. Think before revealing.
+
+<ThinkThrough
+  title="Repeated Substring Pattern"
+  difficulty="Medium — LeetCode 459"
+  problem="Does the string consist of one substring repeated two or more times? 'abab' → true (ab × 2); 'abcabcabc' → true; 'aba' → false."
+  stages={[
+    {
+      label: "Restate & brute force",
+      prompt: "What candidate period lengths are even possible, and how would I check one?",
+      reveal: "A repeating block of length d only works if d DIVIDES n (so it tiles exactly). For each divisor d of n, check whether repeating s[:d] exactly n/d times rebuilds s. That's O(n × number-of-divisors) ≈ O(n√n) — correct, but there's a slicker route."
+    },
+    {
+      label: "The elegant trick: s + s",
+      prompt: "Concatenate s with itself, then chop off the first and last character. What does searching for s in that tell you?",
+      reveal: "If s is periodic, a clean copy of s reappears inside s + s at a non-trivial offset. The two 'obvious' copies sit at index 0 and index n — trimming one char off each end destroys exactly those, so s still appears in (s+s)[1:-1] ONLY when there's a genuine internal repeat. So `s in (s + s)[1:-1]` is true iff s is a repetition. (Intuition: a period-d string lines up with a copy of itself shifted by d.)"
+    },
+    {
+      label: "The KMP connection",
+      prompt: "How does the failure function expose the period directly?",
+      reveal: "The failure value f[n−1] is the longest proper prefix that's also a suffix. The candidate period is p = n − f[n−1]. The string is a repetition exactly when f[n−1] > 0 AND n % p == 0. This is the 'failure function answers questions without searching' theme — the same table also cracks Shortest Palindrome and Longest Happy Prefix."
+    },
+    {
+      label: "Code it",
+      prompt: "Write the one-liner, and note the KMP alternative.",
+      reveal: "The s+s line is interview-memorable; the KMP version is the one to mention when asked for strict linear time without relying on the library's substring search.",
+      code: "def repeated_substring(s):\n    # a copy of s reappears inside s+s once the trivial ends are trimmed\n    return s in (s + s)[1:-1]\n\n# KMP alternative — the failure function exposes the period directly:\n#   p = n - f[n-1]                 # candidate period length\n#   periodic  iff  f[n-1] > 0 and n % p == 0"
+    },
+    {
+      label: "Cost & judgment",
+      prompt: "Cost of each approach, and which would you say in the room?",
+      reveal: "The KMP route is a clean, guaranteed O(n). The s+s one-liner is O(n) to build plus the cost of the substring search (Python's `in` uses an efficient matcher, effectively linear in practice). Say both: lead with the s+s trick for its elegance, then offer the failure-function period as the rigorous linear-time answer — showing you know WHY the trick works, not just that it does."
+    }
+  ]}
+/>
+
 ## Interview perspective
 
 <QA q="How does Rabin-Karp achieve average O(n+m), and what's its worst case?">
