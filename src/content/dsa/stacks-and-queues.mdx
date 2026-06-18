@@ -198,6 +198,95 @@ constantly in first rounds.
   order; if you need priority order instead, that's a
   [heap](/dsa/heaps-and-intervals), two pages from now.
 
+## Think it through
+
+The page teased the **monotonic stack** — now derive it. This is the
+canonical "turn an O(n²) re-scan into one O(n) pass with a stack" reasoning,
+and once it clicks you own a whole family of problems.
+
+<ThinkThrough
+  title="Daily Temperatures"
+  difficulty="Medium — LeetCode 739"
+  problem="temps = [73,74,75,71,69,72,76,73]. For each day, how many days until a WARMER temperature? Use 0 if none ever comes. Answer: [1,1,4,2,1,1,0,0]."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "For day i, what exactly am I looking for?",
+      reveal: "The nearest day j > i with temps[j] > temps[i]; the answer is j − i, or 0 if no warmer day exists. Edges: the last day is always 0; a descending run (each day cooler) leaves everyone waiting until something warmer finally appears."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Obvious solution and its cost?",
+      reveal: "For each day, scan forward until you find a warmer one. O(n²) worst case (a long cooling streak makes every day scan far). The repeated work: cool days get re-scanned again and again by every day behind them. Can each day be 'resolved' exactly once?"
+    },
+    {
+      label: "Find the pattern",
+      prompt: "As I walk left to right, which past days are still 'waiting', and who resolves them?",
+      reveal: "Keep a stack of day-indices still WAITING for a warmer day. Walking forward, temps of waiting days only get cooler down the stack (a warmer day would already have resolved the one before it). When today is warmer than the day on top of the stack, today resolves it — pop and record the gap. 'Most recent unresolved first' = LIFO = a stack. Because the stack stays sorted by temperature, it's a *monotonic* stack."
+    },
+    {
+      label: "Code the template",
+      prompt: "Push indices (not temps) — why indices?",
+      reveal: "The answer is a DISTANCE (i − j), so you need the popped day's index, not its temperature. Pop while today beats the top; each pop writes one answer.",
+      code: "def daily_temperatures(temps):\n    ans = [0] * len(temps)\n    stack = []                       # indices of days awaiting a warmer day\n    for i, t in enumerate(temps):\n        while stack and temps[stack[-1]] < t:\n            j = stack.pop()          # today is warmer than day j\n            ans[j] = i - j\n        stack.append(i)\n    return ans"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Why is this O(n) even with a while-loop inside the for-loop?",
+      reveal: "Each index is pushed once and popped at most once across the entire run — total push/pop work is ≤ 2n, so O(n) time, O(n) space. Days never warmed up stay on the stack at the end with answer 0. The amortized insight (a nested loop that's still linear because each item is touched O(1) times total) is the same accounting as dynamic-array appends."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In bracket matching, which input is the reason you must check `not stack` BEFORE popping?",
+    options: [
+      "')(' — a closer arrives with nothing open to match it",
+      "'()' — a correctly balanced pair",
+      "'((' — unclosed opening brackets",
+      "'' — the empty string"
+    ],
+    answer: 0,
+    explain: "A closing bracket with an empty stack means there's nothing to close. Without the guard, stack.pop() crashes. That's one of the three distinct ways a bracket string can be invalid."
+  },
+  {
+    q: "Why is `list.pop(0)` the wrong way to dequeue in Python?",
+    options: [
+      "It removes from the front, shifting every remaining element → O(n); a loop of them is O(n²). Use deque.popleft()",
+      "It removes from the back, which is the wrong end for a queue",
+      "It's O(1) but throws on an empty list",
+      "It returns a copy of the list, wasting memory"
+    ],
+    answer: 0,
+    explain: "A list is contiguous, so removing index 0 slides all other elements left — O(n). collections.deque gives O(1) popleft() because it's built for both ends."
+  },
+  {
+    q: "BFS uses a queue, DFS uses a stack. Swap the container in the same traversal loop and you get:",
+    options: [
+      "The other algorithm — FIFO explores nearest-first (BFS), LIFO dives deep-first (DFS)",
+      "The same algorithm, just slower",
+      "An infinite loop",
+      "A topological sort"
+    ],
+    answer: 0,
+    explain: "The traversal skeleton is identical; only the order you pull from the frontier changes. That single swap is one of the cleanest 'structure determines behavior' insights in DSA."
+  },
+  {
+    q: "Queue-from-two-stacks: one dequeue can cost O(n), yet we call it amortized O(1). Why?",
+    options: [
+      "Each element moves a constant number of times total (into inbox, across to outbox, out), so n operations cost O(n)",
+      "Because a dequeue is actually never O(n)",
+      "Because the inbox is always empty when you dequeue",
+      "Because stacks are inherently faster than queues"
+    ],
+    answer: 0,
+    explain: "The expensive pour happens rarely and moves each element exactly once. Summed over all operations the work is linear, so the per-operation average is O(1) — the same amortization logic as array doubling."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="A problem says: process items, but each new item may cancel out some of the most recent unprocessed ones. What structure, and why?">
