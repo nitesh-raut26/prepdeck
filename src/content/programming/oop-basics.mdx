@@ -227,6 +227,95 @@ design, and the whiteboard language of Level 5 interviews.)*
   object ([as with lists](/programming/functions)); both names see every
   change.
 
+## Think it through
+
+The pillar interviewers probe hardest is polymorphism — because it kills the
+if/elif-over-types code beginners write by reflex. Reason through the payoff
+before revealing.
+
+<ThinkThrough
+  title="Total area of mixed shapes"
+  difficulty="Beginner — why polymorphism beats a type-switch"
+  problem="You have a list of mixed shapes (circles, rectangles, …) and must sum their areas. A new shape type is added every month. Design it so adding a shape never forces you to edit the summing code."
+  stages={[
+    {
+      label: "The naive approach",
+      prompt: "If each shape just stored a 'kind' string, how would total_area look — and what breaks?",
+      reveal: "You'd write `if kind == 'circle': … elif kind == 'rectangle': …` inside total_area (and inside perimeter, and draw, and every other operation). Each new shape forces edits to ALL those type-switches, and forgetting one is a silent bug. The summing code is coupled to every shape that exists."
+    },
+    {
+      label: "The OOP insight",
+      prompt: "What if each shape knew how to compute its own area?",
+      reveal: "Give every shape an area() method. Then total_area just calls shape.area() on each item WITHOUT asking what kind it is — same call, different behavior per type. That's polymorphism: the caller talks to the common interface, each object responds in its own way. The type-switch vanishes."
+    },
+    {
+      label: "Give them a common type",
+      prompt: "How do the shapes agree to share the area() interface?",
+      reveal: "A base class Shape declares area() (raising NotImplementedError so subclasses MUST define it); Circle, Rectangle, … inherit and implement it. (Python can duck-type without the base, but the explicit base documents the contract and is required in Java/C++ as an interface/abstract class.) Each subclass encapsulates its own dimensions and formula."
+    },
+    {
+      label: "Code it",
+      prompt: "Base with area(), two subclasses, and a sum loop that asks no questions.",
+      reveal: "total_area is written once and never changes.",
+      code: "from math import pi\n\nclass Shape:\n    def area(self):\n        raise NotImplementedError      # each subclass must define this\n\nclass Circle(Shape):\n    def __init__(self, r): self.r = r\n    def area(self): return pi * self.r ** 2\n\nclass Rectangle(Shape):\n    def __init__(self, w, h): self.w, self.h = w, h\n    def area(self): return self.w * self.h\n\ndef total_area(shapes):\n    return sum(s.area() for s in shapes)   # never asks 'what kind?'"
+    },
+    {
+      label: "The payoff",
+      prompt: "A Triangle ships next month. What changes?",
+      reveal: "Just add `class Triangle(Shape)` with its own area(). total_area is untouched — the code is OPEN for extension, CLOSED for modification. That open/closed quality is the heart of the design patterns in Level 5, and 'replace a type-switch with polymorphism' is one of the most common OOP refactors you'll do."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Encapsulation means:",
+    options: [
+      "Bundling data with the methods that operate on it AND hiding the raw data so its rules can't be bypassed",
+      "One class inheriting the data and methods of another",
+      "The same method name behaving differently per type",
+      "Hiding a class's name from other files"
+    ],
+    answer: 0,
+    explain: "Encapsulation is about protection: a private balance changed only via deposit/withdraw can never be set to an invalid value from outside. Hiding internals is what makes the rules enforceable."
+  },
+  {
+    q: "Polymorphism lets a loop call pet.speak() over cats and dogs with no if/elif over types. The main benefit is:",
+    options: [
+      "Open for extension — add a Parrot class and the loop works unchanged; there's no type-switch to edit",
+      "It runs faster than a plain loop",
+      "It uses less memory per object",
+      "It lets you avoid writing classes"
+    ],
+    answer: 0,
+    explain: "The caller depends only on the shared interface, so new types slot in without touching existing code — the open/closed principle, and the death of brittle type-switches."
+  },
+  {
+    q: "When should you use inheritance rather than composition?",
+    options: [
+      "Only for a genuine 'is-a' relationship where you want polymorphism; otherwise prefer composition ('has-a')",
+      "Always — inheritance is the whole point of OOP",
+      "Whenever two classes share any code at all",
+      "Never — composition fully replaces it"
+    ],
+    answer: 0,
+    explain: "Is a Stack a List? No — it USES a list; inheriting would expose insert-anywhere and break the stack's guarantees. Over-inheritance couples children to a parent's implementation; default to composition."
+  },
+  {
+    q: "`account2 = account1`, where account1 is an object. What's true?",
+    options: [
+      "Both names refer to the SAME object — a change through one is visible through the other (aliasing)",
+      "account2 is an independent deep copy",
+      "It calls the constructor a second time",
+      "It raises an error"
+    ],
+    answer: 0,
+    explain: "Objects are references, exactly like lists. Assignment copies the reference, not the object, so the two names are two labels on one thing."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="What are the four pillars of OOP? One sentence and one example each.">
