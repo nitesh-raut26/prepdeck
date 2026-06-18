@@ -68,6 +68,94 @@ as-is. When the follow-up pushes further ("count *distinct* items, or the top-K,
 over an unbounded stream"), exact state stops fitting and you reach for
 [streaming algorithms & sketches](/dsa/streaming-and-memory).
 
+## Think it through
+
+The at-most-K code above is the template; now derive the most-asked variable
+window from scratch, with its own shrink rule. Think before each reveal.
+
+<ThinkThrough
+  title="Longest Substring Without Repeating Characters"
+  difficulty="Medium — LeetCode 3"
+  problem="Return the LENGTH of the longest substring of s that has all distinct characters. s = 'abcabcbb' → 3 ('abc'). s = 'bbbbb' → 1."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What am I maximizing, and what are the trivial inputs?",
+      reveal: "The width of the longest contiguous run with no repeated character. Edges: empty string → 0; all identical ('bbbbb') → 1; all distinct ('abcd') → its full length. 'Substring' (contiguous) — not 'subsequence' — is what makes a window apply."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct solution and its cost?",
+      reveal: "Check every substring for distinctness: O(n²) substrings, each verified with a set, so up to O(n³) (O(n²) if you're careful). The waste is enormous: overlapping substrings get re-scanned. The window's answer at right barely differs from right−1 — so update, don't recompute."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "Grow the right edge by one. When does the window become invalid, and how do I fix it minimally?",
+      reveal: "Keep a window [left, right] whose characters are all distinct (track them in a set). Add s[right]. If it's a duplicate, the only fix is to drop characters from the LEFT until the duplicate is gone — never restart, because removing from the left can only remove the conflict. After restoring validity, record the width. Grow right, shrink left, measure."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why is shrinking with a while-loop (not an if) correct, and still O(n)?",
+      reveal: "A while-loop because several left removals may be needed before the duplicate leaves. It's still O(n): each character is added once and removed once, so total pointer movement is ≤ 2n.",
+      code: "def longest_unique(s):\n    seen = set()\n    left = best = 0\n    for right, ch in enumerate(s):\n        while ch in seen:            # duplicate → shrink from the left\n            seen.remove(s[left])\n            left += 1\n        seen.add(ch)\n        best = max(best, right - left + 1)\n    return best"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and why is 'shrink instead of restart' provably valid here?",
+      reveal: "O(n) time, O(min(n, alphabet)) space. Shrinking is valid because the 'all distinct' constraint is MONOTONIC under removal: dropping the leftmost char can only relax it, never create a new conflict — so the window we keep is never worse than restarting would give. That monotonicity is the litmus test for whether sliding window even applies."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Sliding window turns an O(n·k) or O(n²) brute force into O(n) because:",
+    options: [
+      "Each index enters the window once and leaves once, so the pointers move ≤ 2n steps total — the inner while-loop is amortized O(1)",
+      "The window is always size 1",
+      "It sorts the input first",
+      "It replaces the loop with recursion"
+    ],
+    answer: 0,
+    explain: "The nested while-loop looks like it could be O(n²), but across the whole run each element is added and removed at most once. Total work is linear — the same amortized accounting as dynamic-array growth."
+  },
+  {
+    q: "You shrink from the left instead of restarting the window because the constraint is monotonic. Here that means:",
+    options: [
+      "Removing the leftmost element can only RELAX the constraint, never tighten it — so the window is never thrown away",
+      "The input array is sorted",
+      "The window size is fixed",
+      "The running sum is always even"
+    ],
+    answer: 0,
+    explain: "Monotonicity under removal is exactly what lets you keep the window and trim it. If removing an element could make things worse, sliding window wouldn't be safe."
+  },
+  {
+    q: "Longest subarray with sum exactly k, where the array contains NEGATIVE numbers — is a sliding window the right tool?",
+    options: [
+      "No — with negatives the sum isn't monotonic as the window changes, so there's no safe shrink rule; use prefix sums + hashing",
+      "Yes, just always shrink from the left",
+      "Yes, but only with a fixed-size window",
+      "No, because sliding window works only on strings"
+    ],
+    answer: 0,
+    explain: "Growing the window can lower the sum back to k after overshooting, so 'shrink while too big' is meaningless. This is the same reason Subarray Sum Equals K uses a prefix-sum frequency map instead of a window."
+  },
+  {
+    q: "Fixed vs variable in 10 seconds: the problem hands you a window size k. It's:",
+    options: [
+      "Fixed — slide one step at a time, adding the entering element and removing the leaving one",
+      "Variable — grow right, shrink left while invalid",
+      "Neither — use binary search",
+      "Fixed only when k is even"
+    ],
+    answer: 0,
+    explain: "A given size ⇒ fixed window: maintain the aggregate as it slides. 'Longest/shortest window satisfying X' ⇒ variable window: expand right, contract left."
+  }
+]} />
+
 ## Practice set
 
 - Maximum sum subarray of size K — *fixed window*
