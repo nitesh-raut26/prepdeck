@@ -152,6 +152,46 @@ letters" — mention the choice, it's free signal.
 - **Recursing the collect step without bounding results** — autocomplete
   wants top-k, not all 40,000 completions of `a`.
 
+## Think it through
+
+The chapter calls Word Search II the trie's marquee interview — so let's
+derive it. The leap is realising a trie lets you search the grid for *all*
+words at once. Think before each reveal.
+
+<ThinkThrough
+  title="Word Search II"
+  difficulty="Hard — LeetCode 212"
+  problem="Given a grid of letters and a list of words, return every word that can be spelled along a path of adjacent (up/down/left/right) cells, using each cell at most once per word."
+  stages={[
+    {
+      label: "Restate & the naive cost",
+      prompt: "What's the obvious solution, and why does it blow up?",
+      reveal: "For each word, run a grid DFS hunting for it: O(words × cells × 4^L). With hundreds of words this re-walks the same grid paths over and over — searching for 'card' redoes all the work of searching for 'car'. The redundancy is the shared prefixes, which is exactly what a trie collapses."
+    },
+    {
+      label: "Flip it with a trie",
+      prompt: "Instead of one search per word, what if the dictionary guided one search?",
+      reveal: "Build ONE trie of all the words. Then do a single DFS over the grid, walking the trie in lockstep with the path. At each cell, only continue if the current letter is a child of the current trie node — and when you reach a node flagged as a word end, record it. Every word is hunted simultaneously, sharing prefix work."
+    },
+    {
+      label: "Why the trie prunes",
+      prompt: "Where does the speedup actually come from?",
+      reveal: "The trie turns the grid walk into a pruned search: if no word has the prefix 'zx', the moment the path spells 'zx' the trie has no child and the DFS abandons that branch instantly — instead of exploring 4^L dead ends for every word. Dead branches die early; shared prefixes are walked once for all words."
+    },
+    {
+      label: "Code the template",
+      prompt: "What are the two backtracking essentials inside the grid DFS?",
+      reveal: "Mark the cell visited before recursing and restore it after (so it isn't reused within one word), and store the full word at its trie leaf so a match is reported directly. Removing found words avoids duplicates.",
+      code: "def find_words(board, words):\n    trie = {}\n    for w in words:                  # one trie of all words\n        node = trie\n        for ch in w:\n            node = node.setdefault(ch, {})\n        node['$'] = w                # full word stored at its end\n    R, C, found = len(board), len(board[0]), []\n\n    def dfs(r, c, node):\n        ch = board[r][c]\n        nxt = node.get(ch)\n        if nxt is None:              # trie prunes: no word has this prefix\n            return\n        if '$' in nxt:\n            found.append(nxt.pop('$'))   # record once, avoid duplicates\n        board[r][c] = '#'           # mark visited\n        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):\n            nr, nc = r + dr, c + dc\n            if 0 <= nr < R and 0 <= nc < C and board[nr][nc] != '#':\n                dfs(nr, nc, nxt)\n        board[r][c] = ch            # restore (backtrack)\n\n    for r in range(R):\n        for c in range(C):\n            dfs(r, c, trie)\n    return found"
+    },
+    {
+      label: "Cost & the senior touches",
+      prompt: "Cost, and what extra pruning impresses?",
+      reveal: "One grid DFS, O(cells × 4^L) — independent of the number of words, the whole win over the naive approach. Senior touches: prune trie leaves once their word is found, and optionally drop trie nodes with no children to shrink the search over time. This trie + backtracking + pruning combo is why the chapter flags it as the canonical trie interview."
+    }
+  ]}
+/>
+
 ## Interview perspective
 
 <QA q="Why can't a hash table power autocomplete, and what makes a trie O(L) for prefix queries?">
