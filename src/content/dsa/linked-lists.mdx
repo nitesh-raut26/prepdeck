@@ -191,6 +191,95 @@ by hand until the pointer dance is boring — that's the bar.
 - **Off-by-one in k-th-from-end** — decide "k=1 means the last node" upfront
   and test with a 1-node list.
 
+## Think it through
+
+You've seen the three moves — dummy head, traversal, fast/slow. Now reason
+through a problem that *composes* them. Answer each prompt in your head
+**before** revealing — that rep is the skill, not the final code.
+
+<ThinkThrough
+  title="Remove the N-th Node From the End"
+  difficulty="Medium — LeetCode 19"
+  problem="Given the head of a list and a number n, delete the n-th node counting from the END and return the head. Example: 1→2→3→4→5 with n=2 deletes the 4, giving 1→2→3→5."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What's the catch in 'from the end', and what input could break me?",
+      reveal: "Counting from the end means I don't know the position until I know the length. Edges to raise out loud: n equals the length (I'm deleting the head itself — so the head can change), a single-node list with n=1 (result is empty), and whether n is guaranteed valid. That 'head might change' note is the tell that a dummy head will earn its keep."
+    },
+    {
+      label: "Brute force first",
+      prompt: "What's the dumbest correct solution, and what does it cost?",
+      reveal: "Two passes: walk once to count L nodes, then walk again to node L−n−1 and unlink its successor. O(n) time, two passes, O(1) space. It works — say it out loud. The itch: can I avoid the second walk? I'm really asking 'where is the node n steps behind the tail?' — and a fixed GAP between two walkers answers exactly that in one pass."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "Two walkers, a fixed gap of n — which variant is this, and what kills the head edge case?",
+      reveal: "Same-direction two pointers with a fixed offset. Put a dummy node before the head so EVERY real node (the original head included) has a predecessor — that is what lets one code path delete the head too. Send a lead pointer n nodes ahead, then move lead and trail together until lead is the last node. Now trail sits exactly one node before the target."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why start both at dummy, and why stop lead at the LAST node (not None)?",
+      reveal: "Starting both at dummy gives trail a predecessor even when the target is the head. Stopping lead on the last node (while lead.next) leaves trail one node before the one to remove, so a single relink deletes it.",
+      code: "def remove_nth_from_end(head, n):\n    dummy = Node(0)\n    dummy.next = head\n    lead = trail = dummy\n    for _ in range(n):           # open a gap of n nodes\n        lead = lead.next\n    while lead.next:             # walk both until lead is last\n        lead = lead.next\n        trail = trail.next\n    trail.next = trail.next.next # unlink the target\n    return dummy.next            # head may have changed — dummy knows"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and does it survive the edge cases from stage 1?",
+      reveal: "O(n) time, one pass, O(1) space. Trace 1→2→3→4→5, n=2: lead leads by 2, ends on 5, trail lands on 3, unlink 4 → 1→2→3→5. ✓ Single node, n=1: dummy→1; lead advances once to node 1; the while body never runs (lead.next is None); trail is still dummy; dummy.next = None → empty list; return None. ✓ The dummy is the entire reason the head case needed no special branch."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In reverse(), you swap the order so 'cur.next = prev' runs BEFORE 'nxt = cur.next'. What happens?",
+    options: [
+      "You lose the rest of the list — cur.next now points at prev, so nxt reads the wrong node",
+      "Nothing — assignment order never matters",
+      "It reverses correctly but drops the final node",
+      "It works but becomes O(n²)"
+    ],
+    answer: 0,
+    explain: "Saving nxt first is load-bearing. Once you overwrite cur.next, the link to the remaining list is gone, so reading it afterward gives you prev, not the next node. Save the pointer you're about to clobber, then clobber it."
+  },
+  {
+    q: "Why introduce a dummy (sentinel) node before the real head?",
+    options: [
+      "So head-side inserts/deletes use the same code path as the middle — no special case",
+      "It makes accessing the k-th element O(1)",
+      "It halves the list's memory footprint",
+      "Python lists require it"
+    ],
+    answer: 0,
+    explain: "A dummy guarantees every real node — including the head — has a predecessor, collapsing 'modify the head' and 'modify the middle' into one branch. It's the single highest-value linked-list habit."
+  },
+  {
+    q: "Finding the middle with the loop `while fast and fast.next`, on an EVEN-length list like 1→2→3→4, where does slow stop?",
+    options: [
+      "On node 3 — the second of the two middle nodes",
+      "On node 2 — the first of the two middle nodes",
+      "On the head",
+      "Past the end, crashing on a null pointer"
+    ],
+    answer: 0,
+    explain: "Start slow=fast=1. Step 1: slow=2, fast=3. Step 2: slow=3, fast=None, loop exits. slow=3, the second middle. Want the first middle instead? Use `while fast.next and fast.next.next`."
+  },
+  {
+    q: "Accessing the k-th element by index in a singly linked list is:",
+    options: [
+      "O(n) — you must walk from the head, node by node",
+      "O(1) — pointer arithmetic, like an array",
+      "O(log n) — the list halves each step",
+      "O(k log k)"
+    ],
+    answer: 0,
+    explain: "No contiguous memory means no address arithmetic — there's no shortcut but to follow next pointers from the head. That O(n) access is the exact price you pay for O(1) splicing."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="When would you actually choose a linked list over an array?">
