@@ -154,6 +154,95 @@ problems they "knew."
   ("ending earlier can never block more meetings") converts a guess into
   an answer.
 
+## Think it through
+
+The chapter's whole discipline is "state the rule, then argue it's safe."
+Practice that on a problem where the safety argument — *why you can skip a
+whole failed prefix* — is the entire trick. Think before revealing.
+
+<ThinkThrough
+  title="Gas Station"
+  difficulty="Medium — LeetCode 134"
+  problem="n stations in a circle. gas[i] is fuel available at station i; cost[i] is fuel to drive from i to the next station. Start with an empty tank somewhere and drive clockwise. Return a starting index that completes the loop, or -1. (A valid answer is unique if one exists.)"
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What must stay true the whole way around, and when is it hopeless?",
+      reveal: "Starting from index s with an empty tank, the running tank (sum of gas[i] − cost[i]) must never go negative across the full loop. Edges: if total gas < total cost, no start works → -1. Otherwise exactly one start works."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Obvious solution and its cost?",
+      reveal: "Try each station as the start and simulate the whole loop: O(n²). Correct but slow. The waste: when a start fails partway, we throw away everything we learned and restart from the next index — surely that failure tells us something reusable."
+    },
+    {
+      label: "Two insights that collapse it to O(n)",
+      prompt: "Insight 1: when does a solution exist at all? Insight 2: if start s dies reaching station i, what do we know about s+1…i?",
+      reveal: "Insight 1: a solution exists iff total gas ≥ total cost (pure counting). Insight 2 (the exchange-style argument): if starting at s the tank first goes negative AFTER station i, then NO station between s and i can be a valid start either — each was reached with a tank ≥ 0, so starting there gives an even smaller cushion and fails no later. So skip the entire failed prefix: the next candidate is i+1."
+    },
+    {
+      label: "Code the template",
+      prompt: "One pass: a running tank that resets, and a candidate start that jumps past failures. Why is resetting the tank to 0 correct?",
+      reveal: "Because the new candidate start (i+1) begins fresh with an empty tank — the past segment is provably useless, so its leftover tank is irrelevant. A separate total check handles feasibility.",
+      code: "def can_complete_circuit(gas, cost):\n    if sum(gas) < sum(cost):\n        return -1                  # not enough total fuel\n    start, tank = 0, 0\n    for i in range(len(gas)):\n        tank += gas[i] - cost[i]\n        if tank < 0:               # can't reach station i+1 from 'start'\n            start = i + 1          # every start up to i is also doomed\n            tank = 0               # reset and try starting at i+1\n    return start"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and why does a single sweep suffice?",
+      reveal: "O(n) time, O(1) space — one pass. It works because the total-gas check guarantees a solution exists, and the skip argument proves the LAST start we land on must be the valid one (everything before it was eliminated for cause). 'Why is restarting safe?' answered with an exchange argument is exactly the senior move the chapter keeps demanding."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Greedy is only correct when:",
+    options: [
+      "The greedy-choice property holds — taking the locally best option leaves the remaining subproblem no worse, provable by an exchange argument",
+      "The input happens to be sorted",
+      "The problem has overlapping subproblems",
+      "You memoize each choice you make"
+    ],
+    answer: 0,
+    explain: "Overlapping subproblems and interacting choices point to DP, not greedy. Greedy needs the exchange property; without an argument, a greedy 'solution' is just a guess."
+  },
+  {
+    q: "Max non-overlapping meetings: you sort by END time (not start, not duration). Why end?",
+    options: [
+      "Finishing earliest leaves the most timeline for everything after — an exchange argument swaps any optimal schedule's first pick for the earliest-ending one without losing feasibility",
+      "End times are simply easier to sort",
+      "Start times might be negative",
+      "Duration is always proportional to end time"
+    ],
+    answer: 0,
+    explain: "Earliest finish maximizes remaining room. Sort-by-start fails on one long early meeting; sort-by-duration fails on a short meeting bridging two long ones — build those 3-interval counterexamples once."
+  },
+  {
+    q: "Coins {1,3,4}, amount 6: greedy (biggest first) gives 4+1+1 = 3 coins, but optimal is 3+3 = 2. The lesson is:",
+    options: [
+      "Greedy can fail when a local choice changes what's reachable later — always try a small counterexample before trusting it",
+      "Greedy is never correct for coin problems",
+      "You should sort the coins in descending order",
+      "The amount must be even for greedy to work"
+    ],
+    answer: 0,
+    explain: "With canonical systems like {1,5,10,25} greedy IS optimal — the DATA decides. That's why 'would greedy work here?' must always be followed by 'why?' and a counterexample attempt."
+  },
+  {
+    q: "Fractional knapsack is greedy (sort by value/weight ratio) but 0/1 knapsack is DP. What single property flips the technique?",
+    options: [
+      "Divisibility — splittable items make ratio-greedy optimal; indivisible items make choices interact, requiring DP",
+      "The number of items in the input",
+      "Whether the weights are integers",
+      "Whether the capacity is an even number"
+    ],
+    answer: 0,
+    explain: "If you can take a fraction of the last item, an exchange argument on ratio holds. If items are all-or-nothing, taking the best ratio can waste capacity two lesser items would fill — so you must compare include-vs-exclude per item: DP."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="How do you decide between greedy and DP on a new problem?">
