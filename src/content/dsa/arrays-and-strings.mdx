@@ -173,6 +173,95 @@ with a single subtraction — change `i` and `j` and it's still one step:
 - **Modifying while iterating** — still illegal, still tempting
   ([Collections](/programming/collections)).
 
+## Think it through
+
+The array superpower in interviews is replacing a nested re-scan with a
+single pass that *remembers* something. Reason through the cleanest example
+before revealing.
+
+<ThinkThrough
+  title="Best Time to Buy and Sell Stock"
+  difficulty="Easy — LeetCode 121"
+  problem="prices[i] is the price on day i. Buy on one day, sell on a LATER day, maximize profit. prices = [7,1,5,3,6,4] → 5 (buy at 1, sell at 6). If prices only fall, the answer is 0 (don't trade)."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What's the one constraint that makes this not just max − min?",
+      reveal: "You must BUY before you SELL — the cheap day has to come before the expensive one in time. So it isn't max(prices) − min(prices) if the min happens after the max. Edges: 0 or 1 price → profit 0; strictly decreasing prices → 0 (best move is no trade)."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct solution and its cost?",
+      reveal: "Every valid pair: for each buy day i, try every sell day j > i, track the max of prices[j] − prices[i]. Two nested loops, O(n²) time, O(1) space. The repeated work: for each sell day I keep re-searching earlier days for the cheapest buy."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "Fix a sell day. What's the only thing about the past I actually need?",
+      reveal: "Just the cheapest price seen SO FAR (before today). If I sell today, my best profit is today's price minus the minimum to my left. So sweep left to right carrying one number — the running minimum — and update the best profit as I go. Re-scanning the past collapses into one remembered value: running state instead of nested loops."
+    },
+    {
+      label: "Code the template",
+      prompt: "Two running variables, one pass — what are they?",
+      reveal: "cheapest = the lowest price seen so far; best = the best profit achievable selling on or before today. Update cheapest first, then best, every day.",
+      code: "def max_profit(prices):\n    cheapest = float('inf')\n    best = 0\n    for p in prices:\n        cheapest = min(cheapest, p)      # best buy price so far\n        best = max(best, p - cheapest)   # best sell-today profit\n    return best"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and does it handle the all-falling case?",
+      reveal: "O(n) time, O(1) space, one pass. All-falling [7,6,4]: cheapest keeps dropping, p − cheapest is never positive, best stays 0 → correct (no trade). The pattern to bank: 'for each right endpoint, what minimal fact about the left do I need?' answers a huge family of array problems."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is a[i] O(1) while inserting at index 0 is O(n)?",
+    options: [
+      "Indexing is address arithmetic (base + i×size); front insertion must shift all n elements to stay contiguous",
+      "Indexing scans from the start; insertion is a single write",
+      "Both are O(1) — the complexity table is wrong",
+      "Indexing is O(1) only when the array is sorted"
+    ],
+    answer: 0,
+    explain: "Contiguous layout lets the CPU compute any element's address in one step — no traversal. That same contiguity is what forces a front insert to slide everyone over. The two facts are the same coin."
+  },
+  {
+    q: "You append 1,000,000 items to a dynamic array one at a time. Averaged over all appends, each append costs:",
+    options: [
+      "Amortized O(1) — doubling makes copies rare exactly as they grow expensive",
+      "O(n) — every append copies the whole array",
+      "O(log n) — capacity grows logarithmically",
+      "O(n) each because of resizing"
+    ],
+    answer: 0,
+    explain: "Total copy work across n appends is 1+2+4+…+n ≈ 2n, so ≈ 3n work for n appends → O(1) average. Geometric growth is what makes the amortized argument hold; a fixed-increment growth would be O(n²) total."
+  },
+  {
+    q: "In Python, building a long string with `result += word` inside a loop is:",
+    options: [
+      "O(n²) — strings are immutable, so each += copies everything built so far",
+      "O(n) — Python mutates the string in place",
+      "O(n log n) — amortized like list append",
+      "O(1) per += thanks to small-string optimization"
+    ],
+    answer: 0,
+    explain: "Immutability means every += allocates a new string and copies the accumulated result. Collect into a list and call ''.join(parts) once for O(n)."
+  },
+  {
+    q: "Given prefix = [0,3,4,8,9,14,23,25] for nums = [3,1,4,1,5,9,2], the sum of nums[2..5] (indices 2 through 5 inclusive) is:",
+    options: [
+      "prefix[6] − prefix[2] = 19",
+      "prefix[5] − prefix[2] = 10",
+      "prefix[5] − prefix[1] = 11",
+      "prefix[6] − prefix[1] = 20"
+    ],
+    answer: 0,
+    explain: "sum(nums[i..j]) inclusive = prefix[j+1] − prefix[i]. Here i=2, j=5 → prefix[6] − prefix[2] = 23 − 4 = 19 (which is 4+1+5+9). The off-by-one in the upper index is the classic prefix-sum bug."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Why is array indexing O(1) but inserting at index 0 O(n)?">
