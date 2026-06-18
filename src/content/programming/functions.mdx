@@ -200,6 +200,95 @@ Four rules, learnable now, judged in every interview and code review forever:
   (`list = [1,2]` in Python kills the `list()` built-in for the rest of the
   program).
 
+## Think it through
+
+The references model has one infamous trap that bites every Python beginner
+exactly once. Predict the output before revealing — getting surprised here is
+how it sticks.
+
+<ThinkThrough
+  title="The mutable default argument"
+  difficulty="Beginner — predict the output"
+  problem="What does this print, and why? def add_item(item, basket=[]): basket.append(item); return basket — then print(add_item('a')) followed by print(add_item('b'))."
+  stages={[
+    {
+      label: "Make your prediction",
+      prompt: "Write down what you expect the two prints to be.",
+      reveal: "The natural guess is ['a'] then ['b'] — a fresh empty basket each call. The actual output is ['a'] then ['a', 'b']. The second call somehow remembers the first. That surprise is the whole lesson."
+    },
+    {
+      label: "Why it happens",
+      prompt: "When is the default value [] actually created — every call, or once?",
+      reveal: "Default values are evaluated ONCE, when the function is DEFINED — not on each call. So there is a single list object that is the default, created at definition time and reused by every call that omits the argument. Append to it once and that one list keeps growing across calls."
+    },
+    {
+      label: "Connect to references",
+      prompt: "Tie it back to the box-and-reference model.",
+      reveal: "The parameter basket holds a reference to that one shared default list. Each argument-less call binds basket to the SAME object, so every append mutates the same list the caller sees next time. It's the aliasing idea from earlier, hidden inside a default."
+    },
+    {
+      label: "Fix it",
+      prompt: "How do you get a fresh list each call without losing the 'optional argument' feature?",
+      reveal: "Use an immutable sentinel (None) as the default, and create the real list inside the body. Now each call that omits basket gets its own new list.",
+      code: "def add_item(item, basket=None):\n    if basket is None:        # make a FRESH list each call\n        basket = []\n    basket.append(item)\n    return basket"
+    },
+    {
+      label: "The rule",
+      prompt: "State the takeaway in one sentence.",
+      reveal: "Never use a mutable object (list, dict, set) as a default argument — it's shared across all calls. Default to None and build the mutable value inside. The same 'evaluated once, shared reference' reasoning explains a dozen other Python gotchas, so the model transfers."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "A function mutates a list you passed in, but can't change a number you passed in. Why?",
+    options: [
+      "Arguments are copies of the variable's contents: a number variable holds the value (independent copy), a list variable holds a reference (the copy points to the same list, so mutations show)",
+      "Lists are global while numbers are local",
+      "Numbers are passed by reference, lists by value",
+      "Python decides randomly per call"
+    ],
+    answer: 0,
+    explain: "It's 'pass-by-value, where the value may be a reference' — true of Python and Java. Mutating through the shared reference is visible; reassigning the parameter is not. C++ lets you choose with &."
+  },
+  {
+    q: "What makes a function 'pure'?",
+    options: [
+      "Its return value depends only on its arguments, and it causes no side effects (mutates nothing outside)",
+      "It takes no parameters",
+      "It never returns None",
+      "It's written in a functional programming language"
+    ],
+    answer: 0,
+    explain: "Pure functions are trivially testable (same in → same out), cacheable, and parallel-safe. Good design concentrates impure I/O at the edges and keeps the core pure."
+  },
+  {
+    q: "print vs return — which statement is correct?",
+    options: [
+      "print shows a value to a human; return hands it to code, so only a returned value can be composed like total(prices) + tax",
+      "They are interchangeable",
+      "return prints the value to the console",
+      "print can be used as a value inside expressions"
+    ],
+    answer: 0,
+    explain: "A function that prints its answer instead of returning it can't be composed or tested on its result — a classic beginner mix-up."
+  },
+  {
+    q: "Why is `def add_item(item, basket=[])` a classic bug?",
+    options: [
+      "The default list is created once at definition time and shared across all calls, so it accumulates; default to None and build a fresh list inside",
+      "Lists are not allowed as default arguments",
+      "It makes the function O(n²)",
+      "basket becomes a global variable"
+    ],
+    answer: 0,
+    explain: "Defaults are evaluated once, not per call. A mutable default becomes shared state — the None-sentinel pattern gives each call its own fresh container."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="What is the call stack, and what happens when function A calls function B?">
