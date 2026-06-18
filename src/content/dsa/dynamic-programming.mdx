@@ -42,6 +42,7 @@ subproblems *don't* overlap, it's divide-and-conquer, not DP. Phrasings:
 
 ```python
 # Coin change: fewest coins to make `amount` (unbounded coins).
+# Python
 def coin_change(coins, amount):
     INF = amount + 1
     dp = [0] + [INF] * amount          # dp[x] = fewest coins to make x
@@ -51,6 +52,44 @@ def coin_change(coins, amount):
                 dp[x] = min(dp[x], dp[x - c] + 1)
     return dp[amount] if dp[amount] < INF else -1
 # Time O(amount · coins), Space O(amount)
+```
+
+```java
+// Java
+public int coinChange(int[] coins, int amount) {
+    int max = amount + 1;
+    int[] dp = new int[amount + 1];
+    java.util.Arrays.fill(dp, max);
+    dp[0] = 0;                         // base case: 0 coins for amount 0
+    for (int x = 1; x <= amount; x++) {
+        for (int c : coins) {
+            if (c <= x) {
+                dp[x] = Math.min(dp[x], dp[x - c] + 1);
+            }
+        }
+    }
+    return dp[amount] > amount ? -1 : dp[amount];
+}
+```
+
+```cpp
+// C++
+#include <vector>
+#include <algorithm>
+
+int coinChange(const std::vector<int>& coins, int amount) {
+    int max_val = amount + 1;
+    std::vector<int> dp(amount + 1, max_val);
+    dp[0] = 0;                         // base case: 0 coins for amount 0
+    for (int x = 1; x <= amount; x++) {
+        for (int c : coins) {
+            if (c <= x) {
+                dp[x] = std::min(dp[x], dp[x - c] + 1);
+            }
+        }
+    }
+    return dp[amount] > amount ? -1 : dp[amount];
+}
 ```
 
 ## Watch the table fill
@@ -116,6 +155,41 @@ The five-step recipe only sticks once you run it yourself. Derive a clean
     }
   ]}
 />
+
+```java
+// Java — House Robber (Space Optimized)
+public int rob(int[] nums) {
+    int prev2 = 0;                     // best loot up to house i-2
+    int prev1 = 0;                     // best loot up to house i-1
+    for (int money : nums) {
+        int robIt = prev2 + money;     // rob i -> must skip i-1
+        int skipIt = prev1;            // skip i
+        int temp = Math.max(robIt, skipIt);
+        prev2 = prev1;
+        prev1 = temp;
+    }
+    return prev1;
+}
+```
+
+```cpp
+// C++ — House Robber (Space Optimized)
+#include <vector>
+#include <algorithm>
+
+int rob(const std::vector<int>& nums) {
+    int prev2 = 0;                     // best loot up to house i-2
+    int prev1 = 0;                     // best loot up to house i-1
+    for (int money : nums) {
+        int robIt = prev2 + money;     // rob i -> must skip i-1
+        int skipIt = prev1;            // skip i
+        int temp = std::max(robIt, skipIt);
+        prev2 = prev1;
+        prev1 = temp;
+    }
+    return prev1;
+}
+```
 
 ## Check yourself
 

@@ -33,6 +33,7 @@ Use a half-open `[lo, hi)` and converge on the **first index that satisfies a
 predicate**. This one template handles "find x", "lower bound", "first true".
 
 ```python
+# Python
 def lower_bound(a, target):
     lo, hi = 0, len(a)          # half-open [lo, hi)
     while lo < hi:
@@ -42,6 +43,40 @@ def lower_bound(a, target):
         else:
             hi = mid            # mid might be the answer → keep it in range
     return lo                   # first index with a[i] >= target
+```
+
+```java
+// Java
+public int lowerBound(int[] a, int target) {
+    int lo = 0, hi = a.length;  // half-open [lo, hi)
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2; // avoid overflow
+        if (a[mid] < target) {  // predicate: "too small"
+            lo = mid + 1;
+        } else {
+            hi = mid;           // mid might be the answer
+        }
+    }
+    return lo;                  // first index where a[i] >= target
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+int lowerBound(const std::vector<int>& a, int target) {
+    int lo = 0, hi = a.size();  // half-open [lo, hi)
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (a[mid] < target) {  // predicate: "too small"
+            lo = mid + 1;
+        } else {
+            hi = mid;           // mid might be the answer
+        }
+    }
+    return lo;                  // first index where a[i] >= target
+}
 ```
 
 The invariant: everything `< lo` fails the predicate, everything `>= hi`
@@ -54,7 +89,7 @@ works, so does every larger/smaller `x`), binary-search the *answer*, not an
 array.
 
 ```python
-# Min ship capacity to deliver all packages in <= D days.
+# Python — Min ship capacity to deliver all packages in <= D days.
 def min_capacity(weights, D):
     def feasible(cap):
         days, cur = 1, 0
@@ -68,6 +103,76 @@ def min_capacity(weights, D):
         if feasible(mid): hi = mid        # works → try smaller
         else:             lo = mid + 1    # doesn't → go bigger
     return lo
+```
+
+```java
+// Java — Min ship capacity to deliver all packages in <= D days.
+public int minCapacity(int[] weights, int D) {
+    int maxWeight = 0;
+    int sumWeight = 0;
+    for (int w : weights) {
+        maxWeight = Math.max(maxWeight, w);
+        sumWeight += w;
+    }
+    
+    int lo = maxWeight, hi = sumWeight;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (feasible(weights, D, mid)) {
+            hi = mid;        // works → try smaller
+        } else {
+            lo = mid + 1;    // doesn't → go bigger
+        }
+    }
+    return lo;
+}
+
+private boolean feasible(int[] weights, int D, int cap) {
+    int days = 1, cur = 0;
+    for (int w : weights) {
+        if (cur + w > cap) {
+            days++;
+            cur = 0;
+        }
+        cur += w;
+    }
+    return days <= D;
+}
+```
+
+```cpp
+// C++ — Min ship capacity to deliver all packages in <= D days.
+#include <vector>
+#include <numeric>
+#include <algorithm>
+
+bool feasible(const std::vector<int>& weights, int D, int cap) {
+    int days = 1, cur = 0;
+    for (int w : weights) {
+        if (cur + w > cap) {
+            days++;
+            cur = 0;
+        }
+        cur += w;
+    }
+    return days <= D;
+}
+
+int minCapacity(const std::vector<int>& weights, int D) {
+    int max_w = *std::max_element(weights.begin(), weights.end());
+    int sum_w = std::accumulate(weights.begin(), weights.end(), 0);
+    
+    int lo = max_w, hi = sum_w;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (feasible(weights, D, mid)) {
+            hi = mid;        // works → try smaller
+        } else {
+            lo = mid + 1;    // doesn't → go bigger
+        }
+    }
+    return lo;
+}
 ```
 
 <Callout type="tip" title="Spot it by the question shape">
@@ -179,6 +284,62 @@ the half you can still trust. Think before revealing.
     }
   ]}
 />
+
+```java
+// Java — Search in Rotated Sorted Array
+public int search(int[] nums, int target) {
+    int lo = 0, hi = nums.length - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (nums[mid] == target) {
+            return mid;
+        }
+        if (nums[lo] <= nums[mid]) {         // left half is sorted
+            if (nums[lo] <= target && target < nums[mid]) {
+                hi = mid - 1;                // target is in the sorted left
+            } else {
+                lo = mid + 1;
+            }
+        } else {                             // right half is sorted
+            if (nums[mid] < target && target <= nums[hi]) {
+                lo = mid + 1;                // target is in the sorted right
+            } else {
+                hi = mid - 1;
+            }
+        }
+    }
+    return -1;
+}
+```
+
+```cpp
+// C++ — Search in Rotated Sorted Array
+#include <vector>
+
+int search(const std::vector<int>& nums, int target) {
+    int lo = 0, hi = nums.size() - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (nums[mid] == target) {
+            return mid;
+        }
+        if (nums[lo] <= nums[mid]) {         // left half is sorted
+            if (nums[lo] <= target && target < nums[mid]) {
+                hi = mid - 1;                // target is in the sorted left
+            } else {
+                lo = mid + 1;
+            }
+        } else {                             // right half is sorted
+            if (nums[mid] < target && target <= nums[hi]) {
+                lo = mid + 1;                // target is in the sorted right
+            } else {
+                hi = mid - 1;
+            }
+        }
+    }
+    return -1;
+}
+```
 
 ## Practice — climb the ladder
 

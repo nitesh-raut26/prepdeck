@@ -6,22 +6,18 @@ difficulty: "Core pattern"
 tags: ["backtracking", "recursion", "combinatorics"]
 ---
 
-## The idea, with zero jargon
+## Why We Need Backtracking & How to Think About It
 
-You're in a maze. At every junction you pick a corridor and walk. Hit a dead
-end? You **walk back to the junction and take the next corridor**. You never
-teleport, you never clone yourself — one walker, exploring everything, by
-remembering to *undo*.
+Imagine you are standing at the entrance of a dark maze holding a spool of thread. To find the exit, you walk down a corridor. Every time you hit a junction, you make a choice and keep walking. If you hit a dead end, you **rewind your thread, walk back to the last junction, and try the next available path**. You don't teleport or clone yourself; you are a single explorer who systematically visits every path by remembering to **undo** your steps.
 
-That's the entire algorithm:
+This is **Backtracking**. It is a systematic way to search through all possible configurations (e.g., subsets, permutations, board states). 
 
-1. **Choose** — pick one of the available options.
-2. **Explore** — go deeper with that choice made.
-3. **Un-choose** — undo the choice, so the next option starts from a clean slate.
+The core algorithm is a three-step cycle:
+1. **Choose**: Make a decision (e.g., place a queen, add a number to a subset).
+2. **Explore**: Recurse to make subsequent choices with the current choice active.
+3. **Un-choose**: Undo your decision (e.g., remove the queen, pop the number). This is the key: it cleans up the state so the next sibling branch starts with a clean slate, letting you reuse the same memory (like a single path list) instead of making expensive copies.
 
-The un-choose step is what beginners forget, and it's the whole trick: it's
-what lets the *same* path/board/array be reused for every branch instead of
-copying it at every step.
+---
 
 ## Watch it run: N-Queens
 
@@ -48,6 +44,8 @@ over the space of partial solutions — the "graph" is imaginary: nodes are
 partial answers, edges are choices.
 
 ```python
+# Subsets template (Include/Skip)
+# Python
 def subsets(nums):
     res, path = [], []
     def backtrack(start):
@@ -58,6 +56,49 @@ def subsets(nums):
             path.pop()                   # un-choose
     backtrack(0)
     return res
+```
+
+```java
+// Java
+import java.util.ArrayList;
+import java.util.List;
+
+public List<List<Integer>> subsets(int[] nums) {
+    List<List<Integer>> res = new ArrayList<>();
+    List<Integer> path = new ArrayList<>();
+    backtrack(nums, 0, path, res);
+    return res;
+}
+
+private void backtrack(int[] nums, int start, List<Integer> path, List<List<Integer>> res) {
+    res.add(new ArrayList<>(path));      // record a copy of current subset
+    for (int i = start; i < nums.length; i++) {
+        path.add(nums[i]);               // choose
+        backtrack(nums, i + 1, path, res); // explore
+        path.remove(path.size() - 1);    // un-choose (backtrack)
+    }
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+void backtrack(const std::vector<int>& nums, int start, std::vector<int>& path, std::vector<std::vector<int>>& res) {
+    res.push_back(path);                 // record a copy of current subset
+    for (int i = start; i < nums.size(); i++) {
+        path.push_back(nums[i]);         // choose
+        backtrack(nums, i + 1, path, res); // explore
+        path.pop_back();                 // un-choose (backtrack)
+    }
+}
+
+std::vector<std::vector<int>> subsets(const std::vector<int>& nums) {
+    std::vector<std::vector<int>> res;
+    std::vector<int> path;
+    backtrack(nums, 0, path, res);
+    return res;
+}
 ```
 
 The `start` index is what prevents duplicate subsets; for **permutations** you'd
@@ -134,6 +175,59 @@ The input size is the hint (see the DSA study plan).
     }
   ]}
 />
+
+```java
+// Java — Permutations
+import java.util.ArrayList;
+import java.util.List;
+
+public List<List<Integer>> permute(int[] nums) {
+    List<List<Integer>> res = new ArrayList<>();
+    List<Integer> path = new ArrayList<>();
+    boolean[] used = new boolean[nums.length];
+    backtrack(nums, path, used, res);
+    return res;
+}
+
+private void backtrack(int[] nums, List<Integer> path, boolean[] used, List<List<Integer>> res) {
+    if (path.size() == nums.length) {
+        res.add(new ArrayList<>(path));  // full -> record copy
+        return;
+    }
+    for (int i = 0; i < nums.length; i++) {
+        if (used[i]) continue;
+        path.add(nums[i]); used[i] = true;      // choose
+        backtrack(nums, path, used, res);       // explore
+        path.remove(path.size() - 1); used[i] = false; // un-choose
+    }
+}
+```
+
+```cpp
+// C++ — Permutations
+#include <vector>
+
+void backtrack(const std::vector<int>& nums, std::vector<int>& path, std::vector<bool>& used, std::vector<std::vector<int>>& res) {
+    if (path.size() == nums.size()) {
+        res.push_back(path);             // record copy
+        return;
+    }
+    for (int i = 0; i < nums.size(); i++) {
+        if (used[i]) continue;
+        path.push_back(nums[i]); used[i] = true;       // choose
+        backtrack(nums, path, used, res);              // explore
+        path.pop_back(); used[i] = false;              // un-choose
+    }
+}
+
+std::vector<std::vector<int>> permute(const std::vector<int>& nums) {
+    std::vector<std::vector<int>> res;
+    std::vector<int> path;
+    std::vector<bool> used(nums.size(), false);
+    backtrack(nums, path, used, res);
+    return res;
+}
+```
 
 <QA q="What's the difference in code between generating subsets and permutations?">
 

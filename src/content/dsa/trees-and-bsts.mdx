@@ -6,12 +6,13 @@ difficulty: "Foundation"
 tags: ["trees", "bst", "recursion", "fundamentals"]
 ---
 
-## When data has hierarchy
+## Why We Need Trees & How to Think About It
 
-Arrays and lists are flat. But file systems, org charts, HTML pages
-([the DOM](/basics/websites-and-browsers)), comment threads, JSON — real
-data nests. A **tree** is the structure for hierarchy: nodes connected
-parent-to-child, no cycles, one **root** at the top.
+Arrays and linked lists are linear (flat) structures. However, real-world data is often hierarchical. Consider a folder directory on your computer: a directory can contain individual files and other subdirectories. Or think of a company org chart: the CEO sits at the top (**root**), VPs are their **children**, and entry-level employees are the **leaves** (nodes with no children).
+
+A tree structure is naturally self-similar: if you look at any department head, they act as the "CEO" of their own smaller sub-organization (**subtree**). 
+
+This self-similarity is the key mental shift for trees: **every tree algorithm is "do something with this node, then delegate the rest to the left and right subtrees."** Because of this, **recursion** is the native language of tree programming.
 
 ```
             (root) Documents
@@ -21,27 +22,27 @@ parent-to-child, no cycles, one **root** at the top.
    2025    2026   resume.pdf     ← leaves: nodes with no children
 ```
 
-Vocabulary you'll use forever: **root** (top), **parent/child** (direct
-links), **leaf** (no children), **subtree** (any node + its descendants —
-itself a tree, which is *why recursion fits*), **depth** (distance from
-root), **height** (longest root-to-leaf path).
+Vocabulary to memorize:
+- **Root**: The top-most node with no parent.
+- **Leaf**: A node with no children.
+- **Subtree**: A node and all of its descendants.
+- **Depth**: Distance from the root node.
+- **Height**: The number of edges on the longest path from a node to a leaf.
 
-A **binary tree** allows at most two children per node — `left` and
-`right` — and is the form 90% of interview tree questions take:
+A **binary tree** allows at most two children per node — `left` and `right` — and is the form 90% of interview tree questions take.
+
+### Core Structure and Basic Operations
+
+Here is how to define a binary tree node and calculate basic properties (height and size) in Python, Java, and C++:
 
 ```python
+# Python
 class TreeNode:
     def __init__(self, val):
         self.val = val
-        self.left = None      # both are TreeNodes or None —
-        self.right = None     # a node's children are themselves trees
-```
+        self.left = None
+        self.right = None
 
-That self-similarity is the key mental shift of this page: **every tree
-algorithm is "do something with this node; recurse on the subtrees."** The
-[call stack](/programming/functions) does the bookkeeping.
-
-```python
 def height(node):
     if node is None:                 # base case: empty tree has height -1
         return -1
@@ -51,6 +52,60 @@ def count(node):
     if node is None:
         return 0
     return 1 + count(node.left) + count(node.right)
+```
+
+```java
+// Java
+class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+    TreeNode(int val) {
+        this.val = val;
+    }
+}
+
+class TreeOps {
+    public int height(TreeNode node) {
+        if (node == null) {          // base case: empty tree has height -1
+            return -1;
+        }
+        return 1 + Math.max(height(node.left), height(node.right));
+    }
+
+    public int count(TreeNode node) {
+        if (node == null) {
+            return 0;
+        }
+        return 1 + count(node.left) + count(node.right);
+    }
+}
+```
+
+```cpp
+// C++
+#include <algorithm>
+
+struct TreeNode {
+    int val;
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+};
+
+int height(TreeNode* node) {
+    if (node == nullptr) {           // base case: empty tree has height -1
+        return -1;
+    }
+    return 1 + std::max(height(node->left), height(node->right));
+}
+
+int count(TreeNode* node) {
+    if (node == nullptr) {
+        return 0;
+    }
+    return 1 + count(node->left) + count(node->right);
+}
 ```
 
 Two lines of pattern — null check, combine recursive answers — and you can
@@ -75,6 +130,8 @@ table stakes:
 | **Level-order** | top to bottom, row by row | shortest paths, "by level" output |
 
 ```python
+# DFS: In-order traversal
+# Python
 def inorder(node, out):
     if node is None:
         return
@@ -83,11 +140,41 @@ def inorder(node, out):
     inorder(node.right, out)
 ```
 
+```java
+// Java
+import java.util.List;
+
+public void inorder(TreeNode node, List<Integer> out) {
+    if (node == null) {
+        return;
+    }
+    inorder(node.left, out);
+    out.add(node.val);
+    inorder(node.right, out);
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+void inorder(TreeNode* node, std::vector<int>& out) {
+    if (node == nullptr) {
+        return;
+    }
+    inorder(node->left, out);
+    out.push_back(node->val);
+    inorder(node->right, out);
+}
+```
+
 The first three are **DFS** (depth-first — dive, then backtrack: a
 [stack discipline](/dsa/stacks-and-queues), via recursion). Level-order is
 **BFS** (breadth-first — a queue holding the current frontier):
 
 ```python
+# BFS: Level-order traversal
+# Python
 from collections import deque
 
 def level_order(root):
@@ -99,6 +186,49 @@ def level_order(root):
         if node.left:  q.append(node.left)
         if node.right: q.append(node.right)
     return out
+```
+
+```java
+// Java
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+
+public List<Integer> levelOrder(TreeNode root) {
+    List<Integer> out = new ArrayList<>();
+    if (root == null) return out;
+    Queue<TreeNode> q = new LinkedList<>();
+    q.add(root);
+    while (!q.isEmpty()) {
+        TreeNode node = q.poll();
+        out.add(node.val);
+        if (node.left != null)  q.add(node.left);
+        if (node.right != null) q.add(node.right);
+    }
+    return out;
+}
+```
+
+```cpp
+// C++
+#include <vector>
+#include <queue>
+
+std::vector<int> levelOrder(TreeNode* root) {
+    std::vector<int> out;
+    if (root == nullptr) return out;
+    std::queue<TreeNode*> q;
+    q.push(root);
+    while (!q.empty()) {
+        TreeNode* node = q.front();
+        q.pop();
+        out.push_back(node->val);
+        if (node->left != nullptr)  q.push(node->left);
+        if (node->right != nullptr) q.push(node->right);
+    }
+    return out;
+}
 ```
 
 These are the same DFS/BFS you'll meet on [graphs](/dsa/graphs-bfs-dfs) —
@@ -137,12 +267,39 @@ Read that table's last two rows — they're the BST's reason to exist:
 max, range, nearest, rank) while staying fast to modify.
 
 ```python
+# Python
 def search(node, target):
     if node is None or node.val == target:
         return node
     if target < node.val:
         return search(node.left, target)
     return search(node.right, target)
+```
+
+```java
+// Java
+public TreeNode search(TreeNode node, int target) {
+    if (node == null || node.val == target) {
+        return node;
+    }
+    if (target < node.val) {
+        return search(node.left, target);
+    }
+    return search(node.right, target);
+}
+```
+
+```cpp
+// C++
+TreeNode* search(TreeNode* node, int target) {
+    if (node == nullptr || node.val == target) {
+        return node;
+    }
+    if (target < node.val) {
+        return search(node->left, target);
+    }
+    return search(node->right, target);
+}
 ```
 
 ## Watch it run
@@ -237,6 +394,54 @@ Reason through the cleanest example before revealing.
     }
   ]}
 />
+
+```java
+// Java — Diameter of Binary Tree
+class DiameterSolution {
+    private int best = 0;
+
+    public int diameterOfBinaryTree(TreeNode root) {
+        best = 0;
+        height(root);
+        return best;
+    }
+
+    private int height(TreeNode node) {
+        if (node == null) {
+            return -1; // height in edges; empty node returns -1
+        }
+        int lh = height(node.left);
+        int rh = height(node.right);
+        best = Math.max(best, lh + rh + 2); // path bending at node
+        return 1 + Math.max(lh, rh);
+    }
+}
+```
+
+```cpp
+// C++ — Diameter of Binary Tree
+#include <algorithm>
+
+class DiameterSolution {
+    int best = 0;
+    
+    int height(TreeNode* node) {
+        if (node == nullptr) {
+            return -1; // height in edges; empty node returns -1
+        }
+        int lh = height(node->left);
+        int rh = height(node->right);
+        best = std::max(best, lh + rh + 2); // path bending at node
+        return 1 + std::max(lh, rh);
+    }
+public:
+    int diameterOfBinaryTree(TreeNode* root) {
+        best = 0;
+        height(root);
+        return best;
+    }
+};
+```
 
 ## Check yourself
 

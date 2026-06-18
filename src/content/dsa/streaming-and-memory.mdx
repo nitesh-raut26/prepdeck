@@ -18,6 +18,11 @@ memory, you trade a little accuracy for a lot of space with a **sketch**.
 The unlock: ask *"what do I actually need to keep?"* For many questions it's far
 less than the whole stream.
 
+> 💡 **Visualizing the streaming concepts:**
+> - **Reservoir Sampling (Bridge Spotting):** Imagine standing on a bridge watching cars pass. You want to pick exactly 3 random cars from all that pass today, but you have no idea how many total cars will cross. You start by recording the first 3 cars. When the 4th car passes, you roll a 4-sided die. If it lands on 4, you replace one of your 3 cars with it. When the 5th passes, you roll a 5-sided die, and so on. Amazingly, every car has an equal chance of being chosen at the end.
+> - **Boyer-Moore Voting (Political Cancellation):** Imagine a room full of people shouting their political party. If a party holds a strict majority (>50%), they can pick one person from their party and pair them up with a person from any *other* party, and both leave the room. Because the majority party has more members than all other parties combined, they will always have at least one member remaining at the end.
+> - **Bloom Filter (VIP List Bouncer):** Think of a bouncer at a nightclub VIP list. If your name is *not* on the list, the bouncer knows instantly (no false negatives). If your name *is* on the list, the bouncer might let you in, but sometimes they might get confused because two names sounded similar (false positive), requiring a secondary check.
+
 ## The toolkit
 
 | Question on a stream | Technique | Memory | Exact? |
@@ -140,6 +145,186 @@ single counter. Reason it out before revealing.
   ]}
 />
 
+```python
+# Python — Boyer-Moore Majority Vote
+def majority_element(nums):
+    candidate, count = None, 0
+    for x in nums:
+        if count == 0:
+            candidate = x
+        count += 1 if x == candidate else -1
+    return candidate
+```
+
+```java
+// Java — Boyer-Moore Majority Vote
+public int majorityElement(int[] nums) {
+    int candidate = 0;
+    int count = 0;
+    for (int num : nums) {
+        if (count == 0) {
+            candidate = num;
+        }
+        count += (num == candidate) ? 1 : -1;
+    }
+    return candidate;
+}
+```
+
+```cpp
+// C++ — Boyer-Moore Majority Vote
+#include <vector>
+
+int majorityElement(const std::vector<int>& nums) {
+    int candidate = 0;
+    int count = 0;
+    for (int num : nums) {
+        if (count == 0) {
+            candidate = num;
+        }
+        count += (num == candidate) ? 1 : -1;
+    }
+    return candidate;
+}
+```
+
+```python
+# Python — Reservoir Sampling
+import random
+
+def reservoir_sample(stream, k):
+    reservoir = stream[:k]
+    for i in range(k, len(stream)):
+        j = random.randint(0, i)
+        if j < k:
+            reservoir[j] = stream[i]
+    return reservoir
+```
+
+```java
+// Java — Reservoir Sampling
+import java.util.Random;
+
+public int[] reservoirSample(int[] stream, int k) {
+    int[] reservoir = new int[k];
+    // Keep the first k elements
+    for (int i = 0; i < k; i++) {
+        reservoir[i] = stream[i];
+    }
+
+    Random rand = new Random();
+    // For the remaining elements, keep with decreasing probability
+    for (int i = k; i < stream.length; i++) {
+        int j = rand.nextInt(i + 1); // random index from 0 to i
+        if (j < k) {
+            reservoir[j] = stream[i];
+        }
+    }
+    return reservoir;
+}
+```
+
+```cpp
+// C++ — Reservoir Sampling
+#include <vector>
+#include <random>
+
+std::vector<int> reservoirSample(const std::vector<int>& stream, int k) {
+    std::vector<int> reservoir(k);
+    for (int i = 0; i < k; i++) {
+        reservoir[i] = stream[i];
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    for (int i = k; i < stream.size(); i++) {
+        std::uniform_int_distribution<> dis(0, i);
+        int j = dis(gen);
+        if (j < k) {
+            reservoir[j] = stream[i];
+        }
+    }
+    return reservoir;
+}
+```
+
+```python
+# Python — Find Median from Data Stream (Running Median)
+import heapq
+
+class MedianFinder:
+    def __init__(self):
+        self.small = []  # max-heap (stored as negative numbers)
+        self.large = []  # min-heap
+
+    def addNum(self, num):
+        heapq.heappush(self.small, -num)
+        heapq.heappush(self.large, -heapq.heappop(self.small))
+        if len(self.small) < len(self.large):
+            heapq.heappush(self.small, -heapq.heappop(self.large))
+
+    def findMedian(self):
+        if len(self.small) > len(self.large):
+            return -self.small[0]
+        return (-self.small[0] + self.large[0]) / 2.0
+```
+
+```java
+// Java — Find Median from Data Stream (Running Median)
+import java.util.PriorityQueue;
+
+class MedianFinder {
+    private final PriorityQueue<Integer> small = new PriorityQueue<>((a, b) -> b - a); // max-heap
+    private final PriorityQueue<Integer> large = new PriorityQueue<>(); // min-heap
+
+    public void addNum(int num) {
+        small.add(num);
+        large.add(small.poll());
+        if (small.size() < large.size()) {
+            small.add(large.poll());
+        }
+    }
+
+    public double findMedian() {
+        if (small.size() > large.size()) {
+            return small.peek();
+        }
+        return (small.peek() + large.peek()) / 2.0;
+    }
+}
+```
+
+```cpp
+// C++ — Find Median from Data Stream (Running Median)
+#include <queue>
+#include <vector>
+
+class MedianFinder {
+private:
+    std::priority_queue<int> small; // max-heap
+    std::priority_queue<int, std::vector<int>, std::greater<int>> large; // min-heap
+
+public:
+    void addNum(int num) {
+        small.push(num);
+        large.push(small.top());
+        small.pop();
+        if (small.size() < large.size()) {
+            small.push(large.top());
+            large.pop();
+        }
+    }
+
+    double findMedian() {
+        if (small.size() > large.size()) {
+            return small.top();
+        }
+        return (small.top() + large.top()) / 2.0;
+    }
+};
+```
+
 <QA q="Find the Kth largest element in a never-ending stream, with limited memory. How?">
 
 Keep a **min-heap of size K**. Push the first K elements; for each later element,
@@ -184,6 +369,44 @@ so the sample is uniform — all in O(k) memory and a single pass, without ever
 knowing n in advance.
 
 </QA>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In Reservoir Sampling, how is uniform randomness guaranteed when we select k items from a stream of unknown size N?",
+    options: [
+      "By retaining the first k items, and then replacing each item at index i with probability k/i.",
+      "By shuffling the entire stream in memory.",
+      "By selecting items only when their hash values end in a specific bit pattern.",
+      "By sorting the first k elements."
+    ],
+    answer: 0,
+    explain: "By induction, at any step i (where i > k), the probability that the new item is selected is k / i, and the probability that any existing item is replaced is 1 / k. When multiplied out, every single item seen so far has an equal probability of k / i of being in the reservoir, preserving uniform distribution."
+  },
+  {
+    q: "What is the key trade-off when using a Bloom Filter?",
+    options: [
+      "It has zero false negatives (if it says 'not seen', it's definitely not seen), but it can have false positives (it may say 'seen' for an item that wasn't).",
+      "It guarantees exact membership counts in O(1) space.",
+      "It has false negatives but zero false positives.",
+      "It runs in O(N) time but requires no memory."
+    ],
+    answer: 0,
+    explain: "A Bloom Filter uses a bit array and multiple hash functions. Since bits can overlap, a lookup might check bits that were set by different items, causing a false positive. However, if any of the bits are 0, we are absolutely certain the item was never inserted (no false negatives)."
+  },
+  {
+    q: "For finding the running median of a stream of numbers, how do two heaps work together?",
+    options: [
+      "A max-heap stores the smaller half of the numbers, a min-heap stores the larger half, and we keep their sizes balanced.",
+      "Both heaps are min-heaps, one for even numbers and one for odd numbers.",
+      "A max-heap stores the first half of the stream, and a min-heap stores the second half in order of arrival.",
+      "They store random samples from the stream."
+    ],
+    answer: 0,
+    explain: "By keeping the smaller half of numbers in a max-heap and the larger half in a min-heap, the roots of the two heaps represent the elements closest to the middle. This allows retrieving the median in O(1) time and adding new numbers in O(log N) time while maintaining size balancing."
+  }
+]} />
 
 ## Practice — level up
 

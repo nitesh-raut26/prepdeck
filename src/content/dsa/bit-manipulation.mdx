@@ -15,6 +15,12 @@ Interviewers reach for them as a **fast signal**: a candidate who can derive
 `x & (x - 1)` understands two's-complement; one who memorized it doesn't survive
 the follow-up.
 
+> 💡 **Visualizing Bitwise Operators:**
+> **Analogy:** Imagine a 32-bit integer as a row of **32 light switches**. Each switch can be either OFF (0) or ON (1).
+> - **AND (`&`):** A circuit where two switches are connected in series. The light turns ON only if *both* switches are ON.
+> - **OR (`|`):** A circuit where two switches are connected in parallel. The light turns ON if *either* switch is ON.
+> - **XOR (`^`):** A two-way hallway switch. The light turns ON if the switches are in *different* positions (one ON, one OFF). If they match, the light remains OFF.
+
 <Callout type="info" title="Where this lands by level">
 **SDE-1:** you can set/clear/test a bit and use XOR to cancel pairs.
 **SDE-2:** you derive the counting/power-of-two tricks and reach for a bitmask
@@ -88,6 +94,66 @@ def iterate_subsets(items):     # all 2^n subsets via the integer ↔ subset bri
         yield [items[i] for i in range(n) if mask & (1 << i)]
 ```
 
+```java
+// Java — Bit Manipulation Helpers
+public static int getBit(int x, int i)    { return (x >> i) & 1; }
+public static int setBit(int x, int i)    { return x | (1 << i); }
+public static int clearBit(int x, int i)  { return x & ~(1 << i); }
+public static int toggleBit(int x, int i) { return x ^ (1 << i); }
+
+public static int countSetBits(int x) { // Brian Kernighan
+    int c = 0;
+    while (x != 0) {
+        x &= x - 1; // drop lowest set bit
+        c++;
+    }
+    return c;
+}
+
+public static boolean isPowerOfTwo(int x) {
+    return x > 0 && (x & (x - 1)) == 0;
+}
+
+public static int singleNumber(int[] nums) {
+    int out = 0;
+    for (int v : nums) {
+        out ^= v;
+    }
+    return out;
+}
+```
+
+```cpp
+// C++ — Bit Manipulation Helpers
+#include <vector>
+
+int getBit(int x, int i)    { return (x >> i) & 1; }
+int setBit(int x, int i)    { return x | (1 << i); }
+int clearBit(int x, int i)  { return x & ~(1 << i); }
+int toggleBit(int x, int i) { return x ^ (1 << i); }
+
+int countSetBits(int x) { // Brian Kernighan
+    int c = 0;
+    while (x) {
+        x &= x - 1; // drop lowest set bit
+        c++;
+    }
+    return c;
+}
+
+bool isPowerOfTwo(int x) {
+    return x > 0 && (x & (x - 1)) == 0;
+}
+
+int singleNumber(const std::vector<int>& nums) {
+    int out = 0;
+    for (int v : nums) {
+        out ^= v;
+    }
+    return out;
+}
+```
+
 ## Think it through like the interview
 
 The "appears twice" version is a one-liner; the **"appears three times"** version is
@@ -116,6 +182,32 @@ where interviewers separate memorizers from derivers — XOR alone can't cancel 
     }
   ]}
 />
+
+```java
+// Java — Single Number II
+public int singleNumberII(int[] nums) {
+    int ones = 0, twos = 0;
+    for (int v : nums) {
+        ones = (ones ^ v) & ~twos;
+        twos = (twos ^ v) & ~ones;
+    }
+    return ones;
+}
+```
+
+```cpp
+// C++ — Single Number II
+#include <vector>
+
+int singleNumberII(const std::vector<int>& nums) {
+    int ones = 0, twos = 0;
+    for (int v : nums) {
+        ones = (ones ^ v) & ~twos;
+        twos = (twos ^ v) & ~ones;
+    }
+    return ones;
+}
+```
 
 <Callout type="warn" title="The language gotchas interviewers probe">
 Python ints are **arbitrary precision** with no fixed width — there's no natural

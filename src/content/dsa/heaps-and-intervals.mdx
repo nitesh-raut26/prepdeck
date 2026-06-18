@@ -20,6 +20,17 @@ A **Heap** solves this by keeping the elements in a special binary tree structur
 
 ---
 
+## Heap Complexity
+
+| Operation | Time Complexity | Why |
+|---|---|---|
+| Peek Min/Max | **O(1)** | The extreme value is always at the root |
+| Push / Insert | **O(log n)** | Sifts up along the height of the tree |
+| Pop / Extract | **O(log n)** | Swaps root with last element, then sifts down |
+| Heapify (Build) | **O(n)** | Mathematical optimization building bottom-up |
+
+---
+
 ## Heap = priority queue
 
 A binary heap gives **O(log n)** push/pop and **O(1)** peek of the min (or max).
@@ -27,10 +38,10 @@ Reach for it whenever you repeatedly need the current extreme of a changing set.
 
 ### Top-K with a size-K heap
 
-To find the K largest, keep a **min-heap of size K**: push each element, and if
-the heap exceeds K, pop the smallest. What remains is the top K.
+To find the K largest elements in a dataset, maintain a **min-heap of size K**: push each element, and if the heap size exceeds K, pop the smallest. What remains in the heap at the end are the K largest elements.
 
 ```python
+# Python
 import heapq
 
 def k_largest(nums, k):
@@ -38,9 +49,50 @@ def k_largest(nums, k):
     for x in nums:
         heapq.heappush(h, x)
         if len(h) > k:
-            heapq.heappop(h)     # drop the smallest so far
+            heapq.heappop(h)     # evict the smallest
     return h                      # the k largest (unordered)
-# Time O(n log k), Space O(k) — beats sorting's O(n log n) when k << n
+# Time O(n log k), Space O(k)
+```
+
+```java
+// Java
+import java.util.ArrayList;
+import java.util.List;
+import java.util.PriorityQueue;
+
+public List<Integer> kLargest(int[] nums, int k) {
+    PriorityQueue<Integer> minHeap = new PriorityQueue<>(); // default is min-heap
+    for (int x : nums) {
+        minHeap.add(x);
+        if (minHeap.size() > k) {
+            minHeap.poll();      // evict the smallest
+        }
+    }
+    return new ArrayList<>(minHeap);
+}
+```
+
+```cpp
+// C++
+#include <vector>
+#include <queue>
+
+std::vector<int> kLargest(const std::vector<int>& nums, int k) {
+    // std::greater<int> makes it a min-heap
+    std::priority_queue<int, std::vector<int>, std::greater<int>> minHeap;
+    for (int x : nums) {
+        minHeap.push(x);
+        if (minHeap.size() > k) {
+            minHeap.pop();       // evict the smallest
+        }
+    }
+    std::vector<int> result;
+    while (!minHeap.empty()) {
+        result.push_back(minHeap.top());
+        minHeap.pop();
+    }
+    return result;
+}
 ```
 
 ### Other heap classics
@@ -77,7 +129,7 @@ Almost every interval problem starts by **sorting by start (or end)**, then maki
 one pass.
 
 ```python
-# Merge overlapping intervals.
+# Python — Merge overlapping intervals
 def merge(intervals):
     intervals.sort(key=lambda iv: iv[0])
     out = [intervals[0]]
@@ -87,7 +139,55 @@ def merge(intervals):
         else:
             out.append([s, e])
     return out
-# Time O(n log n) for the sort, then O(n)
+# Time O(n log n) sorting, Space O(n)
+```
+
+```java
+// Java — Merge overlapping intervals
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+public int[][] merge(int[][] intervals) {
+    if (intervals.length <= 1) return intervals;
+    Arrays.sort(intervals, (a, b) -> Integer.compare(a[0], b[0]));
+    List<int[]> out = new ArrayList<>();
+    out.add(intervals[0]);
+    for (int i = 1; i < intervals.length; i++) {
+        int[] lastMerged = out.get(out.size() - 1);
+        int s = intervals[i][0];
+        int e = intervals[i][1];
+        if (s <= lastMerged[1]) {
+            lastMerged[1] = Math.max(lastMerged[1], e); // extend current interval
+        } else {
+            out.add(new int[]{s, e});
+        }
+    }
+    return out.toArray(new int[out.size()][]);
+}
+```
+
+```cpp
+// C++ — Merge overlapping intervals
+#include <vector>
+#include <algorithm>
+
+std::vector<std::vector<int>> merge(std::vector<std::vector<int>>& intervals) {
+    if (intervals.size() <= 1) return intervals;
+    std::sort(intervals.begin(), intervals.end(), [](const auto& a, const auto& b) {
+        return a[0] < b[0];
+    });
+    std::vector<std::vector<int>> out;
+    out.push_back(intervals[0]);
+    for (size_t i = 1; i < intervals.size(); i++) {
+        if (intervals[i][0] <= out.back()[1]) {
+            out.back()[1] = std::max(out.back()[1], intervals[i][1]); // extend
+        } else {
+            out.push_back(intervals[i]);
+        }
+    }
+    return out;
+}
 ```
 
 For "max concurrent intervals" (meeting rooms), sweep the sorted start/end events
@@ -133,6 +233,48 @@ through it before revealing.
     }
   ]}
 />
+
+```java
+// Java — Meeting Rooms II
+import java.util.Arrays;
+import java.util.PriorityQueue;
+
+public int minMeetingRooms(int[][] meetings) {
+    if (meetings == null || meetings.length == 0) return 0;
+    Arrays.sort(meetings, (a, b) -> Integer.compare(a[0], b[0]));
+    PriorityQueue<Integer> ends = new PriorityQueue<>(); // min-heap of end times
+    for (int[] m : meetings) {
+        if (!ends.isEmpty() && ends.peek() <= m[0]) {
+            ends.poll(); // reuse room
+        }
+        ends.add(m[1]);
+    }
+    return ends.size(); // heap size only grows to match peak concurrency
+}
+```
+
+```cpp
+// C++ — Meeting Rooms II
+#include <vector>
+#include <queue>
+#include <algorithm>
+
+int minMeetingRooms(std::vector<std::vector<int>>& meetings) {
+    if (meetings.empty()) return 0;
+    std::sort(meetings.begin(), meetings.end(), [](const auto& a, const auto& b) {
+        return a[0] < b[0];
+    });
+    // min-heap of end times
+    std::priority_queue<int, std::vector<int>, std::greater<int>> ends;
+    for (const auto& m : meetings) {
+        if (!ends.empty() && ends.top() <= m[0]) {
+            ends.pop(); // reuse room
+        }
+        ends.push(m[1]);
+    }
+    return ends.size(); // peak concurrency
+}
+```
 
 ## Check yourself
 

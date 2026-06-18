@@ -10,6 +10,14 @@ tags: ["arrays", "linked-list", "two-pointers"]
 In many array and string problems, a naive search requires checking all pairs of elements. This results in nested loops and an $O(n^2)$ time complexity. 
 The **Two Pointers** pattern optimizes this to $O(n)$ by maintaining two independent indices (pointers) that traverse the data structure. Because we can prove that moving a pointer *discards* a set of invalid possibilities without checking them, we never need to re-scan.
 
+### Complexity Summary
+
+| Variant | Time Complexity | Space Complexity | Use Case |
+|---|---|---|---|
+| **Opposite Ends** | **O(n)** | **O(1)** | Converging inward on sorted arrays (e.g., pairs, palindromes) |
+| **Fast & Slow** | **O(n)** | **O(1)** | Runners at different speeds on lists/arrays (e.g., cycles, middle) |
+| **Partition** | **O(n)** | **O(1)** | In-place filtering and filtering/shifting (e.g., Dutch Flag, Quickselect) |
+
 ---
 
 ## Three Core Variants
@@ -36,6 +44,7 @@ The **Two Pointers** pattern optimizes this to $O(n)$ by maintaining two indepen
 
 ```python
 # Opposite ends: does a SORTED array contain two numbers summing to target?
+# Python
 def two_sum_sorted(a, target):
     lo, hi = 0, len(a) - 1
     while lo < hi:
@@ -44,6 +53,46 @@ def two_sum_sorted(a, target):
         if s < target:  lo += 1     # need bigger → move left pointer up
         else:           hi -= 1     # need smaller → move right pointer down
     return None
+```
+
+```java
+// Java
+public int[] twoSumSorted(int[] a, int target) {
+    int lo = 0, hi = a.length - 1;
+    while (lo < hi) {
+        int s = a[lo] + a[hi];
+        if (s == target) {
+            return new int[] { lo, hi };
+        }
+        if (s < target) {
+            lo++; // need bigger sum -> move left pointer up
+        } else {
+            hi--; // need smaller sum -> move right pointer down
+        }
+    }
+    return new int[] {};
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+std::pair<int, int> twoSumSorted(const std::vector<int>& a, int target) {
+    int lo = 0, hi = a.size() - 1;
+    while (lo < hi) {
+        int s = a[lo] + a[hi];
+        if (s == target) {
+            return { lo, hi };
+        }
+        if (s < target) {
+            lo++; // need bigger sum
+        } else {
+            hi--; // need smaller sum
+        }
+    }
+    return { -1, -1 };
+}
 ```
 
 Why it's O(n): each pointer only moves one direction, so together they take ≤ n
@@ -61,6 +110,7 @@ valid pair and watch the pointers meet empty-handed.
 ## Fast & slow — cycle detection (Floyd's)
 
 ```python
+# Python
 def has_cycle(head):
     slow = fast = head
     while fast and fast.next:
@@ -68,6 +118,34 @@ def has_cycle(head):
         fast = fast.next.next     # +2
         if slow is fast: return True   # they meet ⇒ cycle
     return False
+```
+
+```java
+// Java
+public boolean hasCycle(ListNode head) {
+    ListNode slow = head;
+    ListNode fast = head;
+    while (fast != null && fast.next != null) {
+        slow = slow.next;        // +1
+        fast = fast.next.next;   // +2
+        if (slow == fast) return true; // they meet
+    }
+    return false;
+}
+```
+
+```cpp
+// C++
+bool hasCycle(ListNode* head) {
+    ListNode* slow = head;
+    ListNode* fast = head;
+    while (fast != nullptr && fast->next != nullptr) {
+        slow = slow->next;        // +1
+        fast = fast->next->next;  // +2
+        if (slow == fast) return true;
+    }
+    return false;
+}
 ```
 
 <Callout type="tip" title="Two pointers vs hashing">
@@ -135,6 +213,45 @@ that argument before revealing anything.
     }
   ]}
 />
+
+```java
+// Java — Container With Most Water
+public int maxArea(int[] h) {
+    int lo = 0, hi = h.length - 1;
+    int best = 0;
+    while (lo < hi) {
+        int area = Math.min(h[lo], h[hi]) * (hi - lo);
+        best = Math.max(best, area);
+        if (h[lo] < h[hi]) {
+            lo++; // move shorter wall
+        } else {
+            hi--;
+        }
+    }
+    return best;
+}
+```
+
+```cpp
+// C++ — Container With Most Water
+#include <vector>
+#include <algorithm>
+
+int maxArea(const std::vector<int>& h) {
+    int lo = 0, hi = h.size() - 1;
+    int best = 0;
+    while (lo < hi) {
+        int area = std::min(h[lo], h[hi]) * (hi - lo);
+        best = std::max(best, area);
+        if (h[lo] < h[hi]) {
+            lo++; // move shorter wall
+        } else {
+            hi--;
+        }
+    }
+    return best;
+}
+```
 
 ## Check yourself
 

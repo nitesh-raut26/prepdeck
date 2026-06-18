@@ -13,6 +13,11 @@ Some companies (**Google, Microsoft, Nvidia, Bloomberg**, and most **HFT** firms
 correctly." It tests whether you reach for the right primitive and reason about
 interleavings — see also the [concurrency fundamentals](/fundamentals/concurrency).
 
+> 💡 **Visualizing the primitives:**
+> - **Mutex (Bathroom Key):** Imagine a busy coffee shop with a single bathroom. To use it, you must get the key (the lock/mutex). Only one person can hold the key at a time. Anyone else must wait until the key is returned.
+> - **Semaphore (Parking Lot):** Imagine a parking lot with a capacity of 10 cars. When a car enters, the counter decrements. If the lot is full (counter is 0), cars must queue at the gate. When a car leaves, the counter increments and the gate lets the next car in.
+> - **Condition Variable (Restaurant Buzzer):** Instead of standing at the counter repeatedly asking the chef "Is my food ready yet?" (busy-spinning / polling), you are given a buzzer. You sit down and wait silently. When the chef notifies the buzzer (condition variable), you wake up and walk to the counter to collect your food.
+
 ## The primitives
 
 | Primitive | Guarantees | Use for |
@@ -58,6 +63,90 @@ class BoundedBuffer:
             return item
 ```
 
+```java
+// Java — Producer-Consumer (Bounded Buffer)
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class BoundedBuffer<T> {
+    private final Queue<T> queue = new LinkedList<>();
+    private final int capacity;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition notFull = lock.newCondition();
+    private final Condition notEmpty = lock.newCondition();
+
+    public BoundedBuffer(int capacity) {
+        this.capacity = capacity;
+    }
+
+    public void put(T item) throws InterruptedException {
+        lock.lock();
+        try {
+            while (queue.size() == capacity) { // while loop guards against spurious wakeups
+                notFull.await();
+            }
+            queue.add(item);
+            notEmpty.signal(); // wake one waiting consumer
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public T get() throws InterruptedException {
+        lock.lock();
+        try {
+            while (queue.isEmpty()) {
+                notEmpty.await();
+            }
+            T item = queue.poll();
+            notFull.signal(); // wake one waiting producer
+            return item;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+```cpp
+// C++ — Producer-Consumer (Bounded Buffer)
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+
+template <typename T>
+class BoundedBuffer {
+private:
+    std::queue<T> queue;
+    size_t capacity;
+    std::mutex mtx;
+    std::condition_variable not_full;
+    std::condition_variable not_empty;
+
+public:
+    BoundedBuffer(size_t cap) : capacity(cap) {}
+
+    void put(T item) {
+        std::unique_lock<std::mutex> lock(mtx);
+        // while loop guards against spurious wakeups
+        not_full.wait(lock, [this]() { return queue.size() < capacity; });
+        queue.push(item);
+        not_empty.notify_one();
+    }
+
+    T get() {
+        std::unique_lock<std::mutex> lock(mtx);
+        not_empty.wait(lock, [this]() { return !queue.empty(); });
+        T item = queue.front();
+        queue.pop();
+        not_full.notify_one();
+        return item;
+    }
+};
+```
+
 <Callout type="warn" title="Always wait in a while loop, never an if">
 After `wait()` returns, the condition you waited for may already be false again (another
 thread raced in, or a spurious wakeup). Re-check the predicate in a `while` loop before
@@ -90,6 +179,72 @@ bugs.
     }
   ]}
 />
+
+```java
+// Java — Print in Order using Semaphores
+import java.util.concurrent.Semaphore;
+
+class Foo {
+    private final Semaphore s2 = new Semaphore(0);
+    private final Semaphore s3 = new Semaphore(0);
+
+    public Foo() {}
+
+    public void first(Runnable printFirst) throws InterruptedException {
+        printFirst.run();
+        s2.release();
+    }
+
+    public void second(Runnable printSecond) throws InterruptedException {
+        s2.acquire();
+        printSecond.run();
+        s3.release();
+    }
+
+    public void third(Runnable printThird) throws InterruptedException {
+        s3.acquire();
+        printThird.run();
+    }
+}
+```
+
+```cpp
+// C++ — Print in Order using Condition Variables
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+
+class Foo {
+private:
+    std::mutex mtx;
+    std::condition_variable cv;
+    int step = 1;
+
+public:
+    Foo() {}
+
+    void first(std::function<void()> printFirst) {
+        std::unique_lock<std::mutex> lock(mtx);
+        printFirst();
+        step = 2;
+        cv.notify_all();
+    }
+
+    void second(std::function<void()> printSecond) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this]() { return step == 2; });
+        printSecond();
+        step = 3;
+        cv.notify_all();
+    }
+
+    void third(std::function<void()> printThird) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this]() { return step == 3; });
+        printThird();
+    }
+};
+```
 
 ## Deadlock — the four conditions
 
@@ -132,6 +287,44 @@ the same order) to break circular wait — the standard answer to **dining philo
     }
   ]}
 />
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why must you check the condition in a while loop, rather than an if statement, after calling wait() on a condition variable?",
+    options: [
+      "To guard against spurious wakeups and threads that race in and change the condition before you reacquire the lock.",
+      "Because it reduces memory allocations in the kernel.",
+      "Because compiling if throws a concurrency syntax error.",
+      "Because while locks the thread permanently if there is a deadlock."
+    ],
+    answer: 0,
+    explain: "A thread can wake up spuriously without a notify, or another thread can grab the lock and change the state back (e.g. consume the item) before the waiting thread gets to run. Using while ensures we re-evaluate the predicate before making progress."
+  },
+  {
+    q: "Which of the following describes how lock ordering prevents deadlocks?",
+    options: [
+      "It breaks the circular wait condition by ensuring no cycles can form in the dependency graph of thread requests.",
+      "It disables mutual exclusion entirely so threads can access resources concurrently.",
+      "It automatically preempts threads holding locks.",
+      "It runs all threads sequentially on a single CPU core."
+    ],
+    answer: 0,
+    explain: "Deadlocks require circular wait (A waits for B, B waits for A). If every thread must acquire lock 1 before lock 2, then thread A cannot hold lock 2 while waiting for lock 1. Imposing a global acquisition order ensures the dependency graph remains acyclic."
+  },
+  {
+    q: "What is the key difference between a Mutex and a Semaphore?",
+    options: [
+      "A Mutex has an owner and only that owner can release it, whereas a Semaphore tracks permits and any thread can release/post a permit.",
+      "A Mutex can only be used in Java, whereas a Semaphore is C++ only.",
+      "A Mutex is lock-free, whereas a Semaphore uses spin-locks.",
+      "There is no difference; they are exact synonyms."
+    ],
+    answer: 0,
+    explain: "A mutex has the concept of ownership: the thread that locked the mutex is responsible for unlocking it. A semaphore is a signaling mechanism that tracks a count of permits; any thread can release (increment) or acquire (decrement) permits, making it perfect for task signaling."
+  }
+]} />
 
 <QA q="Why must you re-check the condition in a while loop after wait(), not an if?">
 

@@ -249,6 +249,44 @@ not weakness.
 
 </QA>
 
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is an end-of-word flag (is_word) necessary in a TrieNode?",
+    options: [
+      "To distinguish between a word that actually exists in the dictionary and a sequence of characters that is only a prefix of some longer word",
+      "To mark the root node of the tree",
+      "To optimize lookup speed to O(1)",
+      "It is only used in Java implementations"
+    ],
+    answer: 0,
+    explain: "A prefix like 'ca' will naturally have its nodes exist if 'cat' is in the trie. The is_word flag is what tells search() that 'ca' is also a complete word in the dictionary, separate from 'cat'."
+  },
+  {
+    q: "What is the time complexity to insert or search for a word of length L in a trie containing N words?",
+    options: [
+      "O(L) — it depends entirely on the word length, not the number of words stored",
+      "O(N · L) — you must compare against every word",
+      "O(log N)",
+      "O(N log L)"
+    ],
+    answer: 0,
+    explain: "At each step, you follow a single character pointer. A word of length L requires exactly L operations. This makes tries extremely fast for large dictionaries because search time is independent of N."
+  },
+  {
+    q: "In Word Search II (backtracking + trie), why is it beneficial to prune a word from the trie once it is found?",
+    options: [
+      "It prevents duplicate reports of the same word and stops the algorithm from wasting time searching for it again",
+      "It decreases the stack depth of the recursion",
+      "It frees memory to prevent stack overflows",
+      "It sorts the board characters"
+    ],
+    answer: 0,
+    explain: "Once a word is found, we don't need to find it again. By deleting the end-of-word flag (or deleting leaf nodes that are no longer part of any other dictionary words), we prevent redundant searches and speed up the rest of the grid scan."
+  }
+]} />
+
 ## Practice
 
 1. **Build:** implement the trie above from memory; insert

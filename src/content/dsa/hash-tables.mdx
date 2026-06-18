@@ -5,14 +5,20 @@ order: 6
 difficulty: "Foundation"
 tags: ["hash-table", "dictionary", "hashing", "fundamentals"]
 ---
+## Why We Need Hash Tables & How to Think About It
+
+Imagine you are running a student record room with 10,000 folders. If you keep them in a heap, finding a folder named `"Nitesh"` requires scanning them one by one (Linear Search, $O(n)$). If you sort them alphabetically, you can binary-search them in $O(\log n)$, but keeping the list sorted is slow because inserting a new student forces you to slide thousands of folders over.
+
+What if there was a magic system where the name itself tells you exactly which drawer to open?
+For example, a rule: "Take the first letter of the name and map it to a drawer index: A=1, B=2, ... N=14." Now, to find `"Nitesh"`, you walk straight to drawer 14. 
+
+This is a **Hash Table**. The rule that translates a key (`"Nitesh"`) into a specific location is a **Hash Function**. It bypasses searching entirely, giving you **$O(1)$ random access** for arbitrary keys.
+
+---
 
 ## Opening the black box
 
-You've been using hash tables since [Level 1](/programming/collections) —
-every Python `dict`/`set`, Java `HashMap`, C++ `unordered_map` is one. They
-answer "what's the value for this key?" in O(1). This page is about *how*,
-because interviewers ask, and because the failure modes only make sense once
-you've seen the machinery.
+You've been using hash tables since [Level 1](/programming/collections) — every Python `dict`/`set`, Java `HashMap`, C++ `unordered_map` is one. They answer "what's the value for this key?" in O(1). This page is about *how*, because interviewers ask, and because the failure modes only make sense once you've seen the machinery.
 
 ## The big idea: compute the location
 
@@ -99,15 +105,51 @@ with X?" from O(n) scans into O(1) asks.** A huge share of "optimize this
 O(n²) solution" interview problems are solved by exactly one hash table:
 
 ```python
-# Two Sum — THE canonical example
-# Brute force: try all pairs — O(n²)
-# Hash table: one pass — O(n)
+# Python — value → index
 def two_sum(nums, target):
-    seen = {}                          # value → index
+    seen = {}
     for i, x in enumerate(nums):
-        if target - x in seen:         # have I seen my complement?  O(1)
-            return [seen[target - x], i]
+        complement = target - x
+        if complement in seen:
+            return [seen[complement], i]
         seen[x] = i
+    return []
+```
+
+```java
+// Java — value -> index
+import java.util.HashMap;
+import java.util.Map;
+
+public int[] twoSum(int[] nums, int target) {
+    Map<Integer, Integer> seen = new HashMap<>();
+    for (int i = 0; i < nums.length; i++) {
+        int complement = target - nums[i];
+        if (seen.containsKey(complement)) {
+            return new int[] { seen.get(complement), i };
+        }
+        seen.put(nums[i], i);
+    }
+    return new int[] {};
+}
+```
+
+```cpp
+// C++ — value -> index
+#include <unordered_map>
+#include <vector>
+
+std::vector<int> twoSum(std::vector<int>& nums, int target) {
+    std::unordered_map<int, int> seen;
+    for (int i = 0; i < nums.size(); i++) {
+        int complement = target - nums[i];
+        if (seen.count(complement)) {
+            return { seen[complement], i };
+        }
+        seen[nums[i]] = i;
+    }
+    return {};
+}
 ```
 
 The reusable patterns, each O(n) where the naive way is O(n²):
@@ -194,6 +236,46 @@ sums — the array/hash crossover interviewers love. Think before revealing.
     }
   ]}
 />
+
+```java
+// Java — Subarray Sum Equals K
+import java.util.HashMap;
+import java.util.Map;
+
+public int subarraySum(int[] nums, int k) {
+    Map<Integer, Integer> count = new HashMap<>();
+    count.put(0, 1); // seed for subarrays starting at index 0
+    int running = 0;
+    int total = 0;
+    for (int x : nums) {
+        running += x;
+        total += count.getOrDefault(running - k, 0);
+        count.put(running, count.getOrDefault(running, 0) + 1);
+    }
+    return total;
+}
+```
+
+```cpp
+// C++ — Subarray Sum Equals K
+#include <unordered_map>
+#include <vector>
+
+int subarraySum(std::vector<int>& nums, int k) {
+    std::unordered_map<int, int> count;
+    count[0] = 1; // seed for subarrays starting at index 0
+    int running = 0;
+    int total = 0;
+    for (int x : nums) {
+        running += x;
+        if (count.count(running - k)) {
+            total += count[running - k];
+        }
+        count[running]++;
+    }
+    return total;
+}
+```
 
 ## Check yourself
 

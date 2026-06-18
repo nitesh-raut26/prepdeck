@@ -27,6 +27,18 @@ end and failing, it restarts from scratch one position over, *forgetting
 everything it just learned*. Both classic algorithms below are schemes
 for **never forgetting**.
 
+> 💡 **Visualizing the algorithms:**
+> - **Rabin-Karp (Bar-codes):** Imagine inspecting thousands of boxes looking for a specific item. Opening every box to check its full contents (character comparison) is slow. Instead, you scan a bar-code on the outside (hash). If the bar-code doesn't match, you skip the box immediately. If it does match, you open the box to double-check that it's the correct item (guarding against bar-code collisions).
+> - **Knuth-Morris-Pratt (Never Forgetting):** Imagine searching for the word `underground` in a text. You've matched `undergro` but the next character is a mismatch. Instead of moving your text pointer all the way back to the second letter `n` and starting over, you look at what you've already read. If the pattern was `ababac` and you match `ababa` but fail on `c`, you notice that the end of what you matched (`aba`) matches the start of your pattern (`aba`). You slide the pattern over and immediately resume matching from character 4, never re-reading a single letter in the text.
+
+### Complexity Comparison
+
+| Algorithm | Time (Average) | Time (Worst) | Space | Best Use Case |
+| --- | --- | --- | --- | --- |
+| **Naive / Brute Force** | $O(N \cdot M)$ | $O(N \cdot M)$ | $O(1)$ | Simple cases, small strings |
+| **Rabin-Karp** | $O(N + M)$ | $O(N \cdot M)$ | $O(1)$ | Multi-pattern search, streaming data |
+| **KMP (Knuth-Morris-Pratt)** | $O(N + M)$ | $O(N + M)$ | $O(M)$ | Single pattern search with repetitiveness |
+
 Calibration up front: these appear in interviews **occasionally** and
 at senior/competitive levels — far less often than
 [two pointers](/dsa/two-pointers) or [DP](/dsa/dp-patterns). The
@@ -80,6 +92,91 @@ def rabin_karp(t, p):
         if i + m < n:                           # roll the window
             th = ((th - ord(t[i]) * power) * B + ord(t[i+m])) % M
     return -1
+```
+
+```java
+// Java — Rabin-Karp
+public int rabinKarp(String t, String p) {
+    int n = t.length(), m = p.length();
+    if (m > n) return -1;
+    if (m == 0) return 0;
+
+    long B = 256;
+    long M = 1000000007L; // mod to prevent overflow
+    long ph = 0, th = 0;
+    long power = 1;
+
+    // Compute B^(m-1) % M
+    for (int i = 0; i < m - 1; i++) {
+        power = (power * B) % M;
+    }
+
+    // Compute initial hashes
+    for (int i = 0; i < m; i++) {
+        ph = (ph * B + p.charAt(i)) % M;
+        th = (th * B + t.charAt(i)) % M;
+    }
+
+    for (int i = 0; i <= n - m; i++) {
+        if (ph == th) {
+            // Double-check to handle collisions
+            if (t.substring(i, i + m).equals(p)) {
+                return i;
+            }
+        }
+        if (i + m < n) {
+            // Roll the window: subtract left char, shift left, add right char
+            long val = (th - (t.charAt(i) * power) % M) % M;
+            if (val < 0) val += M;
+            th = (val * B + t.charAt(i + m)) % M;
+        }
+    }
+    return -1;
+}
+```
+
+```cpp
+// C++ — Rabin-Karp
+#include <string>
+#include <vector>
+
+int rabinKarp(const std::string& t, const std::string& p) {
+    int n = t.length(), m = p.length();
+    if (m > n) return -1;
+    if (m == 0) return 0;
+
+    long long B = 256;
+    long long M = 1000000007LL;
+    long long ph = 0, th = 0;
+    long long power = 1;
+
+    // Compute B^(m-1) % M
+    for (int i = 0; i < m - 1; i++) {
+        power = (power * B) % M;
+    }
+
+    // Compute initial hashes
+    for (int i = 0; i < m; i++) {
+        ph = (ph * B + p[i]) % M;
+        th = (th * B + t[i]) % M;
+    }
+
+    for (int i = 0; i <= n - m; i++) {
+        if (ph == th) {
+            // Double-check to handle collisions
+            if (t.compare(i, m, p) == 0) {
+                return i;
+            }
+        }
+        if (i + m < n) {
+            // Roll the window
+            long long val = (th - (t[i] * power) % M) % M;
+            if (val < 0) val += M;
+            th = (val * B + t[i + m]) % M;
+        }
+    }
+    return -1;
+}
 ```
 
 Average **O(n + m)**; the character-comparison on hash hits guards
@@ -147,6 +244,81 @@ def kmp_find(t, p):
         if k == len(p):
             return i - k + 1              # full match ends here
     return -1
+```
+
+```java
+// Java — KMP
+public int kmpFind(String t, String p) {
+    int m = p.length();
+    if (m == 0) return 0;
+    
+    // Build failure table
+    int[] f = new int[m];
+    int k = 0;
+    for (int i = 1; i < m; i++) {
+        while (k > 0 && p.charAt(i) != p.charAt(k)) {
+            k = f[k - 1];
+        }
+        if (p.charAt(i) == p.charAt(k)) {
+            k++;
+        }
+        f[i] = k;
+    }
+
+    // Scan the text
+    k = 0;
+    for (int i = 0; i < t.length(); i++) {
+        while (k > 0 && t.charAt(i) != p.charAt(k)) {
+            k = f[k - 1];
+        }
+        if (t.charAt(i) == p.charAt(k)) {
+            k++;
+        }
+        if (k == m) {
+            return i - m + 1; // full match found
+        }
+    }
+    return -1;
+}
+```
+
+```cpp
+// C++ — KMP
+#include <string>
+#include <vector>
+
+int kmpFind(const std::string& t, const std::string& p) {
+    int m = p.length();
+    if (m == 0) return 0;
+
+    // Build failure table
+    std::vector<int> f(m, 0);
+    int k = 0;
+    for (int i = 1; i < m; i++) {
+        while (k > 0 && p[i] != p[k]) {
+            k = f[k - 1];
+        }
+        if (p[i] == p[k]) {
+            k++;
+        }
+        f[i] = k;
+    }
+
+    // Scan the text
+    k = 0;
+    for (int i = 0; i < t.length(); i++) {
+        while (k > 0 && t[i] != p[k]) {
+            k = f[k - 1];
+        }
+        if (t[i] == p[k]) {
+            k++;
+        }
+        if (k == m) {
+            return i - m + 1; // full match found
+        }
+    }
+    return -1;
+}
 ```
 
 The mental model that survives interviews: **KMP is a tiny state
@@ -300,6 +472,44 @@ filtering) is why Aho-Corasick is the one multi-pattern name worth
 knowing.
 
 </QA>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "What does the Rabin-Karp algorithm use to achieve an average O(N + M) time complexity?",
+    options: [
+      "A rolling hash function to update window values in O(1) time as we slide across the text, followed by character verification on hash hits.",
+      "A precomputed failure function to skip backward re-reads.",
+      "A balanced binary search tree of all prefixes in the pattern.",
+      "Recursive backtracking to prune invalid paths."
+    ],
+    answer: 0,
+    explain: "Rabin-Karp slides a window across the text, computing the hash of the current window in O(1) using the previous window's hash (the rolling hash trick). It only performs character comparisons when hashes match to guard against collisions."
+  },
+  {
+    q: "In KMP, what does the failure table value f[i] represent?",
+    options: [
+      "The length of the longest proper prefix of p[:i+1] that is also a suffix of p[:i+1].",
+      "The number of times character p[i] repeats in the pattern.",
+      "The index to fall back to if character p[i] matches the text.",
+      "The total count of distinct character matches up to index i."
+    ],
+    answer: 0,
+    explain: "The failure table f[i] stores the length of the longest proper prefix of the pattern's prefix p[:i+1] that is also a suffix. This tells us the maximum prefix length we can reuse from the matched portion without moving the text pointer backward."
+  },
+  {
+    q: "For matching 50,000 distinct patterns in a single pass of a large log stream, which algorithm is best suited?",
+    options: [
+      "Aho-Corasick (which builds failure links over a trie of all patterns)",
+      "Standard Rabin-Karp with one single hash",
+      "Running the standard KMP algorithm 50,000 times",
+      "Linear scan with naive_find"
+    ],
+    answer: 0,
+    explain: "Aho-Corasick generalized KMP to multiple patterns by combining a Trie of all patterns with failure links. This allows searching for any number of patterns simultaneously in O(text_length + matches) time, whereas standard KMP would require scanning the text 50,000 times."
+  }
+]} />
 
 ## Practice
 

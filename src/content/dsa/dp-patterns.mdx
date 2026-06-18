@@ -6,18 +6,19 @@ difficulty: "Core pattern"
 tags: ["dynamic-programming", "knapsack", "lis", "lcs", "patterns"]
 ---
 
+## Why We Need DP Patterns & How to Think About It
+
+Dynamic Programming can initially feel like a chaotic collection of 100 different problems, each requiring a completely unique and inspired solution. However, under the surface, almost **90% of all interview DP problems belong to just six core families**. 
+
+Instead of memorizing dozens of solutions, you only need to learn to recognize these 6 families. Once you spot which family a problem belongs to, the state definition and the recurrence transition reveal themselves naturally. This page serves as your field guide to identifying, analyzing, and coding these patterns.
+
+---
+
 ## How to use this page
 
-The [DP fundamentals doc](/dsa/dynamic-programming) gave you the
-machinery: spot overlapping subproblems, define a state, write the
-recurrence, memoize or tabulate. This page is the field guide — the
-**six families** that nearly every interview DP belongs to. For each:
-the *tell* (how to recognize it), the *state* (what dp[i] means — always
-say this sentence first), the recurrence, and the canonical problems.
+The [DP fundamentals doc](/dsa/dynamic-programming) gave you the machinery: spot overlapping subproblems, define a state, write the recurrence, memoize or tabulate. This page is the field guide — the **six families** that nearly every interview DP belongs to. For each: the *tell* (how to recognize it), the *state* (what dp[i] means — always say this sentence first), the recurrence, and the canonical problems.
 
-Learning DP by family beats learning it by problem: 20 memorized
-solutions evaporate under pressure; 6 recurrences you can re-derive
-don't.
+Learning DP by family beats learning it by problem: 20 memorized solutions evaporate under pressure; 6 recurrences you can re-derive don't.
 
 ## Family 1 — 0/1 Knapsack (take it or leave it)
 
@@ -29,6 +30,8 @@ capacity `w`. **The choice at every cell is binary: take item i, or
 don't.**
 
 ```python
+# 0/1 Knapsack
+# Python
 def knapsack(values, weights, cap):
     n = len(values)
     dp = [[0] * (cap + 1) for _ in range(n + 1)]
@@ -39,6 +42,43 @@ def knapsack(values, weights, cap):
                 dp[i][w] = max(dp[i][w],
                                dp[i-1][w - weights[i-1]] + values[i-1])
     return dp[n][cap]
+```
+
+```java
+// Java
+public int knapsack(int[] values, int[] weights, int cap) {
+    int n = values.length;
+    int[][] dp = new int[n + 1][cap + 1];
+    for (int i = 1; i <= n; i++) {
+        for (int w = 0; w <= cap; w++) {
+            dp[i][w] = dp[i - 1][w];                    // skip item i
+            if (weights[i - 1] <= w) {
+                dp[i][w] = Math.max(dp[i][w], dp[i - 1][w - weights[i - 1]] + values[i - 1]); // take
+            }
+        }
+    }
+    return dp[n][cap];
+}
+```
+
+```cpp
+// C++
+#include <vector>
+#include <algorithm>
+
+int knapsack(const std::vector<int>& values, const std::vector<int>& weights, int cap) {
+    int n = values.size();
+    std::vector<std::vector<int>> dp(n + 1, std::vector<int>(cap + 1, 0));
+    for (int i = 1; i <= n; i++) {
+        for (int w = 0; w <= cap; w++) {
+            dp[i][w] = dp[i - 1][w];                    // skip item i
+            if (weights[i - 1] <= w) {
+                dp[i][w] = std::max(dp[i][w], dp[i - 1][w - weights[i - 1]] + values[i - 1]); // take
+            }
+        }
+    }
+    return dp[n][cap];
+}
 ```
 
 The family's disguises are the point — none of these say "knapsack":
@@ -67,13 +107,55 @@ exactly at i**. The "ending at" is the trick — it makes the recurrence
 local:
 
 ```python
-def lis(nums):                          # O(n²)
+# LIS O(n²)
+# Python
+def lis(nums):
     dp = [1] * len(nums)
     for i in range(len(nums)):
         for j in range(i):              # any earlier, smaller element
             if nums[j] < nums[i]:       # ...can precede nums[i]
                 dp[i] = max(dp[i], dp[j] + 1)
-    return max(dp)
+    return max(dp) if nums else 0
+```
+
+```java
+// Java
+public int lis(int[] nums) {
+    if (nums == null || nums.length == 0) return 0;
+    int[] dp = new int[nums.length];
+    java.util.Arrays.fill(dp, 1);
+    int maxLen = 1;
+    for (int i = 0; i < nums.length; i++) {
+        for (int j = 0; j < i; j++) {
+            if (nums[j] < nums[i]) {
+                dp[i] = Math.max(dp[i], dp[j] + 1);
+            }
+        }
+        maxLen = Math.max(maxLen, dp[i]);
+    }
+    return maxLen;
+}
+```
+
+```cpp
+// C++
+#include <vector>
+#include <algorithm>
+
+int lis(const std::vector<int>& nums) {
+    if (nums.empty()) return 0;
+    std::vector<int> dp(nums.size(), 1);
+    int maxLen = 1;
+    for (size_t i = 0; i < nums.size(); i++) {
+        for (size_t j = 0; j < i; j++) {
+            if (nums[j] < nums[i]) {
+                dp[i] = std::max(dp[i], dp[j] + 1);
+            }
+        }
+        maxLen = std::max(maxLen, dp[i]);
+    }
+    return maxLen;
+}
 ```
 
 The O(n log n) upgrade — *patience sorting*: keep `tails[k]` = the
@@ -95,6 +177,8 @@ edit distance, "make these equal with minimum operations."
 recurrence forks on whether the current characters match:
 
 ```python
+# LCS
+# Python
 def lcs(a, b):
     dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
     for i in range(1, len(a) + 1):
@@ -105,6 +189,46 @@ def lcs(a, b):
                 dp[i][j] = max(dp[i-1][j],           # drop a char from a...
                                dp[i][j-1])           # ...or from b
     return dp[-1][-1]
+```
+
+```java
+// Java
+public int lcs(String a, String b) {
+    int m = a.length(), n = b.length();
+    int[][] dp = new int[m + 1][n + 1];
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a.charAt(i - 1) == b.charAt(j - 1)) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;     // match
+            } else {
+                dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]); // mismatch
+            }
+        }
+    }
+    return dp[m][n];
+}
+```
+
+```cpp
+// C++
+#include <string>
+#include <vector>
+#include <algorithm>
+
+int lcs(std::string a, std::string b) {
+    int m = a.length(), n = b.length();
+    std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1, 0));
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a[i - 1] == b[j - 1]) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;     // match
+            } else {
+                dp[i][j] = std::max(dp[i - 1][j], dp[i][j - 1]); // mismatch
+            }
+        }
+    }
+    return dp[m][n];
+}
 ```
 
 **Edit distance** (Levenshtein) is the same grid with three transitions
@@ -262,6 +386,44 @@ but is exactly one. Reason before revealing.
   ]}
 />
 
+```java
+// Java — Partition Equal Subset Sum
+public boolean canPartition(int[] nums) {
+    int total = 0;
+    for (int num : nums) total += num;
+    if (total % 2 != 0) return false;
+    int target = total / 2;
+    boolean[] dp = new boolean[target + 1];
+    dp[0] = true;                        // empty subset sums to 0
+    for (int num : nums) {
+        for (int s = target; s >= num; s--) { // loop downward to use each num once
+            dp[s] = dp[s] || dp[s - num];
+        }
+    }
+    return dp[target];
+}
+```
+
+```cpp
+// C++ — Partition Equal Subset Sum
+#include <vector>
+#include <numeric>
+
+bool canPartition(const std::vector<int>& nums) {
+    int total = std::accumulate(nums.begin(), nums.end(), 0);
+    if (total % 2 != 0) return false;
+    int target = total / 2;
+    std::vector<bool> dp(target + 1, false);
+    dp[0] = true;
+    for (int num : nums) {
+        for (int s = target; s >= num; s--) { // loop downward
+            dp[s] = dp[s] || dp[s - num];
+        }
+    }
+    return dp[target];
+}
+```
+
 ## Interview perspective
 
 <QA q="Coin Change: why does greedy fail, which family is it, and what changes between 'minimum coins' and 'count the ways'?">
@@ -315,6 +477,44 @@ distance and bail early — the full table is overkill when distance > 2
 means "irrelevant."
 
 </QA>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "What is the difference between iterating downward and iterating upward in a 1-D space-optimized Knapsack DP array?",
+    options: [
+      "Downward prevents reusing the current item multiple times (0/1 Knapsack), while upward allows reuse (Unbounded Knapsack / Coin Change)",
+      "Downward computes LIS, while upward computes LCS",
+      "Downward runs in O(N log N) time, while upward runs in O(N^2)",
+      "Downward is only supported in C++, whereas upward is for Java and Python"
+    ],
+    answer: 0,
+    explain: "In a 1D DP table, iterating downward ensures that when we evaluate dp[w], the state dp[w - weight] has not been updated with the current item yet (it still reflects the previous item's row). This restricts item usage to at most once (0/1). Iterating upward lets the same item propagate and be reused (unbounded)."
+  },
+  {
+    q: "Why must the state definition for the Longest Increasing Subsequence (LIS) be defined as 'dp[i] = length of LIS ending exactly at index i' rather than 'best LIS in the prefix 0...i'?",
+    options: [
+      "Because we need to know the exact ending element to check if a future element nums[j] is greater than nums[i] and can extend the sequence",
+      "Because it reduces the space complexity to O(1)",
+      "Because it forces the sequence to use all elements in the array",
+      "Because the MDX compiler throws an error otherwise"
+    ],
+    answer: 0,
+    explain: "To extend an increasing subsequence, the new element must be strictly greater than the tail of the subsequence. By anchoring the state at 'ending exactly at index i', we guarantee that nums[i] is the tail of the subsequence, allowing a simple check nums[j] < nums[i] for any j < i to see if we can extend the sequence."
+  },
+  {
+    q: "When dealing with Interval DP (e.g., Burst Balloons or Matrix Chain Multiplication), why is the state transition based on the LAST decision rather than the first?",
+    options: [
+      "Because the last decision is the only one that splits the interval into two completely independent sub-intervals",
+      "Because interval length decreases with each step",
+      "Because it reduces the time complexity from cubic O(N^3) to quadratic O(N^2)",
+      "Because it is required to initialize the DP table with infinity values"
+    ],
+    answer: 0,
+    explain: "If we split on the first balloon bursted, the remaining balloons' adjacent relationships change, coupling the left and right subproblems. However, if we choose balloon k as the last balloon to burst in the interval (i, j), the subproblems to the left (i, k) and right (k, j) are completely independent because balloon i and j remain intact during their execution."
+  }
+]} />
 
 ## Practice
 

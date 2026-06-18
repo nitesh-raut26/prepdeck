@@ -13,6 +13,21 @@ A surprising share of "array" problems are number theory wearing a costume: anyt
 reachable" GCD puzzles. None of it is research math — it's six reusable tools. Heaviest at
 **Google, Amazon, Adobe**, and quant/HFT screens (**Two Sigma, Jane Street, Bloomberg**).
 
+> 💡 **Visualizing the math concepts:**
+> - **GCD (Euclidean Algorithm):** Imagine you want to tile a floor of size $a \times b$ using the largest possible square tiles. If you lay down square tiles of size $b \times b$, you're left with a smaller rectangular strip of size $b \times (a \bmod b)$. Finding the GCD is just repeating this tiling process on the remaining strip until no space is left.
+> - **Modular Arithmetic (Clock Math):** Think of modulo like a 12-hour clock. If it's 10 o'clock and you wait 5 hours, it becomes 3 o'clock, not 15 o'clock. The numbers loop around. The mod is just the circumference of the circle.
+> - **Binary Exponentiation (Fast Powering):** Imagine calculating $2^8$. Instead of multiplying 2 by itself eight times ($2 \times 2 \times 2 \dots$), you square it three times: $2 \rightarrow 4 \rightarrow 16 \rightarrow 256$. By splitting the exponent in half at each step, you turn a tedious linear task into a logarithmic sprint.
+
+### Complexity of Core Operations
+
+| Operation | Time Complexity | Space Complexity | Best Use Case |
+| --- | --- | --- | --- |
+| **GCD / LCM (Euclidean)** | O(log(min(A, B))) | O(1) iterative, O(log(min(A, B))) recursive | Simplify fractions, check grid reachability |
+| **Fast Exponentiation** | O(log N) | O(1) | High-power modular exponentiation, modular inverse |
+| **Trial Division** | O(sqrt(X)) | O(1) | Single primality test |
+| **Sieve of Eratosthenes** | O(N log log N) | O(N) | Finding all prime numbers up to N |
+| **Combinatorics mod p** | O(R log P) | O(1) | Path counting on grids, combinations mod prime |
+
 ## GCD & LCM (Euclid)
 
 ```python
@@ -22,6 +37,40 @@ def gcd(a, b):
 
 def lcm(a, b):
     return a // gcd(a, b) * b     # divide FIRST to avoid overflow
+```
+
+```java
+// Java — GCD & LCM
+public long gcd(long a, long b) {
+    while (b != 0) {
+        long temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+public long lcm(long a, long b) {
+    if (a == 0 || b == 0) return 0;
+    return (a / gcd(a, b)) * b;   // divide FIRST to avoid overflow
+}
+```
+
+```cpp
+// C++ — GCD & LCM
+long long gcd(long long a, long long b) {
+    while (b) {
+        long long temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+long long lcm(long long a, long long b) {
+    if (a == 0 || b == 0) return 0;
+    return (a / gcd(a, b)) * b;   // divide FIRST to avoid overflow
+}
 ```
 
 GCD shows up in "reduce a fraction", "can I tile/reach with steps p and q" (reachable iff
@@ -62,6 +111,36 @@ def fast_pow(x, n, mod=None):
     return result
 ```
 
+```java
+// Java — Fast Exponentiation
+public long fastPow(long x, long n, long mod) {
+    long result = 1;
+    x %= mod;
+    if (x < 0) x += mod;
+    while (n > 0) {
+        if ((n & 1) == 1) result = (result * x) % mod;
+        x = (x * x) % mod;
+        n >>= 1;
+    }
+    return result;
+}
+```
+
+```cpp
+// C++ — Fast Exponentiation
+long long fastPow(long long x, long long n, long long mod) {
+    long long result = 1;
+    x %= mod;
+    if (x < 0) x += mod;
+    while (n > 0) {
+        if (n & 1) result = (result * x) % mod;
+        x = (x * x) % mod;
+        n >>= 1;
+    }
+    return result;
+}
+```
+
 (Python's built-in `pow(x, n, mod)` already does this — but interviewers ask you to derive it.)
 
 Step through the bits of the exponent: the base squares every row, and only
@@ -91,6 +170,70 @@ def is_prime(x):                   # single number: trial division to √x
     return True
 ```
 
+```java
+// Java — Sieve of Eratosthenes & Trial Division
+import java.util.ArrayList;
+import java.util.List;
+
+public List<Integer> sieve(int n) {
+    boolean[] is_p = new boolean[n + 1];
+    java.util.Arrays.fill(is_p, true);
+    if (n >= 0) is_p[0] = false;
+    if (n >= 1) is_p[1] = false;
+    for (int i = 2; i * i <= n; i++) {
+        if (is_p[i]) {
+            for (int j = i * i; j <= n; j += i) {
+                is_p[j] = false;
+            }
+        }
+    }
+    List<Integer> primes = new ArrayList<>();
+    for (int i = 2; i <= n; i++) {
+        if (is_p[i]) primes.add(i);
+    }
+    return primes;
+}
+
+public boolean isPrime(long x) {
+    if (x < 2) return false;
+    for (long i = 2; i * i <= x; i++) {
+        if (x % i == 0) return false;
+    }
+    return true;
+}
+```
+
+```cpp
+// C++ — Sieve of Eratosthenes & Trial Division
+#include <vector>
+
+std::vector<int> sieve(int n) {
+    std::vector<bool> is_p(n + 1, true);
+    if (n >= 0) is_p[0] = false;
+    if (n >= 1) is_p[1] = false;
+    for (int i = 2; i * i <= n; i++) {
+        if (is_p[i]) {
+            for (int j = i * i; j <= n; j += i) {
+                is_p[j] = false;
+            }
+        }
+    }
+    std::vector<int> primes;
+    for (int i = 2; i <= n; i++) {
+        if (is_p[i]) primes.push_back(i);
+    }
+    return primes;
+}
+
+bool isPrime(long long x) {
+    if (x < 2) return false;
+    for (long long i = 2; i * i <= x; i++) {
+        if (x % i == 0) return false;
+    }
+    return true;
+}
+```
+
 ## Combinatorics mod p
 
 `nCr mod p` = factorials times inverse factorials:
@@ -103,6 +246,34 @@ def nCr_mod(n, r, mod=1_000_000_007):
         num = num * (n - i) % mod
         den = den * (i + 1) % mod
     return num * pow(den, mod - 2, mod) % mod
+```
+
+```java
+// Java — Combinatorics mod p (nCr mod p)
+public long nCrMod(int n, int r, long mod) {
+    if (r < 0 || r > n) return 0;
+    long num = 1;
+    long den = 1;
+    for (int i = 0; i < r; i++) {
+        num = (num * (n - i)) % mod;
+        den = (den * (i + 1)) % mod;
+    }
+    return (num * fastPow(den, mod - 2, mod)) % mod;
+}
+```
+
+```cpp
+// C++ — Combinatorics mod p (nCr mod p)
+long long nCrMod(int n, int r, long long mod) {
+    if (r < 0 || r > n) return 0;
+    long long num = 1;
+    long long den = 1;
+    for (int i = 0; i < r; i++) {
+        num = (num * (n - i)) % mod;
+        den = (den * (i + 1)) % mod;
+    }
+    return (num * fastPow(den, mod - 2, mod)) % mod;
+}
 ```
 
 ## Think it through like the interview
@@ -137,6 +308,44 @@ two ints near 10⁹ overflows a 32-bit `int` *before* you take the mod. Use 64-b
 `long long`), take the mod after **every** multiply, and for `lcm` divide before
 multiplying. State this; it's a common rejection reason in those languages.
 </Callout>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is taking modular reduction after every arithmetic operation necessary in C++ or Java?",
+    options: [
+      "To prevent arithmetic overflow during multiplication and addition before the mod is applied.",
+      "Because the compiler will optimize division by zero.",
+      "To force the code to use the CPU's vector units.",
+      "It is not necessary; taking it once at the end is mathematically identical and overflow-safe."
+    ],
+    answer: 0,
+    explain: "In C++ and Java, fixed-width integer types will overflow if we perform multiple additions or multiplications before reducing. By applying the modulo operator after every intermediate operation, we keep the numbers small and prevent numeric overflow."
+  },
+  {
+    q: "Under what condition does Fermat's Little Theorem allow us to compute the modular inverse of b as b^(m-2) mod m?",
+    options: [
+      "The modulus m must be a prime number, and b must not be divisible by m.",
+      "The number b must be even.",
+      "The modulus m must be a power of two.",
+      "The exponent must be less than 64."
+    ],
+    answer: 0,
+    explain: "Fermat's Little Theorem states that b^(m-1) ≡ 1 (mod m) if m is prime and b is coprime to m. Multiplying both sides by b^(-1) yields b^(m-2) ≡ b^(-1) (mod m), which gives us the modular inverse."
+  },
+  {
+    q: "What is the primary benefit of the Sieve of Eratosthenes over Trial Division for checking primes?",
+    options: [
+      "It finds all prime numbers up to N in O(N log log N) time, which is much faster than running O(√X) trial division N times.",
+      "It does not require any auxiliary memory.",
+      "It works for negative numbers.",
+      "It computes the GCD of all numbers in the range."
+    ],
+    answer: 0,
+    explain: "Trial division for all numbers up to N would take O(N √N) time. The Sieve of Eratosthenes crosses out multiples of primes in a highly optimized manner, completing in O(N log log N) time, making it the standard choice when primality checks are needed for multiple numbers in a range."
+  }
+]} />
 
 ## Practice — climb the ladder
 

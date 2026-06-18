@@ -7,6 +7,7 @@ tags: ["segment-tree", "fenwick-tree", "range-queries", "advanced"]
 ---
 
 ## Why We Need Segment & Fenwick Trees
+
 Imagine you have a large array of numbers and need to perform two operations millions of times:
 1. **Update** a single element at index `i`.
 2. **Range Query**: Calculate the sum (or minimum/maximum) of elements from index `L` to `R`.
@@ -14,6 +15,10 @@ Imagine you have a large array of numbers and need to perform two operations mil
 If we use a plain array, updates are fast ($O(1)$) but query takes $O(n)$ to sum the range. If we use a Prefix Sum array, queries are fast ($O(1)$) but updating an element requires recomputing prefix sums, which takes $O(n)$ time. 
 
 To solve this trade-off and make **both** operations run in **$O(\log n)$** time, we need a **Segment Tree** or a **Fenwick Tree (Binary Indexed Tree)**.
+
+> 💡 **Visualizing the structures:** 
+> - Think of a **Segment Tree** like a **Tournament Bracket**. To find the overall champion among 8 teams, you don't re-run all matches. You look at the final match (which combines the semi-finals, which combine the quarter-finals). If one team changes their score, you only need to re-evaluate the matches along their path to the top, not the entire tournament.
+> - Think of a **Fenwick Tree** like a **smart budgeting system** where you keep envelopes for specific intervals defined by binary numbers (e.g., an envelope for Day 1, Days 1–2, Day 3, Days 1–4). To find your total spending up to Day 7, you don't add 7 separate days; you just add the envelopes for Days 1–4, Days 5–6, and Day 7.
 
 ### When to Use
 * Dynamic range sum / min / max queries with frequent point updates.
@@ -99,6 +104,108 @@ class SegmentTree:
         return s
 ```
 
+```java
+// Java
+public class SegmentTree {
+    private int n;
+    private int[] t;
+
+    public SegmentTree(int[] a) {
+        this.n = a.length;
+        this.t = new int[2 * n];
+        // leaves sit at n..2n-1
+        for (int i = 0; i < n; i++) {
+            t[n + i] = a[i];
+        }
+        // build parents bottom-up
+        for (int i = n - 1; i > 0; i--) {
+            t[i] = t[2 * i] + t[2 * i + 1];
+        }
+    }
+
+    public void update(int i, int value) { // point update: O(log n)
+        i += n; // jump to the leaf
+        t[i] = value;
+        while (i > 1) {
+            i /= 2; // climb to the root
+            t[i] = t[2 * i] + t[2 * i + 1];
+        }
+    }
+
+    public int query(int lo, int hi) { // sum of [lo, hi): O(log n)
+        int s = 0;
+        lo += n;
+        hi += n;
+        while (lo < hi) {
+            if ((lo & 1) == 1) {
+                s += t[lo];
+                lo++;
+            }
+            if ((hi & 1) == 1) {
+                hi--;
+                s += t[hi];
+            }
+            lo /= 2;
+            hi /= 2;
+        }
+        return s;
+    }
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+class SegmentTree {
+private:
+    int n;
+    std::vector<int> t;
+
+public:
+    SegmentTree(const std::vector<int>& a) {
+        n = a.size();
+        t.assign(2 * n, 0);
+        // leaves sit at n..2n-1
+        for (int i = 0; i < n; i++) {
+            t[n + i] = a[i];
+        }
+        // build parents bottom-up
+        for (int i = n - 1; i > 0; i--) {
+            t[i] = t[2 * i] + t[2 * i + 1];
+        }
+    }
+
+    void update(int i, int value) { // point update: O(log n)
+        i += n; // jump to the leaf
+        t[i] = value;
+        while (i > 1) {
+            i /= 2; // climb to the root
+            t[i] = t[2 * i] + t[2 * i + 1];
+        }
+    }
+
+    int query(int lo, int hi) { // sum of [lo, hi): O(log n)
+        int s = 0;
+        lo += n;
+        hi += n;
+        while (lo < hi) {
+            if (lo & 1) {
+                s += t[lo];
+                lo++;
+            }
+            if (hi & 1) {
+                hi--;
+                s += t[hi];
+            }
+            lo /= 2;
+            hi /= 2;
+        }
+        return s;
+    }
+};
+```
+
 Swap `+` for `min`/`max`/`gcd` and the same skeleton answers
 range-minimum, range-max — the only requirement on the operation is
 **associativity** (grouping doesn't matter), because the tree combines
@@ -146,6 +253,72 @@ class Fenwick:
 
     def query(self, lo, hi):                 # sum of [lo, hi]
         return self.prefix(hi) - self.prefix(lo - 1)
+```
+
+```java
+// Java
+public class Fenwick {
+    private int[] t;
+
+    public Fenwick(int n) {
+        this.t = new int[n + 1]; // 1-based!
+    }
+
+    public void update(int i, int delta) { // a[i] += delta, O(log n)
+        while (i < t.length) {
+            t[i] += delta;
+            i += i & (-i); // next block containing i
+        }
+    }
+
+    public int prefix(int i) { // sum of a[1..i], O(log n)
+        int s = 0;
+        while (i > 0) {
+            s += t[i];
+            i -= i & (-i); // previous block
+        }
+        return s;
+    }
+
+    public int query(int lo, int hi) { // sum of [lo, hi], closed interval
+        return prefix(hi) - prefix(lo - 1);
+    }
+}
+```
+
+```cpp
+// C++
+#include <vector>
+
+class Fenwick {
+private:
+    std::vector<int> t;
+
+public:
+    Fenwick(int n) {
+        t.assign(n + 1, 0); // 1-based!
+    }
+
+    void update(int i, int delta) { // a[i] += delta, O(log n)
+        while (i < t.size()) {
+            t[i] += delta;
+            i += i & (-i); // next block containing i
+        }
+    }
+
+    int prefix(int i) { // sum of a[1..i], O(log n)
+        int s = 0;
+        while (i > 0) {
+            s += t[i];
+            i -= i & (-i); // previous block
+        }
+        return s;
+    }
+
+    int query(int lo, int hi) { // sum of [lo, hi], closed interval
+        return prefix(hi) - prefix(lo - 1);
+    }
+};
 ```
 
 Choosing between them, honestly: **Fenwick** when the operation is
@@ -238,6 +411,99 @@ Reason through the canonical one before revealing.
   ]}
 />
 
+```java
+// Java — Count of Smaller Numbers After Self
+import java.util.*;
+
+public List<Integer> countSmaller(int[] nums) {
+    if (nums == null || nums.length == 0) return new ArrayList<>();
+    
+    // Coordinate compression
+    int[] sortedUnique = nums.clone();
+    Arrays.sort(sortedUnique);
+    Map<Integer, Integer> ranks = new HashMap<>();
+    int rank = 1;
+    for (int num : sortedUnique) {
+        if (!ranks.containsKey(num)) {
+            ranks.put(num, rank++);
+        }
+    }
+
+    int[] tree = new int[ranks.size() + 1];
+    
+    class FenwickHelper {
+        void update(int idx) {
+            while (idx < tree.length) {
+                tree[idx] += 1;
+                idx += idx & -idx;
+            }
+        }
+        int prefix(int idx) {
+            int sum = 0;
+            while (idx > 0) {
+                sum += tree[idx];
+                idx -= idx & -idx;
+            }
+            return sum;
+        }
+    }
+    FenwickHelper f = new FenwickHelper();
+    
+    Integer[] res = new Integer[nums.length];
+    for (int i = nums.length - 1; i >= 0; i--) {
+        int r = ranks.get(nums[i]);
+        res[i] = f.prefix(r - 1);
+        f.update(r);
+    }
+    return Arrays.asList(res);
+}
+```
+
+```cpp
+// C++ — Count of Smaller Numbers After Self
+#include <vector>
+#include <algorithm>
+#include <unordered_map>
+
+std::vector<int> countSmaller(const std::vector<int>& nums) {
+    if (nums.empty()) return {};
+    
+    // Coordinate compression
+    std::vector<int> sorted = nums;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+    
+    std::unordered_map<int, int> ranks;
+    for (int i = 0; i < sorted.size(); i++) {
+        ranks[sorted[i]] = i + 1; // 1-based ranks
+    }
+    
+    std::vector<int> tree(ranks.size() + 1, 0);
+    auto update = [&](int idx) {
+        while (idx < tree.size()) {
+            tree[idx] += 1;
+            idx += idx & -idx;
+        }
+    };
+    auto prefix = [&](int idx) {
+        int sum = 0;
+        while (idx > 0) {
+            sum += tree[idx];
+            idx -= idx & -idx;
+        }
+        return sum;
+    };
+    
+    std::vector<int> res(nums.size());
+    for (int i = nums.size() - 1; i >= 0; i--) {
+        int r = ranks[nums[i]];
+        res[i] = prefix(r - 1);
+        update(r);
+    }
+    return res;
+}
+```
+
 ## Interview perspective
 
 <QA q="You need range-sum queries and point updates, both frequent, on a 10⁷-element array. Walk through the options and pick.">
@@ -287,6 +553,44 @@ order-statistics-over-a-stream — which is why this single pattern is
 the most common place Fenwick trees appear in real interviews.
 
 </QA>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "What is the primary trade-off that makes Segment and Fenwick Trees necessary over simple arrays or Prefix Sums?",
+    options: [
+      "They allow both updates and range queries in O(log n) time, avoiding the O(n) penalty of simple arrays (slow query) and Prefix Sums (slow update).",
+      "They reduce the space complexity to O(1).",
+      "They eliminate the need for coordinate compression entirely.",
+      "They compile faster in C++ than standard arrays."
+    ],
+    answer: 0,
+    explain: "A simple array has O(1) update but O(N) query, whereas a Prefix Sum array has O(1) query but O(N) update. Segment and Fenwick Trees offer a balanced middle-ground where both operations run in O(log N) time, which is essential when operations are heavily interleaved."
+  },
+  {
+    q: "In a Fenwick Tree (Binary Indexed Tree), how does index jumping work for updates and queries?",
+    options: [
+      "An update jumps forward by adding the lowest set bit i += i & (-i), whereas a prefix query jumps backward by removing the lowest set bit i -= i & (-i).",
+      "Both update and query jump forward by multiplying the index by 2.",
+      "An update uses recursion, while query uses iteration.",
+      "A Fenwick Tree uses linear search to locate the correct block."
+    ],
+    answer: 0,
+    explain: "A Fenwick Tree uses the lowest set bit (lowbit) trick. To update, we propagate the changes forward to all parent ranges that cover index i by adding the lowest set bit. To query the prefix sum, we collect values of independent blocks by stripping off the lowest set bits one by one."
+  },
+  {
+    q: "For which of the following tasks is a Segment Tree strictly required over a Fenwick Tree?",
+    options: [
+      "Finding the Range Minimum Query (RMQ) with point updates",
+      "Finding the Range Sum Query with point updates",
+      "Counting elements smaller than self",
+      "Finding the sum of a prefix of the array"
+    ],
+    answer: 0,
+    explain: "Fenwick Trees require the operator to be invertible (like addition, where we can get a range sum by prefix(hi) - prefix(lo - 1)). Minimum and maximum are not invertible (knowing min(1..10) and min(1..5) does not tell us min(6..10)). Segment Trees store actual aggregates for every subsegment, making them capable of RMQ without requiring invertibility."
+  }
+]} />
 
 ## Practice
 

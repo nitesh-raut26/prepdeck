@@ -6,25 +6,22 @@ difficulty: "Core pattern"
 tags: ["arrays", "strings", "two-pointers"]
 ---
 
-## When to reach for it
+## Why We Need Sliding Window & How to Think About It
 
-You have a **contiguous** subarray/substring problem and a brute force that
-recomputes some aggregate (sum, count, max, distinct-count) for every window.
-The window's answer for position `i+1` is *almost* the same as for `i` — so
-instead of recomputing, you **slide**: add the entering element, remove the
-leaving one.
+Imagine sitting on a train and looking at the landscape through a window. At any given moment, the view inside your window overlaps 90% with what you saw a split-second ago. Instead of repainting the entire view from scratch every time the train moves, you only need to process the new landscape sliver entering on the right and discard the old landscape sliver exiting on the left.
 
-**Signal phrases:** "longest/shortest substring/subarray", "at most K", "exactly
-K", "maximum sum of size k", "contains all characters of…".
+This is a **Sliding Window**. It is the ultimate optimization for **contiguous subarray or substring** problems. Instead of running a nested loop to recompute values from scratch for every possible range (which costs $O(n^2)$ or $O(n \cdot k)$), you maintain a single moving range. As the window boundaries slide, you update the state in $O(1)$ by adding the entering element and removing the leaving element, reducing the total time to **$O(n)$**.
 
-## Two flavours
+### Two Flavors
 
-- **Fixed-size window** — window width is given (`k`). Slide one step at a time.
-- **Variable-size window** — grow `right` greedily; shrink `left` while a
-  constraint is violated. The answer is usually the max/min window seen.
+- **Fixed-size window**: The window width is constant (`k`). Slide one step at a time, adding the newcomer and evicting the oldest element.
+- **Variable-size window**: Grow the `right` boundary greedily to look for solutions, and shrink the `left` boundary only when a constraint is violated.
+
+---
 
 ```python
 # Variable window: longest substring with at most K distinct characters
+# Python
 from collections import defaultdict
 
 def longest_k_distinct(s: str, k: int) -> int:
@@ -39,6 +36,58 @@ def longest_k_distinct(s: str, k: int) -> int:
             left += 1
         best = max(best, right - left + 1)
     return best
+```
+
+```java
+// Java
+import java.util.HashMap;
+import java.util.Map;
+
+public int longestKDistinct(String s, int k) {
+    Map<Character, Integer> count = new HashMap<>();
+    int left = 0, best = 0;
+    for (int right = 0; right < s.length(); right++) {
+        char rightChar = s.charAt(right);
+        count.put(rightChar, count.getOrDefault(rightChar, 0) + 1);
+        
+        while (count.size() > k) {      // constraint violated → shrink
+            char leftChar = s.charAt(left);
+            count.put(leftChar, count.get(leftChar) - 1);
+            if (count.get(leftChar) == 0) {
+                count.remove(leftChar);
+            }
+            left++;
+        }
+        best = Math.max(best, right - left + 1);
+    }
+    return best;
+}
+```
+
+```cpp
+// C++
+#include <string>
+#include <unordered_map>
+#include <algorithm>
+
+int longestKDistinct(std::string s, int k) {
+    std::unordered_map<char, int> count;
+    int left = 0, best = 0;
+    for (int right = 0; right < s.length(); right++) {
+        count[s[right]]++;
+        
+        while (count.size() > k) {      // constraint violated → shrink
+            char leftChar = s[left];
+            count[leftChar]--;
+            if (count[leftChar] == 0) {
+                count.erase(leftChar);
+            }
+            left++;
+        }
+        best = std::max(best, right - left + 1);
+    }
+    return best;
+}
 ```
 
 <Callout type="tip" title="The invariant is everything">
@@ -106,6 +155,49 @@ window from scratch, with its own shrink rule. Think before each reveal.
     }
   ]}
 />
+
+```java
+// Java — Longest Substring Without Repeating Characters
+import java.util.HashSet;
+import java.util.Set;
+
+public int longestUnique(String s) {
+    Set<Character> seen = new HashSet<>();
+    int left = 0, best = 0;
+    for (int right = 0; right < s.length(); right++) {
+        char ch = s.charAt(right);
+        while (seen.contains(ch)) {     // duplicate → shrink from left
+            seen.remove(s.charAt(left));
+            left++;
+        }
+        seen.add(ch);
+        best = Math.max(best, right - left + 1);
+    }
+    return best;
+}
+```
+
+```cpp
+// C++ — Longest Substring Without Repeating Characters
+#include <string>
+#include <unordered_set>
+#include <algorithm>
+
+int longestUnique(std::string s) {
+    std::unordered_set<char> seen;
+    int left = 0, best = 0;
+    for (int right = 0; right < s.length(); right++) {
+        char ch = s[right];
+        while (seen.count(ch)) {        // duplicate → shrink from left
+            seen.erase(s[left]);
+            left++;
+        }
+        seen.insert(ch);
+        best = std::max(best, right - left + 1);
+    }
+    return best;
+}
+```
 
 ## Check yourself
 
