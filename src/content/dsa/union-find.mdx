@@ -6,6 +6,21 @@ difficulty: "Foundation"
 tags: ["union-find", "dsu", "graphs", "fundamentals"]
 ---
 
+## Why We Need Union-Find & How to Think About It
+Imagine you are representing relationships in a social network or tracking connected computer networks. You want to ask: **"Are person A and person B connected in the same group?"** and **"Can we merge these two groups?"**
+Using standard BFS/DFS, answering "are they connected?" requires traversing the graph, which costs $O(V+E)$ time. 
+
+The **Union-Find (Disjoint Set Union, DSU)** data structure solves this by grouping nodes under a hierarchical tree structure. Each group has a single "representative leader". Answering "are they connected?" becomes checking if `find(A) == find(B)`, which runs in near **$O(1)$** time!
+
+### When to Use Union-Find
+* **Connectivity Checks**: Finding connected components, merging groups dynamically.
+  - *LeetCode Link*: [LeetCode 547: Number of Provinces](https://leetcode.com/problems/number-of-provinces/)
+* **Undirected Cycle Detection**: Checking if adding an edge connects two nodes that are already in the same group.
+  - *LeetCode Link*: [LeetCode 684: Redundant Connection](https://leetcode.com/problems/redundant-connection/)
+* **Kruskal's MST Algorithm**: Sorting edges and checking if adding them would close a cycle.
+
+---
+
 ## The two-operation structure
 
 **Union-Find** (also *Disjoint Set Union*, **DSU**) tracks a collection of
