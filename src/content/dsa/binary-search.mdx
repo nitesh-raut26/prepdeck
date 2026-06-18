@@ -6,6 +6,19 @@ difficulty: "Core pattern"
 tags: ["binary-search", "search-space", "monotonic"]
 ---
 
+## Why We Need Binary Search & How to Think About It
+If you are searching for a name in a physical phonebook of 1,000,000 pages, you don't start at page 1 and read line-by-line (which is linear search, $O(n)$). Instead, you open to the middle, check if your name comes before or after, and discard 500,000 pages in a single second. You repeat this until you find the name. 
+This is **Binary Search**. It reduces search time from $O(n)$ to $O(\log n)$. For 1,000,000 elements, it takes at most 20 comparisons.
+
+The superpower of binary search is that **each query throws away half the remaining search space**.
+
+### The Monotonicity Rule (When to Use it)
+To use binary search, the search space must be **monotonic** (orderly).
+* **Sorted Array**: Hitting a value too large tells you everything to the right is also too large.
+* **Answer Space**: If a shipping capacity of 10 tons works to deliver packages on time, any capacity larger than 10 tons will also work. If 5 tons is too small, any capacity smaller than 5 tons is also too small. This forms a sorted `False...False | True...True` boundary, which we can binary-search!
+
+---
+
 ## Watch it run
 
 Step through the search: each comparison throws away half the remaining
