@@ -1,198 +1,664 @@
 ---
-title: "Advanced Graphs — Shortest Paths, MST & Flow"
-summary: "Past BFS/DFS: Dijkstra vs Bellman-Ford vs Floyd-Warshall, Kruskal/Prim for MST, and a working mental model for max-flow/min-cut — with a decision table for picking the right one under pressure."
+title: "Advanced Graphs — Dijkstra, Bellman-Ford, Floyd-Warshall & MST"
+summary: "Past BFS/DFS: every weighted-graph algorithm you need — Dijkstra, Bellman-Ford, Floyd-Warshall, Kruskal, Prim — each explained with Why → How → When → Code in Python, Java, and C++. Includes a decision table for picking the right algorithm under interview pressure."
 order: 23
 difficulty: "Advanced pattern"
-tags: ["graphs", "shortest-path", "mst", "max-flow"]
+tags: ["graphs", "shortest-path", "dijkstra", "bellman-ford", "floyd-warshall", "MST", "kruskal", "prim"]
 ---
 
-## Past traversal
+## Why Weighted Graphs Need More Than BFS
 
-[BFS/DFS](/dsa/graphs-bfs-dfs) answer reachability and unweighted shortest paths. Weighted
-graphs need heavier machinery — and interviews at **Google, Amazon, Uber** (maps/routing)
-lean on it. The skill isn't memorizing five algorithms; it's the **decision table**:
+[BFS/DFS](/dsa/graphs-bfs-dfs) are great for **unweighted** graphs — where every edge costs the same "1 hop". But in the real world, edges have different costs:
 
-| Need | Use | Cost | Constraint |
+- 🗺️ **Google Maps**: Road A takes 5 minutes, Road B takes 30 minutes
+- ✈️ **Flight pricing**: Some routes cost $200, others cost $800
+- 🌐 **Network routing**: Some links have 10ms latency, others have 100ms
+
+When edge weights differ, BFS gives you the wrong shortest path. You need algorithms that account for **weight**.
+
+## The Algorithm Decision Table
+
+Before diving in, learn this table. It tells you which algorithm to use in any situation:
+
+| Problem | Algorithm | Time Complexity | Constraint |
 |---|---|---|---|
-| Shortest path, **non-negative** weights | **Dijkstra** | O((V+E) log V) | no negative edges |
-| Shortest path, **negative** edges / detect negative cycle | **Bellman-Ford** | O(V·E) | — |
-| **All-pairs** shortest paths | **Floyd-Warshall** | O(V³) | small V |
-| Shortest path on a **DAG** | topological sort + relax | O(V+E) | acyclic |
-| **Min spanning tree** | **Kruskal** (+ [union-find](/dsa/union-find)) / **Prim** | O(E log E) | undirected, weighted |
-| **Max flow / min cut**, bipartite matching | **Edmonds-Karp / Dinic** | poly | flow network |
+| Shortest path, **non-negative weights** | **Dijkstra** | O((V+E) log V) | No negative edges |
+| Shortest path, **negative edges** or **negative cycle detection** | **Bellman-Ford** | O(V·E) | — |
+| **All-pairs** shortest paths | **Floyd-Warshall** | O(V³) | Small V (≤ ~400) |
+| Shortest path on a **DAG** | Topo sort + relaxation | O(V+E) | Must be acyclic |
+| **Minimum spanning tree** | **Kruskal** or **Prim** | O(E log E) | Undirected, weighted |
+| **Bounded hops** (at most K edges) | **Bellman-Ford** with K rounds | O(K·E) | — |
 
-## Dijkstra — the workhorse
+<Callout type="info" title="How to pick in an interview — 3 key questions">
+1. **Negative edges?** Yes → Bellman-Ford. No → Dijkstra is fine.
+2. **Need ALL pairs?** Yes → Floyd-Warshall. No → single-source algorithm.
+3. **Connect all nodes, minimize cost?** → MST (Kruskal or Prim).
+</Callout>
+
+---
+
+## Dijkstra — The Workhorse
 
 ### Why We Need Dijkstra
-On a weighted graph (where edges have different costs, e.g., driving times between intersections), a standard BFS fails because BFS assumes every edge has a cost of `1` (hop count). If we explore level-by-level, we might choose a path with `1` hop that costs `10` over a path with `2` hops that costs `1 + 1 = 2`.
-To find the shortest path by *total weight*, we need Dijkstra.
+On a weighted graph, BFS would find the path with the fewest hops, but that might not be the cheapest. Dijkstra greedily always explores the **cheapest unvisited node next**, guaranteeing that when it reaches any node for the first time, that's the shortest path.
+
+**Real-world**: Google Maps uses Dijkstra-like algorithms to find the fastest driving route.
 
 ### How to Approach (Priority Queue + Relaxation)
-Dijkstra uses a **min-priority queue** to greedily select the next node with the minimum distance:
-1. **Initialize**: Set the distance to all nodes to infinity ($\infty$), and `dist[src] = 0`. Push `(0, src)` into the min-heap.
-2. **Process**: While the heap is not empty:
-   - Pop the node `u` with the smallest accumulated distance `d`.
-   - If `d > dist[u]`, skip it (this is a stale heap entry left from a previous, worse estimate).
-   - For each neighbor `v` connected to `u` with edge weight `w`:
-     - **Relaxation Step**: If `dist[u] + w < dist[v]`, we found a cheaper way to reach `v`. Update `dist[v] = dist[u] + w` and push `(dist[v], v)` into the heap.
 
-### Why Dijkstra Fails with Negative Weights
-Dijkstra is a greedy algorithm. Once it pops a node from the min-heap, it assumes its shortest path is final. This assumption holds only if all edge weights are **non-negative** (adding more edges can only increase or keep path weights same). If negative edges are present, a detour path popped later could have a negative weight that makes the total path cheaper, but Dijkstra will not reprocess the already settled node.
+1. **Initialize**: `dist[src] = 0`, all others = ∞. Push `(0, src)` into a min-heap.
+2. **Process**: Pop the cheapest `(cost, node)` from the heap.
+   - If `cost > dist[node]`, skip — this is a **stale entry** (we already found a better path).
+   - For each neighbor `v` with edge weight `w`: if `dist[node] + w < dist[v]`, update and push to heap.
+3. **Done**: After heap is empty, `dist[v]` holds the shortest path from `src` to every `v`.
 
 ### When to Use Dijkstra
-* Single-source shortest path on a weighted graph with **non-negative weights**.
-  - *LeetCode Link*: [LeetCode 743: Network Delay Time](https://leetcode.com/problems/network-delay-time/)
-* Grids where moving from cell to cell has varying costs (efforts).
-  - *LeetCode Link*: [LeetCode 1631: Path With Minimum Effort](https://leetcode.com/problems/path-with-minimum-effort/)
+- **Shortest path, non-negative weights**: Network routing, game pathfinding, GPS
+- `LeetCode 743`: [Network Delay Time](https://leetcode.com/problems/network-delay-time/)
+- `LeetCode 1631`: [Path With Minimum Effort](https://leetcode.com/problems/path-with-minimum-effort/)
+- `LeetCode 1514`: [Path with Maximum Probability](https://leetcode.com/problems/path-with-maximum-probability/)
 
-```python
-import heapq
-def dijkstra(graph, src):           # graph: {u: [(v, w), ...]}
-    dist = {src: 0}
-    pq = [(0, src)]
-    while pq:
-        d, u = heapq.heappop(pq)
-        if d > dist.get(u, float('inf')): continue   # stale entry
-        for v, w in graph[u]:
-            nd = d + w
-            if nd < dist.get(v, float('inf')):
-                dist[v] = nd
-                heapq.heappush(pq, (nd, v))
-    return dist
-```
+<Callout type="warn" title="Why Dijkstra fails with negative edges">
+Once Dijkstra pops a node from the heap, it assumes: **"this distance is final."** With negative edges, a longer detour through a later-discovered node might swing back and become cheaper — but Dijkstra never revisits settled nodes. Use Bellman-Ford instead.
+</Callout>
+
+### Watch Dijkstra Run
 
 <Visualizer algo="dijkstra" />
 
-## Bellman-Ford — when edges go negative
-
-### Why We Need Bellman-Ford
-If a weighted graph contains **negative edge weights**, Dijkstra's greedy choice property is broken and it can yield incorrect results. To solve shortest paths on graphs that might have negative edges, we need the **Bellman-Ford** algorithm. 
-Additionally, if a graph contains a **negative cycle** (a loop whose total weight is less than 0), we can loop through it infinitely to keep decreasing our path cost. Bellman-Ford can detect such cycles.
-
-### How to Approach (Relaxing All Edges V-1 times)
-Instead of using a min-heap to greedily select nodes, Bellman-Ford uses brute-force relaxation on all edges:
-1. **Initialize**: Set distance to all nodes to infinity ($\infty$), and `dist[src] = 0`.
-2. **Iterate $V-1$ times**: Relax **every single edge** in the graph. In iteration $i$, we guarantee that all shortest paths using at most $i$ edges are correctly computed. Since a simple path has at most $V-1$ edges, $V-1$ passes are sufficient.
-3. **Detect Negative Cycles**: Run a $V$-th pass. Relax all edges one more time. If any node's distance decreases, that path must contain a negative cycle $	o$ raise an error.
-
-### When to Use Bellman-Ford
-* Graphs with negative edge weights or when negative cycles must be detected.
-  - *LeetCode Link*: [LeetCode 787: Cheapest Flights Within K Stops](https://leetcode.com/problems/cheapest-flights-within-k-stops/) (where the $K$ stop limit maps perfectly to the $K+1$ iterations of Bellman-Ford).
+### Complete Dijkstra Code
 
 ```python
-def bellman_ford(edges, V, src):     # edges: [(u, v, w), ...]
-    dist = [float('inf')] * V
+import heapq
+
+def dijkstra(adj, src, n):
+    """adj[u] = list of (neighbor, weight). Returns dist array."""
+    dist = [float('inf')] * n
     dist[src] = 0
-    for _ in range(V - 1):
-        for u, v, w in edges:
+    heap = [(0, src)]          # (distance, node)
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]: continue   # stale entry — skip!
+        for v, w in adj[u]:
             if dist[u] + w < dist[v]:
                 dist[v] = dist[u] + w
-    for u, v, w in edges:            # a further improvement ⇒ negative cycle
-        if dist[u] + w < dist[v]:
-            raise ValueError("negative cycle")
-    return dist
+                heapq.heappush(heap, (dist[v], v))
+    return dist    # dist[i] = shortest distance from src to i
+
+# LeetCode 743 — Network Delay Time
+def networkDelayTime(times, n, k):
+    adj = [[] for _ in range(n + 1)]
+    for u, v, w in times:
+        adj[u].append((v, w))
+    dist = dijkstra(adj, k, n + 1)
+    max_d = max(dist[1:])
+    return max_d if max_d != float('inf') else -1
 ```
 
-## MST & flow in one breath
+```java
+int[] dijkstra(List<List<int[]>> adj, int src, int n) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[src] = 0;
+    // Min-heap: {distance, node}
+    PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(a -> a[0]));
+    pq.offer(new int[]{0, src});
+    while (!pq.isEmpty()) {
+        int[] cur = pq.poll();
+        int d = cur[0], u = cur[1];
+        if (d > dist[u]) continue;   // stale entry
+        for (int[] edge : adj.get(u)) {
+            int v = edge[0], w = edge[1];
+            if (dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+                pq.offer(new int[]{dist[v], v});
+            }
+        }
+    }
+    return dist;
+}
+```
 
-- **MST** — connect every node with minimum total edge weight (n−1 edges, no cycle);
-  think "cheapest cabling to wire up all the cities." **Kruskal:** sort edges, add the
-  cheapest that doesn't form a cycle (cycle check via
-  [union-find](/dsa/union-find)). **Prim:** grow one tree outward with a heap, always
-  taking the cheapest edge to a *new* node — like Dijkstra, but comparing edge weight
-  instead of total distance from a source.
-- **Max-flow / min-cut:** push flow along augmenting paths until none remain; the
-  max-flow equals the **min-cut** (max-flow min-cut theorem). Most interview "flow"
-  problems are really **bipartite matching** — model as a flow network with a source → left
-  → right → sink. Know the framing even if you rarely code Dinic from scratch.
+```cpp
+vector<int> dijkstra(vector<vector<pair<int,int>>>& adj, int src, int n) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    // Min-heap: {distance, node}
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<>> pq;
+    pq.push({0, src});
+    while (!pq.empty()) {
+        auto [d, u] = pq.top(); pq.pop();
+        if (d > dist[u]) continue;   // stale
+        for (auto [v, w] : adj[u]) {
+            if (dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+                pq.push({dist[v], v});
+            }
+        }
+    }
+    return dist;
+}
+```
 
-## Think it through like the interview
+---
+
+## Bellman-Ford — When Edges Go Negative
+
+### Why We Need Bellman-Ford
+If a weighted graph has **negative edge weights** (think: a trade route where you gain money instead of spending it), Dijkstra breaks. Bellman-Ford handles this by brute-force relaxing every edge V-1 times.
+
+Additionally, if there's a **negative cycle** (a loop whose total weight is negative), you could loop forever to keep reducing cost — Bellman-Ford can detect this.
+
+**Real-world**: Currency arbitrage detection (can you make free money by converting currencies in a loop?), network routing with credits.
+
+### How to Approach (Relax All Edges V-1 Times)
+
+1. **Initialize**: `dist[src] = 0`, all others = ∞.
+2. **Repeat V-1 times**: For every edge `(u, v, w)`, if `dist[u] + w < dist[v]`, update `dist[v]`.
+   - After round `k`, all shortest paths using **at most k edges** are correct.
+   - Since a simple path has at most V-1 edges, V-1 rounds are sufficient.
+3. **Negative cycle check**: Run one more round (round V). If anything updates, a negative cycle exists.
+
+### When to Use Bellman-Ford
+- Graph has **negative edge weights**
+- Need to **detect a negative cycle**
+- Problem has a **hop limit** (at most K edges) — just run K rounds instead of V-1
+- `LeetCode 787`: [Cheapest Flights Within K Stops](https://leetcode.com/problems/cheapest-flights-within-k-stops/)
+
+```python
+def bellman_ford(edges, V, src):
+    """edges: list of (u, v, weight). Returns dist or raises if negative cycle."""
+    dist = [float('inf')] * V
+    dist[src] = 0
+    for _ in range(V - 1):           # V-1 relaxation rounds
+        updated = False
+        for u, v, w in edges:
+            if dist[u] != float('inf') and dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+                updated = True
+        if not updated: break         # early exit: nothing changed
+
+    # Negative cycle detection — V-th round
+    for u, v, w in edges:
+        if dist[u] != float('inf') and dist[u] + w < dist[v]:
+            raise ValueError("Negative cycle detected!")
+    return dist
+
+# LeetCode 787 — Cheapest Flights Within K Stops (K+1 rounds)
+def findCheapestPrice(n, flights, src, dst, k):
+    dist = [float('inf')] * n
+    dist[src] = 0
+    for _ in range(k + 1):           # only k+1 rounds = at most k stops
+        prev = dist[:]               # snapshot — prevents chaining hops in one round
+        for u, v, price in flights:
+            if prev[u] != float('inf') and prev[u] + price < dist[v]:
+                dist[v] = prev[u] + price
+    return -1 if dist[dst] == float('inf') else dist[dst]
+```
+
+```java
+int[] bellmanFord(int n, int[][] edges, int src) {
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[src] = 0;
+    for (int i = 0; i < n - 1; i++) {
+        boolean updated = false;
+        for (int[] e : edges) {
+            if (dist[e[0]] != Integer.MAX_VALUE && dist[e[0]] + e[2] < dist[e[1]]) {
+                dist[e[1]] = dist[e[0]] + e[2];
+                updated = true;
+            }
+        }
+        if (!updated) break;   // early exit
+    }
+    // Negative cycle check
+    for (int[] e : edges)
+        if (dist[e[0]] != Integer.MAX_VALUE && dist[e[0]] + e[2] < dist[e[1]])
+            dist[e[1]] = Integer.MIN_VALUE;   // mark as negative-cycle-affected
+    return dist;
+}
+```
+
+```cpp
+vector<int> bellmanFord(int n, vector<tuple<int,int,int>>& edges, int src) {
+    vector<int> dist(n, INT_MAX);
+    dist[src] = 0;
+    for (int i = 0; i < n - 1; i++) {
+        bool updated = false;
+        for (auto [u, v, w] : edges) {
+            if (dist[u] != INT_MAX && dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+                updated = true;
+            }
+        }
+        if (!updated) break;
+    }
+    // Negative cycle detection
+    for (auto [u, v, w] : edges)
+        if (dist[u] != INT_MAX && dist[u] + w < dist[v])
+            dist[v] = INT_MIN;
+    return dist;
+}
+```
+
+---
+
+## Floyd-Warshall — All-Pairs Shortest Paths
+
+### Why We Need Floyd-Warshall
+Dijkstra gives shortest paths from **one source**. But what if you need shortest paths between **every pair** of nodes? Running Dijkstra V times works but is O(V · (V+E) log V). For small dense graphs, Floyd-Warshall's simple O(V³) 3-loop approach is often cleaner.
+
+**Real-world**: Finding the shortest path between every pair of cities in a small region, finding the diameter of a network.
+
+### How to Approach (DP Over Intermediate Nodes)
+
+This is a beautiful DP: `dist[i][j]` = shortest path from `i` to `j` using only nodes `0..k` as intermediaries.
+
+The outer loop variable `k` means: **"you may now route through node k."** For every pair `(i, j)`, check if routing through `k` is shorter: `dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j])`.
+
+**Critical rule**: `k` must be the **outermost loop** — you unlock intermediaries one by one.
+
+### When to Use Floyd-Warshall
+- Need **all-pairs** shortest paths
+- Graph is **small** (V ≤ ~400, since O(V³))
+- May have **negative edges** (but no negative cycles)
+- `LeetCode 1334`: [Find the City With the Smallest Number of Neighbors](https://leetcode.com/problems/find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance/)
+
+```python
+def floyd_warshall(n, edges):
+    """edges: list of (u, v, weight). Returns V×V distance matrix."""
+    INF = float('inf')
+    dist = [[INF] * n for _ in range(n)]
+    for i in range(n): dist[i][i] = 0          # distance to self = 0
+    for u, v, w in edges:
+        dist[u][v] = min(dist[u][v], w)
+        dist[v][u] = min(dist[v][u], w)         # remove for directed graph
+
+    # k MUST be the outermost loop — unlock one intermediary at a time
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                if dist[i][k] + dist[k][j] < dist[i][j]:
+                    dist[i][j] = dist[i][k] + dist[k][j]
+    return dist
+
+# After: dist[i][j] = shortest path from i to j (INF if unreachable)
+# Negative cycle check: if dist[i][i] < 0 for any i → negative cycle exists
+```
+
+```java
+int[][] floydWarshall(int n, int[][] edges) {
+    final int INF = (int) 1e9;
+    int[][] dist = new int[n][n];
+    for (int[] row : dist) Arrays.fill(row, INF);
+    for (int i = 0; i < n; i++) dist[i][i] = 0;
+    for (int[] e : edges) {
+        dist[e[0]][e[1]] = Math.min(dist[e[0]][e[1]], e[2]);
+        dist[e[1]][e[0]] = Math.min(dist[e[1]][e[0]], e[2]);  // undirected
+    }
+    // k = the intermediary node unlocked this round
+    for (int k = 0; k < n; k++)
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (dist[i][k] != INF && dist[k][j] != INF)
+                    dist[i][j] = Math.min(dist[i][j], dist[i][k] + dist[k][j]);
+    return dist;
+}
+```
+
+```cpp
+vector<vector<int>> floydWarshall(int n, vector<tuple<int,int,int>>& edges) {
+    const int INF = 1e9;
+    vector<vector<int>> dist(n, vector<int>(n, INF));
+    for (int i = 0; i < n; i++) dist[i][i] = 0;
+    for (auto [u, v, w] : edges) {
+        dist[u][v] = min(dist[u][v], w);
+        dist[v][u] = min(dist[v][u], w);   // remove for directed
+    }
+    for (int k = 0; k < n; k++)           // k = intermediary node
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (dist[i][k] != INF && dist[k][j] != INF)
+                    dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j]);
+    return dist;
+}
+```
+
+---
+
+## Minimum Spanning Trees (MST)
+
+### Why MST? — The Cabling Problem
+You have 5 cities and need to connect all of them with roads so any city can reach any other. Each possible road has a construction cost. You want the **minimum total cost** to connect them all, without building any redundant roads (no cycles — a cycle means you built an unnecessary road).
+
+That is the **Minimum Spanning Tree** problem: a tree that spans (connects) all V nodes using exactly V-1 edges with minimum total weight.
+
+**When to use MST:**
+- "Connect all points at minimum cost" — `LeetCode 1584`: [Min Cost to Connect All Points](https://leetcode.com/problems/min-cost-to-connect-all-points/)
+- Network design (power grids, pipelines)
+- Approximation algorithms (TSP approximation uses MST)
+
+Two classic algorithms:
+| | **Kruskal** | **Prim** |
+|---|---|---|
+| **Think in** | Edges (global view) | Nodes (grow one tree) |
+| **Data structure** | Sort edges + Union-Find | Min-heap |
+| **Best for** | Sparse graphs, edge list given | Dense graphs, adjacency list |
+| **Complexity** | O(E log E) | O((V+E) log V) |
+
+---
+
+### Kruskal's Algorithm
+
+**Intuition**: Sort ALL edges by weight (cheapest first). Walk through them one by one. Add an edge if it connects two different components (doesn't form a cycle). Stop when you have V-1 edges. Union-Find checks "same component?" in near-O(1).
+
+```python
+def kruskal(n, edges):
+    """edges: list of (weight, u, v). Returns minimum spanning tree weight."""
+    edges.sort()    # sort by weight — cheapest first
+    parent = list(range(n))
+    rank = [0] * n
+
+    def find(x):
+        if parent[x] != x:
+            parent[x] = find(parent[x])    # path compression
+        return parent[x]
+
+    def union(x, y):
+        rx, ry = find(x), find(y)
+        if rx == ry: return False           # same component — would form cycle
+        if rank[rx] < rank[ry]: rx, ry = ry, rx
+        parent[ry] = rx
+        if rank[rx] == rank[ry]: rank[rx] += 1
+        return True
+
+    mst_weight = 0
+    edges_used = 0
+    for w, u, v in edges:
+        if union(u, v):
+            mst_weight += w
+            edges_used += 1
+            if edges_used == n - 1: break   # MST complete
+    return mst_weight
+```
+
+```java
+int kruskal(int n, int[][] edges) {
+    // edges[i] = {weight, u, v}
+    Arrays.sort(edges, Comparator.comparingInt(e -> e[0]));
+    int[] parent = new int[n], rank = new int[n];
+    for (int i = 0; i < n; i++) parent[i] = i;
+
+    int mstWeight = 0, edgeCount = 0;
+    for (int[] e : edges) {
+        int pu = find(parent, e[1]), pv = find(parent, e[2]);
+        if (pu != pv) {
+            if (rank[pu] < rank[pv]) { int t = pu; pu = pv; pv = t; }
+            parent[pv] = pu;
+            if (rank[pu] == rank[pv]) rank[pu]++;
+            mstWeight += e[0];
+            if (++edgeCount == n - 1) break;
+        }
+    }
+    return mstWeight;
+}
+
+int find(int[] parent, int x) {
+    return parent[x] == x ? x : (parent[x] = find(parent, parent[x]));
+}
+```
+
+```cpp
+struct UnionFind {
+    vector<int> parent, rank;
+    UnionFind(int n) : parent(n), rank(n, 0) {
+        iota(parent.begin(), parent.end(), 0);
+    }
+    int find(int x) {
+        return parent[x] == x ? x : parent[x] = find(parent[x]);
+    }
+    bool unite(int x, int y) {
+        x = find(x); y = find(y);
+        if (x == y) return false;
+        if (rank[x] < rank[y]) swap(x, y);
+        parent[y] = x;
+        if (rank[x] == rank[y]) rank[x]++;
+        return true;
+    }
+};
+
+int kruskal(int n, vector<tuple<int,int,int>>& edges) {
+    sort(edges.begin(), edges.end());   // sort by weight (first element of tuple)
+    UnionFind uf(n);
+    int mstWeight = 0, edgesUsed = 0;
+    for (auto [w, u, v] : edges) {
+        if (uf.unite(u, v)) {
+            mstWeight += w;
+            if (++edgesUsed == n - 1) break;
+        }
+    }
+    return mstWeight;
+}
+```
+
+---
+
+### Prim's Algorithm
+
+**Intuition**: Start at any node. Grow one tree outward by always picking the **cheapest edge** that connects the current tree to a new node outside it. Uses a min-heap exactly like Dijkstra — but you track edge weights, not total distances from source.
+
+```python
+import heapq
+
+def prim(adj, n):
+    """adj[u] = list of (neighbor, weight). Returns MST total weight."""
+    visited = [False] * n
+    heap = [(0, 0)]     # (edge_cost, node) — start at node 0 with cost 0
+    mst_weight = 0
+    while heap:
+        cost, u = heapq.heappop(heap)
+        if visited[u]: continue     # already in the tree
+        visited[u] = True
+        mst_weight += cost
+        for v, w in adj[u]:
+            if not visited[v]:
+                heapq.heappush(heap, (w, v))    # push EDGE WEIGHT, not total dist
+    return mst_weight
+```
+
+```java
+int prim(List<List<int[]>> adj, int n) {
+    boolean[] visited = new boolean[n];
+    PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(a -> a[0]));
+    pq.offer(new int[]{0, 0});   // {edge_cost, node}
+    int mstWeight = 0;
+    while (!pq.isEmpty()) {
+        int[] cur = pq.poll();
+        int cost = cur[0], u = cur[1];
+        if (visited[u]) continue;
+        visited[u] = true;
+        mstWeight += cost;
+        for (int[] edge : adj.get(u))
+            if (!visited[edge[0]])
+                pq.offer(new int[]{edge[1], edge[0]});   // {weight, neighbor}
+    }
+    return mstWeight;
+}
+```
+
+```cpp
+int prim(vector<vector<pair<int,int>>>& adj, int n) {
+    vector<bool> visited(n, false);
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<>> pq;
+    pq.push({0, 0});   // {edge_cost, node}
+    int mstWeight = 0;
+    while (!pq.empty()) {
+        auto [cost, u] = pq.top(); pq.pop();
+        if (visited[u]) continue;
+        visited[u] = true;
+        mstWeight += cost;
+        for (auto [v, w] : adj[u])
+            if (!visited[v])
+                pq.push({w, v});   // push EDGE WEIGHT, not cumulative dist
+    }
+    return mstWeight;
+}
+```
+
+<Callout type="tip" title="Prim vs Dijkstra — Same Shape, Different Meaning">
+Both use a min-heap and a "visited" array. The difference is **what you push to the heap**:
+- **Dijkstra**: `push(total_distance_from_source, node)` — minimizes cumulative path cost
+- **Prim**: `push(edge_weight, node)` — minimizes the cost of the single edge that adds this node to the tree
+
+Same skeleton, different semantics. If you understand one, you understand both.
+</Callout>
+
+---
+
+## Think it Through — Cheapest Flights Within K Stops
 
 <ThinkThrough
   title="Cheapest Flights Within K Stops"
   difficulty="Medium — LeetCode 787 (Amazon, Uber)"
-  problem="Find the cheapest price from src to dst using at most K stops, in a weighted directed graph of flights."
+  problem="Find the cheapest price from src to dst using at most K stops, in a weighted directed graph of flights. Return -1 if impossible."
   stages={[
     {
       label: "Why plain Dijkstra is wrong",
       prompt: "Dijkstra finds the cheapest path — so what does the 'at most K stops' constraint break?",
-      reveal: "Dijkstra settles a node by cheapest cost and never revisits it. But the cheapest way to reach a node might use too many stops, while a pricier path with fewer stops could still extend to the destination within the budget. The 'final once popped' invariant fails when a second dimension (stops) matters."
+      reveal: "Dijkstra settles a node by cheapest cost and never revisits it. But the cheapest way to reach a node might use too many stops, while a slightly pricier path with fewer stops could still reach the destination within budget. The 'final once popped' invariant fails when a second dimension (stops) matters."
     },
     {
-      label: "Add the stop dimension",
-      prompt: "How do I make the search respect a hop budget?",
-      reveal: "Bellman-Ford fits perfectly: relax all edges exactly K+1 times. After i rounds, dist holds the cheapest cost using ≤ i edges. Cap at K+1 rounds and you've bounded the stops naturally — O(K·E). (A Dijkstra variant works too if you carry (cost, node, stopsUsed) in the heap.)"
+      label: "The Bellman-Ford insight",
+      prompt: "How does Bellman-Ford's round structure naturally handle the hop limit?",
+      reveal: "After Bellman-Ford round i, dist[v] = cheapest cost using at most i edges. So just run K+1 rounds instead of V-1 rounds. After K+1 rounds, dist[dst] is the cheapest price using at most K+1 edges = at most K intermediate stops. Perfect fit!"
     },
     {
       label: "The snapshot subtlety",
-      prompt: "In the Bellman-Ford rounds, why update from a snapshot of last round's distances?",
-      reveal: "If you relax using values already updated THIS round, a single round could chain multiple hops and overcount stops. Copy last round's dist, relax into a fresh array, then swap — so each round adds at most one edge. Stating this is the senior detail interviewers wait for.",
-      code: "def find_cheapest(n, flights, src, dst, K):\n    INF = float('inf'); dist = [INF]*n; dist[src] = 0\n    for _ in range(K + 1):\n        prev = dist[:]              # snapshot: each round = one more hop\n        for u, v, w in flights:\n            if prev[u] + w < dist[v]:\n                dist[v] = prev[u] + w\n    return -1 if dist[dst] == INF else dist[dst]"
+      prompt: "In each Bellman-Ford round, why MUST you work from a copy of last round's distances?",
+      reveal: "If you update dist[] in-place and then use updated values in the SAME round, a single round might chain multiple hops — which violates the '1 hop per round' guarantee and overshoot the K stops budget. Always copy `prev = dist[:]` before each round and relax using `prev`. This is the detail that separates a correct solution from a subtle bug.",
+      code: "def findCheapestPrice(n, flights, src, dst, k):\n    dist = [float('inf')] * n\n    dist[src] = 0\n    for _ in range(k + 1):           # k+1 rounds = at most k stops\n        prev = dist[:]               # SNAPSHOT: prevents chaining hops\n        for u, v, price in flights:\n            if prev[u] != float('inf') and prev[u] + price < dist[v]:\n                dist[v] = prev[u] + price\n    return -1 if dist[dst] == float('inf') else dist[dst]"
     }
   ]}
 />
 
-<Callout type="warn" title="Pick the algorithm from the constraints">
-Negative edges? Dijkstra is out — use Bellman-Ford. Need *all* pairs and V is small?
-Floyd-Warshall's three nested loops. Extra constraint like 'K stops'? Bellman-Ford rounds
-or a state-augmented Dijkstra. Saying *why* you rejected the others is the signal — the
-decision table above is the actual interview content.
-</Callout>
+---
 
-## Practice — climb the ladder
+## Check Yourself
+
+<Quiz questions={[
+  {
+    q: "You have a weighted directed graph with some negative edges but no negative cycles. Which algorithm finds single-source shortest paths?",
+    options: [
+      "Bellman-Ford — it handles negative edges by relaxing all edges V-1 times",
+      "Dijkstra — it always works on any weighted graph",
+      "BFS — works for any graph",
+      "Floyd-Warshall — it's the safest choice"
+    ],
+    answer: 0,
+    explain: "Dijkstra assumes 'settled = final', which breaks with negative edges. Bellman-Ford relaxes every edge V-1 times, correctly handling negative weights (but NOT negative cycles — it detects those separately)."
+  },
+  {
+    q: "Floyd-Warshall has 3 nested loops. What does the OUTERMOST loop variable k represent?",
+    options: [
+      "The intermediate node being 'unlocked' — paths may now route through node k",
+      "The source node",
+      "The destination node",
+      "The number of edges in the path"
+    ],
+    answer: 0,
+    explain: "k MUST be outermost because you're doing DP: dist[i][j] with intermediaries 0..k. If k were inner, you'd use partially-updated intermediaries, breaking the DP invariant."
+  },
+  {
+    q: "Kruskal uses Union-Find. What question does Union-Find answer during edge selection?",
+    options: [
+      "'Are u and v already in the same connected component?' — if yes, adding this edge creates a cycle",
+      "'What is the shortest path between u and v?'",
+      "'Which node has the minimum distance from the source?'",
+      "'Is this edge the cheapest one remaining?'"
+    ],
+    answer: 0,
+    explain: "Kruskal adds the cheapest edge that doesn't form a cycle. Union-Find's find(u) == find(v) check answers 'same component?' in near-O(1), making Kruskal O(E log E) dominated by the sort."
+  },
+  {
+    q: "Prim's algorithm and Dijkstra's algorithm use the same heap-based structure. What is different?",
+    options: [
+      "Prim pushes the EDGE WEIGHT to the heap; Dijkstra pushes the TOTAL DISTANCE from source",
+      "Prim uses a max-heap; Dijkstra uses a min-heap",
+      "Dijkstra handles negative edges; Prim does not",
+      "There is no difference — they are the same algorithm"
+    ],
+    answer: 0,
+    explain: "Prim minimizes the cost of the single edge connecting the next node to the tree. Dijkstra minimizes the total accumulated path cost from the source. Same structure, different meaning of the heap key."
+  }
+]} />
+
+---
+
+## Practice — Climb the Ladder
 
 <PracticeLadder
-  topic="Advanced Graphs"
+  topic="Advanced Graphs — Weighted Shortest Paths & MST"
   tiers={[
     {
-      label: "Warm-up — shortest paths",
-      note: "Dijkstra and its variants",
+      label: "Level 1 — Dijkstra Basics",
+      note: "vanilla single-source shortest path",
       problems: [
-        { name: "Network Delay Time", lc: "network-delay-time", difficulty: "Medium", trains: "Vanilla Dijkstra from a source — single-source shortest path." },
-        { name: "Path With Minimum Effort", lc: "path-with-minimum-effort", difficulty: "Medium", trains: "Dijkstra where 'distance' is the max edge on the path." },
-        { name: "Cheapest Flights Within K Stops", lc: "cheapest-flights-within-k-stops", difficulty: "Medium", trains: "Bellman-Ford rounds for the bounded-hop twist." }
+        { name: "Network Delay Time", lc: "network-delay-time", difficulty: "Medium", trains: "Classic Dijkstra — single source, non-negative weights; answer is max(dist)." },
+        { name: "Path With Minimum Effort", lc: "path-with-minimum-effort", difficulty: "Medium", trains: "Dijkstra where 'dist' = max edge on the path, not total — redefine the metric." },
+        { name: "Path with Maximum Probability", lc: "path-with-maximum-probability", difficulty: "Medium", trains: "Max-heap Dijkstra — multiply probabilities, flip to max; same template." }
       ]
     },
     {
-      label: "Core — MST & ordering",
-      note: "union-find and topological reasoning",
+      label: "Level 2 — Constrained Shortest Path",
+      note: "Bellman-Ford when Dijkstra can't help",
       problems: [
-        { name: "Min Cost to Connect All Points", lc: "min-cost-to-connect-all-points", difficulty: "Medium", trains: "MST (Kruskal/Prim) on a complete graph of Manhattan distances." },
-        { name: "Course Schedule II", lc: "course-schedule-ii", difficulty: "Medium", trains: "Topological sort — order a DAG, detect cycles." },
-        { name: "Swim in Rising Water", lc: "swim-in-rising-water", difficulty: "Hard", trains: "Dijkstra/union-find on a grid — minimize the max cell." }
+        { name: "Cheapest Flights Within K Stops", lc: "cheapest-flights-within-k-stops", difficulty: "Medium", trains: "Bellman-Ford with K+1 rounds + prev[] snapshot — the hop-limit classic." },
+        { name: "Minimum Cost to Reach Destination in Time", lc: "minimum-cost-to-reach-destination-in-time", difficulty: "Hard", trains: "State is (node, time) — 2D Dijkstra / BFS with bounded time." }
       ]
     },
     {
-      label: "Stretch — harder modeling",
-      note: "see the graph hiding in the prompt",
+      label: "Level 3 — MST",
+      note: "connect all nodes at minimum cost",
       problems: [
-        { name: "Bus Routes", lc: "bus-routes", difficulty: "Hard", trains: "BFS on a graph of routes, not stops — the modeling is the puzzle." },
-        { name: "Find the City...", lc: "find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance", difficulty: "Medium", trains: "All-pairs via Floyd-Warshall, then count." },
-        { name: "Reconstruct Itinerary", lc: "reconstruct-itinerary", difficulty: "Hard", trains: "Eulerian path (Hierholzer's) — every edge once." }
+        { name: "Min Cost to Connect All Points", lc: "min-cost-to-connect-all-points", difficulty: "Medium", trains: "Prim's or Kruskal's MST on a complete graph — Manhattan distance as weights." },
+        { name: "Swim in Rising Water", lc: "swim-in-rising-water", difficulty: "Hard", trains: "Dijkstra where cost = max cell value on path; or Binary Search + BFS/Union-Find." },
+        { name: "Find Critical and Pseudo-Critical Edges in MST", lc: "find-critical-and-pseudo-critical-edges-in-minimum-spanning-tree", difficulty: "Hard", trains: "Kruskal MST + forced-inclusion / forced-exclusion to classify each edge." }
+      ]
+    },
+    {
+      label: "Level 4 — All-Pairs & Advanced Modeling",
+      note: "Floyd-Warshall and graph modeling challenges",
+      problems: [
+        { name: "Find the City With Smallest Neighbors at Threshold", lc: "find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance", difficulty: "Medium", trains: "Floyd-Warshall all-pairs, then count neighbors within threshold per city." },
+        { name: "Reconstruct Itinerary", lc: "reconstruct-itinerary", difficulty: "Hard", trains: "Eulerian path (Hierholzer's algorithm) — every edge used exactly once." },
+        { name: "Bus Routes", lc: "bus-routes", difficulty: "Hard", trains: "BFS on routes (not stops) — the modeling insight IS the problem." }
       ]
     }
   ]}
 />
+
+---
 
 <QA q="When do you use Dijkstra vs Bellman-Ford vs Floyd-Warshall?">
 
 **Dijkstra** for single-source shortest paths with **non-negative** weights — greedy with a
-heap, O((V+E) log V); it's the default. **Bellman-Ford** when edges can be **negative** or
-you must **detect a negative cycle**, or when an extra constraint like "at most K hops"
-maps onto its round structure — O(V·E). **Floyd-Warshall** when you need **all-pairs**
-shortest paths and V is small — three nested loops, O(V³). The constraint in the prompt
-(negative edges? all pairs? hop limit?) picks the algorithm.
+heap, O((V+E) log V); it's the default for 95% of weighted graph problems.
+
+**Bellman-Ford** when edges can be **negative** or you must **detect a negative cycle**,
+or when an extra constraint like "at most K hops" maps onto its round structure — O(V·E).
+
+**Floyd-Warshall** when you need **all-pairs** shortest paths and V is small (≤ ~400) —
+three nested loops, O(V³). The constraint in the prompt picks the algorithm.
 
 </QA>
 
-<QA q="What is the relationship between max-flow and min-cut, and where does it show up?">
+<QA q="What is the relationship between Prim's and Dijkstra's algorithms?">
 
-The **max-flow min-cut theorem**: the maximum flow from source to sink equals the capacity
-of the minimum cut separating them. Practically, many interview problems that don't look
-like flow — especially **bipartite matching** (assign workers to tasks, courses to slots) —
-are modeled as a flow network (source → left set → right set → sink, unit capacities) and
-solved with Edmonds-Karp/Dinic. You rarely code the full algorithm in an interview, but
-recognizing "this is a matching/flow problem" and explaining the source-sink modeling is
-the win.
+They use **identical code structure**: min-heap, visited array, pop the cheapest item, process neighbors. The only difference is the heap key:
+
+- **Dijkstra**: heap key = `total accumulated distance from source`
+- **Prim**: heap key = `weight of the single edge connecting this node to the tree`
+
+Dijkstra minimizes cumulative path cost. Prim minimizes the weight of each individual tree edge. Understanding one gives you the other for free.
 
 </QA>
