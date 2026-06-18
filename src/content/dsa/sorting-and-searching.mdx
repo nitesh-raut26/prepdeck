@@ -163,6 +163,95 @@ The strategic table — given n items and q queries:
 - **Stability blindness** — multi-pass sorting (by B, then by A) only works
   with stable sorts; say the word.
 
+## Think it through
+
+The page's thesis: at work you call sort and *design the key*. The hardest
+version of that skill is a problem where the "key" is a custom pairwise
+comparator. Reason through it before revealing.
+
+<ThinkThrough
+  title="Largest Number"
+  difficulty="Medium — LeetCode 179"
+  problem="Arrange non-negative integers to form the LARGEST possible number, returned as a string. nums = [3, 30, 34, 5, 9] → '9534330'."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "Why isn't this just 'sort descending'?",
+      reveal: "Plain numeric or lexicographic sort fails: 3 vs 30 — '3' > '30' lexicographically, and indeed 3 should come first (330 > 303), but 34 vs 3 needs care too. We're ordering by how the pieces CONCATENATE, not by their value. Edges: all zeros [0,0] must return '0', not '00'; single element; numbers like 30 with trailing zeros."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct approach and its cost?",
+      reveal: "Try every permutation, concatenate, keep the max — O(n!·…), hopeless beyond ~10 numbers. But the answer is clearly some ORDERING of the inputs, which screams 'find the right sort comparator' rather than search all orders."
+    },
+    {
+      label: "Find the comparator",
+      prompt: "For two numbers a and b, which should come first?",
+      reveal: "a should come before b when the string a+b is bigger than b+a. (3 vs 30: '330' > '303' → 3 first.) This pairwise rule is a valid total order, and an exchange argument backs it: if a+b > b+a, putting a first is never worse than any arrangement that puts b first. The 'right key' here isn't a field — it's a comparison function."
+    },
+    {
+      label: "Code the template",
+      prompt: "How do I sort by a custom pairwise rule in Python, and what's the zero trap?",
+      reveal: "Convert to strings, sort with functools.cmp_to_key using the a+b vs b+a rule (descending). The trap: if the largest piece is '0', the whole thing is zeros — return '0' instead of '000…'.",
+      code: "from functools import cmp_to_key\n\ndef largest_number(nums):\n    strs = list(map(str, nums))\n    def cmp(a, b):                    # a before b if a+b is the bigger pair\n        if a + b > b + a: return -1\n        if a + b < b + a: return 1\n        return 0\n    strs.sort(key=cmp_to_key(cmp))\n    out = ''.join(strs)\n    return '0' if out[0] == '0' else out"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and why is the comparator provably consistent?",
+      reveal: "O(n log n) comparisons, each O(d) on d-digit strings. The comparator is a valid order because concatenation comparison is transitive (the standard proof), so sort produces a well-defined arrangement. Trace [3,30,34,5,9] → '9','5','34','3','30' → '9534330'. ✓ The transferable lesson: when no field works, the comparator IS the algorithm."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is comparison-based sorting Ω(n log n) in the worst case?",
+    options: [
+      "There are n! possible orderings; a decision tree distinguishing them all needs height ≥ log₂(n!) ≈ n log n comparisons",
+      "Every element must be compared to every other element",
+      "Merge sort needs O(n) extra space",
+      "It isn't — every sort is really O(n)"
+    ],
+    answer: 0,
+    explain: "Each comparison is one yes/no branch, and you must separate all n! inputs, so you need at least log₂(n!) ≈ n log n comparisons. Counting sort 'beats' it only by NOT comparing — it indexes by value, needing small integer ranges."
+  },
+  {
+    q: "Quicksort's worst case is O(n²). When does it strike?",
+    options: [
+      "A consistently bad pivot — e.g. always taking the last element on already-sorted input — splits n into 1 and n−1 each level",
+      "Whenever the array contains duplicate values",
+      "Only when the array is extremely large",
+      "Never — quicksort is always O(n log n)"
+    ],
+    answer: 0,
+    explain: "Bad pivots make partitions maximally lopsided. Random pivots or median-of-three restore expected O(n log n) — which is why real libraries use quicksort with such safeguards (plus a heap-sort fallback)."
+  },
+  {
+    q: "A 'stable' sort means:",
+    options: [
+      "Equal elements keep their original relative order — so you can sort by one key, then another, and preserve the first",
+      "The algorithm never throws an exception",
+      "It always runs in exactly O(n log n)",
+      "It sorts in place with O(1) extra memory"
+    ],
+    answer: 0,
+    explain: "Stability is what makes multi-key sorting (sort by date, then by customer, keeping each customer's orders date-sorted) work. Merge sort and Timsort are stable; quicksort is not."
+  },
+  {
+    q: "You have n items and will run MANY exact-match lookups. Best approach?",
+    options: [
+      "Build a hash set/map: O(n) once, then O(1) per lookup",
+      "Sort once, then binary-search each query",
+      "Linear scan for every query",
+      "Build a balanced BST and search it"
+    ],
+    answer: 0,
+    explain: "For exact match, hashing wins. Sort + binary search is the right call when queries are about ORDER (range, nearest, rank) — that's the distinction the strategic table is teaching."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Merge sort vs quicksort — when would you actually prefer each?">
