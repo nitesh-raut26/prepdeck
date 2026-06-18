@@ -6,6 +6,22 @@ difficulty: "Advanced structure"
 tags: ["segment-tree", "fenwick-tree", "range-queries", "advanced"]
 ---
 
+## Why We Need Segment & Fenwick Trees
+Imagine you have a large array of numbers and need to perform two operations millions of times:
+1. **Update** a single element at index `i`.
+2. **Range Query**: Calculate the sum (or minimum/maximum) of elements from index `L` to `R`.
+
+If we use a plain array, updates are fast ($O(1)$) but query takes $O(n)$ to sum the range. If we use a Prefix Sum array, queries are fast ($O(1)$) but updating an element requires recomputing prefix sums, which takes $O(n)$ time. 
+
+To solve this trade-off and make **both** operations run in **$O(\log n)$** time, we need a **Segment Tree** or a **Fenwick Tree (Binary Indexed Tree)**.
+
+### When to Use
+* Dynamic range sum / min / max queries with frequent point updates.
+  - *LeetCode Link*: [LeetCode 307: Range Sum Query - Mutable](https://leetcode.com/problems/range-sum-query-mutable/)
+* Counting inversions in an array.
+
+---
+
 ## The problem both trees solve
 
 [Prefix sums](/dsa/arrays-and-strings) answer "sum of elements i…j" in
