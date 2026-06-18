@@ -159,6 +159,95 @@ def has_cycle(n, edges):
 - **Strings/objects as items** — map them to indices first (a
   [dict](/dsa/hash-tables): name → id), or use a parent-dict directly.
 
+## Think it through
+
+You've seen the cycle-detection one-liner. Now derive the other DSU
+superpower — counting groups — and meet the honest case where plain DFS is
+just as good. Think before revealing.
+
+<ThinkThrough
+  title="Number of Provinces"
+  difficulty="Medium — LeetCode 547"
+  problem="isConnected is an n×n matrix; isConnected[i][j] = 1 means city i and city j are directly connected. A province is a set of cities connected directly or indirectly. Count the provinces. [[1,1,0],[1,1,0],[0,0,1]] → 2."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "Strip the matrix wording — what graph question is this really?",
+      reveal: "Count the connected components of an undirected graph whose edges are given as an adjacency matrix. Edges: the diagonal is always 1 (a city connects to itself — ignore it); fully disconnected → n provinces; fully connected → 1. The matrix is symmetric, so you only need its upper triangle."
+    },
+    {
+      label: "Consider both tools",
+      prompt: "What's the non-DSU solution, and is it actually worse here?",
+      reveal: "Flood fill: BFS/DFS from each unvisited city, marking its whole component, and increment a counter each time you start a fresh fill. That's O(n²) over the matrix and perfectly correct — say so out loud. DSU isn't 'better' for a STATIC graph; it earns its place when edges arrive over time. Choosing it here is about practicing the merge mindset."
+    },
+    {
+      label: "The DSU pattern",
+      prompt: "Start with n separate groups. What happens to the count on each merge?",
+      reveal: "Initialize count = n (everyone isolated). Scan the upper triangle; for each pair (i, j) that's connected, union them. Every SUCCESSFUL union (one that actually joined two different groups) merges two components into one — so decrement count. Whatever count remains is the number of provinces. 'count = n − successful unions' in code."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why does uf.union returning a boolean make the count update trivial?",
+      reveal: "union returns True only when x and y were in different groups (a real merge). So `if connected and uf.union(i, j): count -= 1` updates the component count for free, with no separate bookkeeping.",
+      code: "def find_circle_num(is_connected):\n    n = len(is_connected)\n    uf = UnionFind(n)\n    count = n                        # everyone starts isolated\n    for i in range(n):\n        for j in range(i + 1, n):    # upper triangle only\n            if is_connected[i][j] and uf.union(i, j):\n                count -= 1           # two groups merged into one\n    return count"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and when would DSU actually beat the DFS version?",
+      reveal: "O(n²·α(n)) ≈ O(n²) — the matrix scan dominates; each union is effectively constant. DFS is the same O(n²) here, so they tie on a static graph. DSU pulls ahead in the streaming cousin 'Number of Islands II', where land cells (edges) appear one at a time and you must report the component count after each addition — re-running DFS every step would be brutal."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "To check whether two items are in the same group, you compare:",
+    options: [
+      "find(x) == find(y) — their roots, not their parents",
+      "parent[x] == parent[y]",
+      "x == y",
+      "rank[x] == rank[y]"
+    ],
+    answer: 0,
+    explain: "A node's immediate parent may be somewhere mid-tree; only the root identifies the group. Comparing parents is a classic DSU bug."
+  },
+  {
+    q: "union(x, y) returns False. What does that tell you?",
+    options: [
+      "x and y were already in the same group — so adding this edge would close a cycle",
+      "The union failed because of an error",
+      "x and y have just been merged",
+      "The structure has run out of space"
+    ],
+    answer: 0,
+    explain: "An 'already connected' union is the cycle signal. It's exactly what powers Kruskal's MST (skip edges that would form a cycle) and Redundant Connection."
+  },
+  {
+    q: "Path compression plus union by rank give what per-operation complexity?",
+    options: [
+      "Amortized O(α(n)) — inverse Ackermann, ≤ 4 for any realistic n, i.e. effectively constant",
+      "O(log n) amortized",
+      "O(n) worst case",
+      "O(1) worst case in every situation"
+    ],
+    answer: 0,
+    explain: "Either optimization alone gives O(log n); together they reach inverse-Ackermann territory. Saying 'effectively constant' is right at any level; naming α(n) is the flourish."
+  },
+  {
+    q: "You have a FIXED graph given upfront and must return the actual PATH between two nodes. Union-Find or BFS/DFS?",
+    options: [
+      "BFS/DFS — DSU answers only yes/no connectivity and can't reconstruct a path; it shines when edges arrive incrementally",
+      "Union-Find — it's always faster than traversal",
+      "Union-Find — it returns the path for free",
+      "Neither structure can do this"
+    ],
+    answer: 0,
+    explain: "DSU's limits are real: no path reconstruction and no un-merge. For paths or static one-shot connectivity, traverse. Classify by 'static vs incremental, path vs yes/no' — that judgment is the interview test."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Union-Find vs BFS/DFS for connectivity — when does each win?">
