@@ -34,6 +34,14 @@ Bloomberg**; the bitmask form recurs at **Google and Meta** inside hard DP.
 | NOT | `~` | flips every bit (two's-complement: `~x == -x - 1`) |
 | Shift | `<<` `>>` | multiply / divide by powers of two, build masks |
 
+## Watch the operators work
+
+Pick an operator and step across the bit-columns — each result bit depends
+only on the two bits directly above it. Change `a` and `b`, switch between
+AND / OR / XOR, and predict the result row before pressing play.
+
+<Visualizer algo="bitwise" />
+
 ## The identities that win interviews
 
 Memorizing solutions fails on the follow-up; these five *derivations* compose into
