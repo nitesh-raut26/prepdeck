@@ -153,6 +153,55 @@ shows every example in all three, so you're never locked in.
   ([Level 0](/basics/the-internet)), not CPU. Engineer time is usually the
   scarcer resource — which is exactly why "slow" Python thrives.
 
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Compiled vs interpreted — which statement is correct?",
+    options: [
+      "Compiled (C++) translates to machine code before running (fast execution); interpreted (Python) is executed line-by-line by another program (instant edit-run, slower). Java's JVM does both via JIT",
+      "Compiled languages can never be portable",
+      "Interpreted languages always run faster",
+      "Java is a purely interpreted language"
+    ],
+    answer: 0,
+    explain: "The durable trade-off: upfront translation buys execution speed; on-the-fly execution buys flexibility and fast iteration. Java sits between — bytecode that the JVM JIT-compiles to machine code at runtime."
+  },
+  {
+    q: "Static vs dynamic typing — what does each buy you?",
+    options: [
+      "Static (Java/C++) checks types before the program runs, catching a class of bugs early; dynamic (Python) checks at runtime — faster to write, but type errors can surface in production",
+      "Static typing makes programs run slower",
+      "Dynamic typing catches more bugs at compile time",
+      "They produce different results for identical logic"
+    ],
+    answer: 0,
+    explain: "The industry compromise — type hints in Python and TypeScript over JavaScript — retrofits static checking onto dynamic languages, the strongest endorsement of static typing there is."
+  },
+  {
+    q: "Python is ~10–100× slower than C++ for raw computation, yet runs Instagram and trains ML models. Why is it used everywhere?",
+    options: [
+      "Most workloads wait on network/database (not CPU), engineer time is the scarcer resource, and hot paths delegate to C/C++ libraries like NumPy and PyTorch",
+      "Python is actually the fastest of the three languages",
+      "FAANG companies don't really use Python",
+      "The speed of the language equals the speed of the product"
+    ],
+    answer: 0,
+    explain: "Language speed rarely bounds real products — networks and databases do. Where Python needs speed, it orchestrates while native libraries compute; truly hot services get rewritten one at a time."
+  },
+  {
+    q: "You're starting out and want concepts that transfer. Best first language, per this chapter?",
+    options: [
+      "Python — spend effort on concepts (variables, loops, functions) instead of ceremony; add Java at LLD (Level 5) and C++ for systems/competitive later",
+      "C++ — learn the hardest one first to get it over with",
+      "Whichever language is newest this year",
+      "All three simultaneously from day one"
+    ],
+    answer: 0,
+    explain: "Concepts transfer across languages; ceremony doesn't. Reaching 'can build a small project' in one language beats dabbling in three — depth transfers, language-hopping doesn't."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="What's the difference between a compiled and an interpreted language?">
