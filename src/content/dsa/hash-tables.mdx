@@ -155,6 +155,95 @@ When an interviewer says "can you do better?", your first reflex should be:
 - **Java: forgetting hashCode/equals symmetry** when using your own class
   as a key — entries silently disappear.
 
+## Think it through
+
+You saw Two Sum turn O(n²) into O(n) with one map. Now apply the same
+"what would I look up in O(1)?" reflex to a problem that *also* needs prefix
+sums — the array/hash crossover interviewers love. Think before revealing.
+
+<ThinkThrough
+  title="Subarray Sum Equals K"
+  difficulty="Medium — LeetCode 560"
+  problem="Count the CONTIGUOUS subarrays whose sum is exactly k. nums = [1,2,3], k = 3 → 2 (the subarrays [1,2] and [3]). Note: numbers can be negative."
+  stages={[
+    {
+      label: "Restate & edges",
+      prompt: "What's the trap hidden in 'numbers can be negative'?",
+      reveal: "It kills the tempting sliding-window idea: with negatives, growing the window can DROP the sum back to k, so there's no safe 'shrink from the left' rule (sums aren't monotonic). Edges: empty array → 0; k can be 0; the same subarray sum can occur many times, so we COUNT, not just detect."
+    },
+    {
+      label: "Brute force first",
+      prompt: "Dumbest correct solution and its cost?",
+      reveal: "Try every subarray and sum it. With prefix sums to get each subarray sum in O(1), that's still O(n²) pairs (i, j). The repeated work: for each right end j, I re-scan every left end i. That inner scan is exactly what a hash lookup can replace."
+    },
+    {
+      label: "Find the pattern",
+      prompt: "sum(nums[i..j]) = prefix[j+1] − prefix[i]. Set that equal to k and solve for prefix[i].",
+      reveal: "We want prefix[j+1] − prefix[i] = k, i.e. prefix[i] = prefix[j+1] − k. So as I sweep and maintain the running prefix sum, the question 'how many subarrays ending here sum to k?' becomes 'how many earlier prefix sums equal (running − k)?' — a COMPLEMENT lookup, exactly like Two Sum, but over running sums. Keep a frequency map of prefix sums seen so far."
+    },
+    {
+      label: "Code the template",
+      prompt: "Why seed the map with {0: 1} before the loop?",
+      reveal: "The empty prefix has sum 0. Seeding {0: 1} lets a subarray that starts at index 0 (running itself equals k) be counted — otherwise you'd miss every k-sum prefix from the start.",
+      code: "def subarray_sum(nums, k):\n    count = {0: 1}          # one empty prefix with sum 0\n    running = 0\n    total = 0\n    for x in nums:\n        running += x\n        total += count.get(running - k, 0)  # earlier prefix completing a k-sum\n        count[running] = count.get(running, 0) + 1\n    return total"
+    },
+    {
+      label: "Cost & edge check",
+      prompt: "Cost, and why is this strictly more general than a window?",
+      reveal: "O(n) time, O(n) space — one pass, O(1) per element. It handles negatives precisely because it never assumes monotonic sums; it just counts matching prefixes. Trace [1,2,3], k=3: running 1 (need −2, 0 hits) → 3 (need 0, the seed hits → +1) → 6 (need 3, the prefix '3' hits → +1) = 2. ✓"
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "What makes hash-table lookup O(1) on average?",
+    options: [
+      "A hash function turns the key into a bucket index by arithmetic — you compute the location instead of searching",
+      "Buckets are kept sorted, so lookup is binary search",
+      "The table caches the most recent lookups",
+      "Keys are stored in a balanced tree"
+    ],
+    answer: 0,
+    explain: "Same trick as array indexing: the key's hash (mod bucket count) IS the address. No traversal — just arithmetic, then a short collision check inside the bucket."
+  },
+  {
+    q: "Resizing a hash table from 8 to 16 buckets re-hashes every entry. Why?",
+    options: [
+      "The index is hash(key) % buckets; changing the bucket count changes almost every key's index",
+      "The hash function itself is swapped out during a resize",
+      "Entries must be re-sorted by value",
+      "It doesn't — entries keep their old bucket positions"
+    ],
+    answer: 0,
+    explain: "Because placement depends on % bucket_count, doubling the buckets relocates nearly everything. Doubling makes resizes geometrically rare, keeping inserts amortized O(1) — the same argument as dynamic-array growth."
+  },
+  {
+    q: "Why can't a Python list be used as a dict key?",
+    options: [
+      "Lists are mutable — mutate one after insertion and its hash changes, leaving the entry filed in the wrong bucket and unfindable",
+      "Lists are too large to hash",
+      "Lists have no length",
+      "They can be — tuples are just faster"
+    ],
+    answer: 0,
+    explain: "Keys must be immutable so their hash is stable for life. Tuples are hashable (immutable); lists are not. The Java mirror: never mutate an object after using it as a HashMap key."
+  },
+  {
+    q: "Counting subarrays that sum to k where numbers can be NEGATIVE — why use prefix-sums-in-a-hash instead of a sliding window?",
+    options: [
+      "A negative can drop the running sum back to k after overshooting, so sums aren't monotonic and there's no safe shrink rule for a window",
+      "Sliding windows only work on strings",
+      "The sliding window would be O(n²)",
+      "A window works fine; the hash version is just shorter"
+    ],
+    answer: 0,
+    explain: "Window techniques rely on the sum moving in one direction as you grow/shrink (true only for all-positive values). Negatives break that monotonicity, so you fall back to counting matching prefix sums in a map."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Explain how a hash table achieves O(1) lookup, including what happens on collision.">
