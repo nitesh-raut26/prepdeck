@@ -202,6 +202,95 @@ If you ever see `Ashä` instead of `Asha`, an encoding was mismatched.
   config files *excluded from git* or environment variables
   ([security](/fundamentals/security)), never hardcoded.
 
+## Think it through
+
+The interview reflex this page builds is "stream, don't slurp." Reason
+through the canonical big-file task before revealing — the fix is the same
+accumulator pattern from Control Flow, now over a file too big for RAM.
+
+<ThinkThrough
+  title="Scan a 50 GB log on 8 GB of RAM"
+  difficulty="Beginner — streaming + accumulators"
+  problem="A 50 GB server log won't fit in memory. In one pass, count how many lines contain 'ERROR' and report the most frequent trailing error code."
+  stages={[
+    {
+      label: "Spot the trap",
+      prompt: "What's the obvious-but-fatal first instinct here?",
+      reveal: "Calling f.read() (or f.readlines()) loads the entire 50 GB into RAM and the process dies. The size constraint is the whole point: you cannot hold the file, so you must process it as it flows past."
+    },
+    {
+      label: "Stream + accumulate",
+      prompt: "If I can't keep the file, what CAN I keep?",
+      reveal: "Iterate `for line in f` — Python reads the file in small buffered chunks, handing you one line at a time. Keep only running STATE: an integer counter for ERROR lines and a small dict (Counter) of code → frequency. Memory is O(distinct codes), not O(file size) — constant regardless of whether the file is 50 GB or 50 TB."
+    },
+    {
+      label: "Stay safe with 'with'",
+      prompt: "What wraps the loop, and why?",
+      reveal: "`with open(path) as f:` so the file handle is released even if a line mid-file triggers an error — the cleanup-tied-to-scope rule from the exceptions page, applied to its most common case."
+    },
+    {
+      label: "Code it",
+      prompt: "with + a streaming loop + two accumulators.",
+      reveal: "One pass, constant memory.",
+      code: "from collections import Counter\n\ndef scan_log(path):\n    errors = 0\n    codes = Counter()\n    with open(path, encoding='utf-8') as f:\n        for line in f:                  # streamed in small buffers, not 50 GB at once\n            if 'ERROR' in line:\n                errors += 1\n                code = line.split()[-1]  # e.g. a trailing error code\n                codes[code] += 1\n    top = codes.most_common(1)\n    return errors, (top[0][0] if top else None)"
+    },
+    {
+      label: "Cost & when to preprocess",
+      prompt: "Cost, and when does one-pass streaming stop being enough?",
+      reveal: "O(n) time over n lines, near-constant memory. If you must answer MANY different questions about the same huge file, re-streaming per question gets slow — that's the cue to preprocess into an index, a database, or a stream-processing pipeline. The interviewer is checking you reach for `for line in f`, never f.read(), on big data."
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is `with open(...) as f:` strongly preferred over a bare open()?",
+    options: [
+      "It guarantees the file closes when the block exits — even on an exception — flushing buffered writes and freeing the OS file descriptor",
+      "It makes reading measurably faster",
+      "It lets you read and write the file at the same time",
+      "It's the only legal way to open a file in Python"
+    ],
+    answer: 0,
+    explain: "Unclosed files leak descriptors (servers crash with 'too many open files') and can lose buffered writes on a crash. `with` ties closing to scope, so it happens automatically however the block exits."
+  },
+  {
+    q: "You need to read-modify-write a file. Why is opening it with mode 'w' first a bug?",
+    options: [
+      "'w' truncates the file the instant it opens — your data is erased before you can read it. Read first, then write",
+      "'w' is read-only",
+      "'w' silently appends to the end",
+      "'w' locks the file permanently"
+    ],
+    answer: 0,
+    explain: "Write mode empties the file immediately. To modify existing contents, read them first (mode 'r'), then reopen for writing — or use append mode 'a' to add without erasing."
+  },
+  {
+    q: "Processing a 50 GB file on 8 GB of RAM — the key technique is:",
+    options: [
+      "Stream line by line (for line in f), keeping only running state — constant memory regardless of file size",
+      "Call f.read() and process the whole string at once",
+      "Raise the recursion limit and recurse over lines",
+      "Load every line into a list with readlines() first"
+    ],
+    answer: 0,
+    explain: "Streaming keeps memory flat while doing a single O(n) pass. read()/readlines() both load the whole file and blow past available RAM."
+  },
+  {
+    q: "CSV vs JSON — which rule of thumb is correct?",
+    options: [
+      "CSV for flat rows-and-columns tables; JSON for nested data (configs, records with lists inside)",
+      "JSON for tables; CSV for nested data",
+      "Always CSV — it is strictly smaller",
+      "Always JSON — it is always faster to parse"
+    ],
+    answer: 0,
+    explain: "CSV is compact and Excel-friendly but flat and typeless; JSON nests objects and arrays with basic types. Tabular export → CSV; configs and API payloads → JSON."
+  }
+]} />
+
 ## Interview perspective
 
 <QA q="Why must files be closed, and what guarantees closing in modern code?">
