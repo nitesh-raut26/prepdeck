@@ -6,6 +6,15 @@ difficulty: "Classic"
 tags: ["LLD", "state-pattern", "strategy-pattern", "oop"]
 ---
 
+## The analogy: a physical state dial
+
+Think of a vending machine like a mechanical music box with a circular dial. 
+The dial only turns in one direction, pointing to different notches: **Idle** (waiting for coins), **HasMoney** (coins inserted, waiting for selection), **Dispensing** (releasing the soda), and **SoldOut** (no soda left). 
+
+A customer pushing the "Dispense" button while the dial points to **Idle** does nothing — the physical gear is locked. The gear only unlocks when the dial turns to **HasMoney** and a selection is pressed. 
+
+If we model this machine using simple switches and flags in code, we end up with an unmanageable mess of interlocking gears that easily jams. By using the **State pattern**, we give each notch on the dial its own independent class that knows exactly which moves are legal, creating a clean, modular, and failure-proof machine.
+
 ## The ask
 
 A machine that **accepts money**, lets a user **select a product**, **dispenses** it
@@ -97,7 +106,7 @@ class VendingMachine {
   readonly dispensing = new DispensingState(this);
 
   state: State = this.idle;
-  balanceCents = 0;        // money the current user has inserted
+  balanceCents = 0;
   selected: string | null = null;
 
   constructor(private inventory: Map<string, Slot>) {}
@@ -106,7 +115,6 @@ class VendingMachine {
   slot(code: string) { return this.inventory.get(code); }
   inStock(code: string) { return (this.slot(code)?.qty ?? 0) > 0; }
 
-  // The context just delegates — no business logic lives here.
   insertMoney(c: number) { this.state.insertMoney(c); }
   selectProduct(code: string) { this.state.selectProduct(code); }
   dispense() { this.state.dispense(); }
@@ -133,7 +141,7 @@ class HasMoneyState implements State {
       throw new Error(`Need ${slot.priceCents - this.m.balanceCents}¢ more`);
     this.m.selected = code;
     this.m.setState(this.m.dispensing);
-    this.m.dispense();                 // funds confirmed → proceed
+    this.m.dispense();
   }
   dispense() { throw new Error("Select a product first"); }
   cancel() { console.log(`Refunded ${this.m.refund()}¢`); this.m.setState(this.m.idle); }
@@ -146,7 +154,7 @@ class DispensingState implements State {
   dispense() {
     const code = this.m.selected!;
     const slot = this.m.slot(code)!;
-    slot.qty -= 1;                                  // commit the item
+    slot.qty -= 1;
     const change = this.m.balanceCents - slot.priceCents;
     this.m.balanceCents = 0;
     this.m.selected = null;
@@ -157,12 +165,356 @@ class DispensingState implements State {
 }
 ```
 
+### 1. Python
+```python
+from abc import ABC, abstractmethod
+import threading
+
+class State(ABC):
+    @abstractmethod
+    def insert_money(self, amount: int): pass
+    @abstractmethod
+    def select_product(self, code: str): pass
+    @abstractmethod
+    def dispense(self): pass
+    @abstractmethod
+    def cancel(self): pass
+
+class VendingMachine:
+    def __init__(self):
+        self.idle_state = IdleState(self)
+        self.has_money_state = HasMoneyState(self)
+        self.dispensing_state = DispensingState(self)
+        
+        self.state: State = self.idle_state
+        self.balance = 0
+        self.selected_product_code: str = ""
+        self.inventory = {"cola": {"price": 150, "qty": 5}}
+        self._lock = threading.Lock()
+
+    def set_state(self, state: State):
+        self.state = state
+
+    def insert_money(self, amount: int):
+        with self._lock: self.state.insert_money(amount)
+
+    def select_product(self, code: str):
+        with self._lock: self.state.select_product(code)
+
+    def dispense(self):
+        with self._lock: self.state.dispense()
+
+    def cancel(self):
+        with self._lock: self.state.cancel()
+
+class IdleState(State):
+    def __init__(self, machine: VendingMachine): self.m = machine
+    def insert_money(self, amount: int):
+        self.m.balance += amount
+        self.m.set_state(self.m.has_money_state)
+    def select_product(self, code: str): raise Exception("Insert money first")
+    def dispense(self): raise Exception("Insert money first")
+    def cancel(self): pass
+
+class HasMoneyState(State):
+    def __init__(self, machine: VendingMachine): self.m = machine
+    def insert_money(self, amount: int): self.m.balance += amount
+    def select_product(self, code: str):
+        item = self.m.inventory.get(code)
+        if not item or item["qty"] == 0: raise Exception("Sold out")
+        if self.m.balance < item["price"]: raise Exception("Insufficient funds")
+        self.m.selected_product_code = code
+        self.m.set_state(self.m.dispensing_state)
+    def dispense(self): raise Exception("Select a product first")
+    def cancel(self):
+        refund = self.m.balance
+        self.m.balance = 0
+        self.m.set_state(self.m.idle_state)
+        print(f"Refunded {refund} cents")
+
+class DispensingState(State):
+    def __init__(self, machine: VendingMachine): self.m = machine
+    def insert_money(self, amount: int): raise Exception("Dispensing in progress")
+    def select_product(self, code: str): raise Exception("Dispensing in progress")
+    def dispense(self):
+        code = self.m.selected_product_code
+        item = self.m.inventory[code]
+        item["qty"] -= 1
+        change = self.m.balance - item["price"]
+        self.m.balance = 0
+        self.m.selected_product_code = ""
+        self.m.set_state(self.m.idle_state)
+        print(f"Dispensed {code}, returned {change} cents change")
+    def cancel(self): raise Exception("Too late to cancel")
+```
+
+### 2. Java
+```java
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+
+interface State {
+    void insertMoney(VendingMachine m, int amount);
+    void selectProduct(VendingMachine m, String code);
+    void dispense(VendingMachine m);
+    void cancel(VendingMachine m);
+}
+
+class VendingMachine {
+    public final State idle = new IdleState();
+    public final State hasMoney = new HasMoneyState();
+    public final State dispensing = new DispensingState();
+    
+    private State currentState = idle;
+    private int balance = 0;
+    private String selectedCode = null;
+    private final Map<String, Integer> inventory = new HashMap<>();
+    private final Map<String, Integer> prices = new HashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public VendingMachine() {
+        inventory.put("cola", 5);
+        prices.put("cola", 150);
+    }
+
+    public void setState(State s) { this.currentState = s; }
+    public State getState() { return currentState; }
+    public void addBalance(int amount) { this.balance += amount; }
+    public int getBalance() { return balance; }
+    public void setBalance(int b) { this.balance = b; }
+    public String getSelectedCode() { return selectedCode; }
+    public void setSelectedCode(String code) { this.selectedCode = code; }
+    public int getPrice(String code) { return prices.getOrDefault(code, 0); }
+    public int getQty(String code) { return inventory.getOrDefault(code, 0); }
+    public void decrementQty(String code) { inventory.put(code, inventory.get(code) - 1); }
+
+    public void insertMoney(int amount) {
+        lock.lock();
+        try { currentState.insertMoney(this, amount); } finally { lock.unlock(); }
+    }
+
+    public void selectProduct(String code) {
+        lock.lock();
+        try { currentState.selectProduct(this, code); } finally { lock.unlock(); }
+    }
+
+    public void dispense() {
+        lock.lock();
+        try { currentState.dispense(this); } finally { lock.unlock(); }
+    }
+
+    public void cancel() {
+        lock.lock();
+        try { currentState.cancel(this); } finally { lock.unlock(); }
+    }
+}
+
+class IdleState implements State {
+    public void insertMoney(VendingMachine m, int amount) {
+        m.addBalance(amount);
+        m.setState(m.hasMoney);
+    }
+    public void selectProduct(VendingMachine m, String code) { throw new IllegalStateException("Insert money first"); }
+    public void dispense(VendingMachine m) { throw new IllegalStateException("Insert money first"); }
+    public void cancel(VendingMachine m) {}
+}
+
+class HasMoneyState implements State {
+    public void insertMoney(VendingMachine m, int amount) { m.addBalance(amount); }
+    public void selectProduct(VendingMachine m, String code) {
+        if (m.getQty(code) <= 0) throw new IllegalStateException("Sold out");
+        if (m.getBalance() < m.getPrice(code)) throw new IllegalStateException("Insufficient funds");
+        m.setSelectedCode(code);
+        m.setState(m.dispensing);
+    }
+    public void dispense(VendingMachine m) { throw new IllegalStateException("Select product first"); }
+    public void cancel(VendingMachine m) {
+        int refund = m.getBalance();
+        m.setBalance(0);
+        m.setState(m.idle);
+        System.out.println("Refunded " + refund + " cents");
+    }
+}
+
+class DispensingState implements State {
+    public void insertMoney(VendingMachine m, int amount) { throw new IllegalStateException("Dispensing in progress"); }
+    public void selectProduct(VendingMachine m, String code) { throw new IllegalStateException("Dispensing in progress"); }
+    public void dispense(VendingMachine m) {
+        String code = m.getSelectedCode();
+        m.decrementQty(code);
+        int change = m.getBalance() - m.getPrice(code);
+        m.setBalance(0);
+        m.setSelectedCode(null);
+        m.setState(m.idle);
+        System.out.println("Dispensed " + code + ", returned " + change + " cents change");
+    }
+    public void cancel(VendingMachine m) { throw new IllegalStateException("Too late to cancel"); }
+}
+```
+
+### 3. C++
+```cpp
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+
+class VendingMachine;
+
+class State {
+public:
+    virtual ~State() = default;
+    virtual void insertMoney(VendingMachine& m, int amount) = 0;
+    virtual void selectProduct(VendingMachine& m, const std::string& code) = 0;
+    virtual void dispense(VendingMachine& m) = 0;
+    virtual void cancel(VendingMachine& m) = 0;
+};
+
+class VendingMachine {
+private:
+    std::shared_ptr<State> state;
+    int balance = 0;
+    std::string selected_code = "";
+    std::unordered_map<std::string, int> inventory;
+    std::unordered_map<std::string, int> prices;
+    std::mutex mtx;
+public:
+    std::shared_ptr<State> idle;
+    std::shared_ptr<State> has_money;
+    std::shared_ptr<State> dispensing;
+
+    VendingMachine();
+    void setState(std::shared_ptr<State> s) { state = s; }
+    void addBalance(int amount) { balance += amount; }
+    int getBalance() const { return balance; }
+    void setBalance(int b) { balance = b; }
+    std::string getSelectedCode() const { return selected_code; }
+    void setSelectedCode(const std::string& code) { selected_code = code; }
+    int getQty(const std::string& code) { return inventory[code]; }
+    void decrementQty(const std::string& code) { inventory[code]--; }
+    int getPrice(const std::string& code) { return prices[code]; }
+
+    void insertMoney(int amount);
+    void selectProduct(const std::string& code);
+    void dispense();
+    void cancel();
+};
+
+class IdleState : public State {
+public:
+    void insertMoney(VendingMachine& m, int amount) override;
+    void selectProduct(VendingMachine& m, const std::string& code) override { throw std::runtime_error("Insert money first"); }
+    void dispense(VendingMachine& m) override { throw std::runtime_error("Insert money first"); }
+    void cancel(VendingMachine& m) override {}
+};
+
+class HasMoneyState : public State {
+public:
+    void insertMoney(VendingMachine& m, int amount) override { m.addBalance(amount); }
+    void selectProduct(VendingMachine& m, const std::string& code) override;
+    void dispense(VendingMachine& m) override { throw std::runtime_error("Select product first"); }
+    void cancel(VendingMachine& m) override;
+};
+
+class DispensingState : public State {
+public:
+    void insertMoney(VendingMachine& m, int amount) override { throw std::runtime_error("Dispensing in progress"); }
+    void selectProduct(VendingMachine& m, const std::string& code) override { throw std::runtime_error("Dispensing in progress"); }
+    void dispense(VendingMachine& m) override;
+    void cancel(VendingMachine& m) override { throw std::runtime_error("Too late to cancel"); }
+};
+
+VendingMachine::VendingMachine() {
+    idle = std::make_shared<IdleState>();
+    has_money = std::make_shared<HasMoneyState>();
+    dispensing = std::make_shared<DispensingState>();
+    state = idle;
+    inventory["cola"] = 5;
+    prices["cola"] = 150;
+}
+
+void VendingMachine::insertMoney(int amount) { std::lock_guard<std::mutex> lock(mtx); state->insertMoney(*this, amount); }
+void VendingMachine::selectProduct(const std::string& code) { std::lock_guard<std::mutex> lock(mtx); state->selectProduct(*this, code); }
+void VendingMachine::dispense() { std::lock_guard<std::mutex> lock(mtx); state->dispense(*this); }
+void VendingMachine::cancel() { std::lock_guard<std::mutex> lock(mtx); state->cancel(*this); }
+
+void IdleState::insertMoney(VendingMachine& m, int amount) {
+    m.addBalance(amount);
+    m.setState(m.has_money);
+}
+
+void HasMoneyState::selectProduct(VendingMachine& m, const std::string& code) {
+    if (m.getQty(code) <= 0) throw std::runtime_error("Sold out");
+    if (m.getBalance() < m.getPrice(code)) throw std::runtime_error("Insufficient funds");
+    m.setSelectedCode(code);
+    m.setState(m.dispensing);
+}
+
+void HasMoneyState::cancel(VendingMachine& m) {
+    int refund = m.getBalance();
+    m.setBalance(0);
+    m.setState(m.idle);
+    std::cout << "Refunded " << refund << " cents\n";
+}
+
+void DispensingState::dispense(VendingMachine& m) {
+    std::string code = m.getSelectedCode();
+    m.decrementQty(code);
+    int change = m.getBalance() - m.getPrice(code);
+    m.setBalance(0);
+    m.setSelectedCode("");
+    m.setState(m.idle);
+    std::cout << "Dispensed " << code << ", returned " << change << " cents change\n";
+}
+```
+
 <Callout type="tip" title="Why State beats a status enum">
 Each state owns its legal transitions, so an illegal action is rejected in exactly one
 place — no `switch` smeared across four methods. Adding a `SoldOut` or `CardAccepted`
 state is a **new class**, not an edit to every existing method (open/closed principle).
 Say this trade-off out loud; it's the difference between "wrote code" and "designed."
 </Callout>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In the Vending Machine implementation, how does the State pattern satisfy the Open/Closed Principle (OCP)?",
+    options: [
+      "Adding a new machine state (e.g. CardAuthorizedState) requires creating one new class that implements the State interface, rather than editing massive switches in the VendingMachine class",
+      "By preventing the VendingMachine class from holding any inventory data",
+      "By compiling each state into a separate assembly file",
+      "By making all variables static and read-only"
+    ],
+    answer: 0,
+    explain: "With a status enum, adding a new state forces you to modify every method in VendingMachine to add a new switch branch. The State pattern makes state expansion purely additive."
+  },
+  {
+    q: "Why is the dispense() method call often triggered automatically from selectProduct() once payment is confirmed, rather than waiting for an external client call?",
+    options: [
+      "To prevent intermediate states where the user could try to cancel or insert more coins after the transaction has already been authorized",
+      "Because C++ does not support manual method invocation",
+      "To save battery power in the physical machine",
+      "Because the compiler enforces automatic chaining"
+    ],
+    answer: 0,
+    explain: "Once selectProduct checks that the inventory is available and the balance is sufficient, the system enters the DispensingState. Triggering dispense() immediately closes the transaction window, preventing double-cancels or duplicate coin entries."
+  },
+  {
+    q: "What is a major trade-off of the State pattern compared to a status enum switch?",
+    options: [
+      "It increases the class count significantly, introducing indirection that might be overkill for simple systems with only 2 or 3 states",
+      "It makes code slower to execute on modern CPUs",
+      "It prevents classes from implementing thread safety",
+      "It requires a database connection"
+    ],
+    answer: 0,
+    explain: "The State pattern trades file count/indirection for decoupled, robust code. If a system has only two simple states, a boolean flag is much simpler than four or five separate classes."
+  }
+]} />
 
 ## Complexity & follow-ups
 

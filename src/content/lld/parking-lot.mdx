@@ -6,6 +6,17 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "class-design"]
 ---
 
+## The analogy: a physical slot allocator
+
+Think of a parking lot like a physical mail room in a massive skyscraper. 
+Mail slots (parking spots) come in different sizes: small slots for letters (motorcycles), medium slots for packages (cars), and large bins for crates (buses). 
+
+The clerk at the front desk (the `ParkingLot` system) has to allocate these slots. 
+If a package (car) arrives, the clerk looks at the floor plans (levels) to find the nearest open slot of the correct size. Once allocated, a receipt (ticket) is issued. 
+If two clerks try to assign the same slot at the exact same moment (concurrency race), they might write over each other, leaving two packages jammed in one box. 
+
+Our job is to design the classes, their relationships, and the allocation policies to make this system durable, extensible, and thread-safe.
+
 ## How to run an OOD question
 
 It's not about UML perfection — it's about clean responsibilities and
@@ -143,6 +154,318 @@ invariant "a spot holds at most one vehicle" must be enforced at the point of
 mutation, not by a check-then-act.
 
 </QA>
+
+## Code Implementation
+
+Below are working class templates for a thread-safe Parking Lot in Python, Java, and C++:
+
+### 1. Python
+```python
+from abc import ABC, abstractmethod
+from enum import Enum
+import threading
+from typing import List, Optional
+
+class VehicleSize(Enum):
+    MOTORCYCLE = 1
+    COMPACT = 2
+    LARGE = 3
+
+class Vehicle(ABC):
+    def __init__(self, size: VehicleSize, license_plate: str):
+        self.size = size
+        self.license_plate = license_plate
+
+class Motorcycle(Vehicle):
+    def __init__(self, license_plate: str):
+        super().__init__(VehicleSize.MOTORCYCLE, license_plate)
+
+class Car(Vehicle):
+    def __init__(self, license_plate: str):
+        super().__init__(VehicleSize.COMPACT, license_plate)
+
+class Bus(Vehicle):
+    def __init__(self, license_plate: str):
+        super().__init__(VehicleSize.LARGE, license_plate)
+
+class ParkingSpot:
+    def __init__(self, spot_number: int, size: VehicleSize):
+        self.spot_number = spot_number
+        self.size = size
+        self.vehicle: Optional[Vehicle] = None
+
+    def is_free(self) -> bool:
+        return self.vehicle is None
+
+    def can_fit(self, vehicle: Vehicle) -> bool:
+        return self.is_free() and self.size.value >= vehicle.size.value
+
+    def park(self, vehicle: Vehicle) -> bool:
+        if not self.can_fit(vehicle):
+            return False
+        self.vehicle = vehicle
+        return True
+
+    def remove_vehicle(self):
+        self.vehicle = None
+
+class SpotAssignmentStrategy(ABC):
+    @abstractmethod
+    def find_spot(self, spots: List[ParkingSpot], vehicle: Vehicle) -> Optional[ParkingSpot]:
+        pass
+
+class FirstAvailableStrategy(SpotAssignmentStrategy):
+    def find_spot(self, spots: List[ParkingSpot], vehicle: Vehicle) -> Optional[ParkingSpot]:
+        for spot in spots:
+            if spot.can_fit(vehicle):
+                return spot
+        return None
+
+class Level:
+    def __init__(self, floor_number: int, spots: List[ParkingSpot], strategy: SpotAssignmentStrategy):
+        self.floor_number = floor_number
+        self.spots = spots
+        self.strategy = strategy
+        self._lock = threading.Lock() # Lock level to prevent reservation races
+
+    def park_vehicle(self, vehicle: Vehicle) -> bool:
+        with self._lock: # Atomic check-and-reserve
+            spot = self.strategy.find_spot(self.spots, vehicle)
+            if spot:
+                return spot.park(vehicle)
+            return False
+
+    def unpark_vehicle(self, vehicle: Vehicle) -> bool:
+        with self._lock:
+            for spot in self.spots:
+                if spot.vehicle == vehicle:
+                    spot.remove_vehicle()
+                    return True
+            return False
+```
+
+### 2. Java
+```java
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
+
+enum VehicleSize {
+    MOTORCYCLE(1), COMPACT(2), LARGE(3);
+    private final int value;
+    VehicleSize(int val) { this.value = val; }
+    public int getValue() { return value; }
+}
+
+abstract class Vehicle {
+    private final VehicleSize size;
+    private final String licensePlate;
+    public Vehicle(VehicleSize size, String lp) { this.size = size; this.licensePlate = lp; }
+    public VehicleSize getSize() { return size; }
+}
+
+class Car extends Vehicle {
+    public Car(String lp) { super(VehicleSize.COMPACT, lp); }
+}
+
+class ParkingSpot {
+    private final int spotNumber;
+    private final VehicleSize size;
+    private Vehicle vehicle;
+
+    public ParkingSpot(int spotNumber, VehicleSize size) {
+        this.spotNumber = spotNumber;
+        this.size = size;
+    }
+
+    public synchronized boolean isFree() { return vehicle == null; }
+    
+    public synchronized boolean canFit(Vehicle v) {
+        return isFree() && size.getValue() >= v.getSize().getValue();
+    }
+
+    public synchronized boolean park(Vehicle v) {
+        if (!canFit(v)) return false;
+        this.vehicle = v;
+        return true;
+    }
+
+    public synchronized void removeVehicle() { this.vehicle = null; }
+    public synchronized Vehicle getVehicle() { return vehicle; }
+}
+
+interface SpotAssignmentStrategy {
+    Optional<ParkingSpot> findSpot(List<ParkingSpot> spots, Vehicle vehicle);
+}
+
+class FirstAvailableStrategy implements SpotAssignmentStrategy {
+    @Override
+    public Optional<ParkingSpot> findSpot(List<ParkingSpot> spots, Vehicle v) {
+        return spots.stream().filter(spot -> spot.canFit(v)).findFirst();
+    }
+}
+
+class Level {
+    private final int floorNumber;
+    private final List<ParkingSpot> spots;
+    private final SpotAssignmentStrategy strategy;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public Level(int floorNumber, List<ParkingSpot> spots, SpotAssignmentStrategy strat) {
+        this.floorNumber = floorNumber;
+        this.spots = spots;
+        this.strategy = strat;
+    }
+
+    public boolean parkVehicle(Vehicle v) {
+        lock.lock();
+        try {
+            Optional<ParkingSpot> spot = strategy.findSpot(spots, v);
+            if (spot.isPresent()) {
+                return spot.get().park(v);
+            }
+            return false;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+### 3. C++
+```cpp
+#include <vector>
+#include <string>
+#include <memory>
+#include <mutex>
+#include <algorithm>
+
+enum class VehicleSize { MOTORCYCLE = 1, COMPACT = 2, LARGE = 3 };
+
+class Vehicle {
+private:
+    VehicleSize size;
+    std::string license_plate;
+protected:
+    Vehicle(VehicleSize sz, std::string lp) : size(sz), license_plate(lp) {}
+public:
+    virtual ~Vehicle() = default;
+    VehicleSize getSize() const { return size; }
+};
+
+class Car : public Vehicle {
+public:
+    Car(std::string lp) : Vehicle(VehicleSize::COMPACT, lp) {}
+};
+
+class ParkingSpot {
+private:
+    int spot_number;
+    VehicleSize size;
+    std::shared_ptr<Vehicle> vehicle;
+    std::mutex spot_mutex;
+public:
+    ParkingSpot(int num, VehicleSize sz) : spot_number(num), size(sz), vehicle(nullptr) {}
+    
+    bool isFree() {
+        std::lock_guard<std::mutex> lock(spot_mutex);
+        return vehicle == nullptr;
+    }
+    
+    bool canFit(const Vehicle& v) {
+        std::lock_guard<std::mutex> lock(spot_mutex);
+        return vehicle == nullptr && static_cast<int>(size) >= static_cast<int>(v.getSize());
+    }
+    
+    bool park(std::shared_ptr<Vehicle> v) {
+        std::lock_guard<std::mutex> lock(spot_mutex);
+        if (vehicle != nullptr || static_cast<int>(size) < static_cast<int>(v->getSize())) {
+            return false;
+        }
+        vehicle = v;
+        return true;
+    }
+    
+    void removeVehicle() {
+        std::lock_guard<std::mutex> lock(spot_mutex);
+        vehicle = nullptr;
+    }
+};
+
+class SpotAssignmentStrategy {
+public:
+    virtual ~SpotAssignmentStrategy() = default;
+    virtual std::shared_ptr<ParkingSpot> findSpot(const std::vector<std::shared_ptr<ParkingSpot>>& spots, const Vehicle& vehicle) = 0;
+};
+
+class FirstAvailableStrategy : public SpotAssignmentStrategy {
+public:
+    std::shared_ptr<ParkingSpot> findSpot(const std::vector<std::shared_ptr<ParkingSpot>>& spots, const Vehicle& vehicle) override {
+        for (auto spot : spots) {
+            if (spot->canFit(vehicle)) return spot;
+        }
+        return nullptr;
+    }
+};
+
+class Level {
+private:
+    int floor_number;
+    std::vector<std::shared_ptr<ParkingSpot>> spots;
+    std::shared_ptr<SpotAssignmentStrategy> strategy;
+    std::mutex level_mutex;
+public:
+    Level(int num, std::vector<std::shared_ptr<ParkingSpot>> s, std::shared_ptr<SpotAssignmentStrategy> strat) 
+        : floor_number(num), spots(s), strategy(strat) {}
+        
+    bool parkVehicle(std::shared_ptr<Vehicle> v) {
+        std::lock_guard<std::mutex> lock(level_mutex); // Lock level to serialize search + reserve
+        auto spot = strategy->findSpot(spots, *v);
+        if (spot) {
+            return spot->park(v);
+        }
+        return false;
+    }
+};
+```
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why do we place the Lock/Mutex at the Level level instead of inside the ParkingSpot class during the find-and-reserve operation?",
+    options: [
+      "To prevent a race condition where two threads find the same spot free during findSpot() and both attempt to reserve it (check-then-act race)",
+      "Because locking a single ParkingSpot is completely illegal in OOP",
+      "To make the search algorithm run faster by processing levels in parallel",
+      "Because Level has access to the database"
+    ],
+    answer: 0,
+    explain: "A find-and-reserve operation is a 'check-then-act' sequence. If we only lock the individual spots, two threads could find the same spot as free simultaneously. Locking the Level ensures that the search-and-assign transaction is atomic."
+  },
+  {
+    q: "How does using the Strategy pattern for spot assignment satisfy the SOLID principles?",
+    options: [
+      "It satisfies the Open/Closed Principle (OCP) by allowing new assignment algorithms (e.g., nearest-spot, compact-first) to be added without changing the Level or ParkingLot classes",
+      "It satisfies the Single Responsibility Principle by forcing the Vehicle class to compute fees",
+      "It implements the Liskov Substitution Principle for variables",
+      "It eliminates the need for constructors"
+    ],
+    answer: 0,
+    explain: "By wrapping the spot selection algorithm inside a SpotAssignmentStrategy interface, we can add new strategies as separate classes. The Level depends on the abstraction, not a concretion."
+  },
+  {
+    q: "Why is a VehicleSize enum preferred over creating a deep subclass hierarchy for every combination of spot and vehicle type (e.g. MotorcycleSpot, CompactSpot, LargeSpot)?",
+    options: [
+      "It avoids a class explosion and lets you write generic canFit() logic based on numerical comparisons, making it easy to support rules like 'a car can park in a large spot'",
+      "Because enums use less memory in Python",
+      "Because subclasses do not support inheritance in Java",
+      "Because interviewers hate subclasses"
+    ],
+    answer: 0,
+    explain: "A deep subclass tree is rigid and leads to duplicated matching logic. A numeric scale on a VehicleSize enum allows a simple `spot.size >= vehicle.size` check that naturally handles cross-size parking."
+  }
+]} />
 
 ## Practice — level up
 

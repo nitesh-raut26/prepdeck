@@ -6,6 +6,16 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "state-pattern", "scheduling"]
 ---
 
+## The analogy: a scanning sweep
+
+Think of an elevator scheduler like a giant street sweeper. 
+If the sweeper answered calls in the order they arrived (FIFO) — driving to block 2, then block 9, then back to block 3 — it would burn fuel and waste everyone's time. 
+
+Instead, the sweeper moves in a **continuous direction**, sweeping block by block, picking up all debris in its path. Only when there is no debris left in that direction does it reverse and sweep the other way. 
+
+This is the **SCAN algorithm** (also called the elevator algorithm). 
+To make this work in software, we don't use a simple queue of jobs. We use **two sorted sets** per elevator: one for stops above (sorted ascending), and one for stops below (sorted descending). Our job is to design a system that dispatches the best elevator for a call, manages cabin states (moving, stopped, open doors), and synchronizes concurrency so two users never call the same elevator to different floors at the same millisecond.
+
 ## Scope it first
 
 "Design an elevator" is two problems wearing one prompt: **object model**
@@ -98,33 +108,224 @@ sorted sets** per elevator — stops above (served ascending while going up)
 and stops below (descending while going down). In code:
 
 ```python
+from enum import Enum
+import threading
+from typing import Set
+
+class Direction(Enum):
+    IDLE = 0
+    UP = 1
+    DOWN = 2
+
 class Elevator:
-    def __init__(self, id):
-        self.id, self.floor, self.direction = id, 0, Direction.IDLE
-        self.up_stops = SortedSet()      # or a min-heap
-        self.down_stops = SortedSet()    # or a max-heap
+    def __init__(self, elevator_id: int):
+        self.id = elevator_id
+        self.current_floor = 0
+        self.direction = Direction.IDLE
+        self.up_stops: Set[int] = set()
+        self.down_stops: Set[int] = set()
+        self._lock = threading.Lock()
 
-    def add_stop(self, floor):
-        if floor > self.floor: self.up_stops.add(floor)
-        elif floor < self.floor: self.down_stops.add(floor)
+    def add_stop(self, floor: int):
+        with self._lock:
+            if floor > self.current_floor:
+                self.up_stops.add(floor)
+                if self.direction == Direction.IDLE:
+                    self.direction = Direction.UP
+            elif floor < self.current_floor:
+                self.down_stops.add(floor)
+                if self.direction == Direction.IDLE:
+                    self.direction = Direction.DOWN
 
-    def step(self):                      # one tick of the state machine
-        if self.direction == Direction.UP:
-            self.floor += 1
-            if self.floor in self.up_stops:
-                self.up_stops.remove(self.floor)
-                self.open_doors()        # state: STOPPED
-            if not self.up_stops:        # exhausted this direction
-                self.direction = (Direction.DOWN if self.down_stops
-                                  else Direction.IDLE)
-        # ... mirrored for DOWN
+    def step(self):
+        with self._lock:
+            if self.direction == Direction.UP:
+                self.current_floor += 1
+                if self.current_floor in self.up_stops:
+                    self.up_stops.remove(self.current_floor)
+                    self._open_doors()
+                if not self.up_stops:
+                    self.direction = Direction.DOWN if self.down_stops else Direction.IDLE
+            elif self.direction == Direction.DOWN:
+                self.current_floor -= 1
+                if self.current_floor in self.down_stops:
+                    self.down_stops.remove(self.current_floor)
+                    self._open_doors()
+                if not self.down_stops:
+                    self.direction = Direction.UP if self.up_stops else Direction.IDLE
+
+    def _open_doors(self):
+        print(f"Elevator {self.id} stopped at {self.current_floor}. Doors open.")
 ```
+
+### 1. Java
+```java
+import java.util.TreeSet;
+import java.util.concurrent.locks.ReentrantLock;
+
+enum Direction { IDLE, UP, DOWN }
+
+class Elevator {
+    private final int id;
+    private int currentFloor = 0;
+    private Direction direction = Direction.IDLE;
+    private final TreeSet<Integer> upStops = new TreeSet<>();
+    private final TreeSet<Integer> downStops = new TreeSet<>();
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public Elevator(int id) { this.id = id; }
+
+    public void addStop(int floor) {
+        lock.lock();
+        try {
+            if (floor > currentFloor) {
+                upStops.add(floor);
+                if (direction == Direction.IDLE) direction = Direction.UP;
+            } else if (floor < currentFloor) {
+                downStops.add(floor);
+                if (direction == Direction.IDLE) direction = Direction.DOWN;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void step() {
+        lock.lock();
+        try {
+            if (direction == Direction.UP) {
+                currentFloor++;
+                if (upStops.contains(currentFloor)) {
+                    upStops.remove(currentFloor);
+                    openDoors();
+                }
+                if (upStops.isEmpty()) {
+                    direction = downStops.isEmpty() ? Direction.IDLE : Direction.DOWN;
+                }
+            } else if (direction == Direction.DOWN) {
+                currentFloor--;
+                if (downStops.contains(currentFloor)) {
+                    downStops.remove(currentFloor);
+                    openDoors();
+                }
+                if (downStops.isEmpty()) {
+                    direction = upStops.isEmpty() ? Direction.IDLE : Direction.UP;
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void openDoors() {
+        System.out.println("Elevator " + id + " opened doors at floor " + currentFloor);
+    }
+}
+```
+
+### 2. C++
+```cpp
+#include <iostream>
+#include <set>
+#include <mutex>
+
+enum class Direction { IDLE, UP, DOWN };
+
+class Elevator {
+private:
+    int id;
+    int current_floor = 0;
+    Direction direction = Direction::IDLE;
+    std::set<int> up_stops;
+    std::set<int> down_stops;
+    std::mutex mtx;
+
+    void openDoors() {
+        std::cout << "Elevator " << id << " opened doors at floor " << current_floor << "\n";
+    }
+public:
+    Elevator(int elevator_id) : id(elevator_id) {}
+
+    void addStop(int floor) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (floor > current_floor) {
+            up_stops.insert(floor);
+            if (direction == Direction::IDLE) direction = Direction::UP;
+        } else if (floor < current_floor) {
+            down_stops.insert(floor);
+            if (direction == Direction::IDLE) direction = Direction::DOWN;
+        }
+    }
+
+    void step() {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (direction == Direction::UP) {
+            current_floor++;
+            if (up_stops.count(current_floor)) {
+                up_stops.erase(current_floor);
+                openDoors();
+            }
+            if (up_stops.empty()) {
+                direction = down_stops.empty() ? Direction::IDLE : Direction::DOWN;
+            }
+        } else if (direction == Direction::DOWN) {
+            current_floor--;
+            if (down_stops.count(current_floor)) {
+                down_stops.erase(current_floor);
+                openDoors();
+            }
+            if (down_stops.empty()) {
+                direction = up_stops.empty() ? Direction::IDLE : Direction::UP;
+            }
+        }
+    }
+};
+```
+
 
 A simple, defensible `DispatchStrategy`: prefer elevators **already moving
 toward the call in the same direction** (cost = distance), then idle ones
 (distance), then opposite-direction ones (distance to their reversal point
 + back). Naming that cost function out loud is the senior move; the exact
 formula matters less.
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "Why is the SCAN algorithm (keeping direction until no stops remain) preferred over a FIFO queue in elevator design?",
+    options: [
+      "It minimizes total vertical travel distance and passengers' wait times by avoiding constant direction reversals (ping-ponging)",
+      "It requires fewer lines of assembly code to write",
+      "Because sorted sets consume less memory than queues in Python",
+      "Because FIFO is incompatible with class inheritance"
+    ],
+    answer: 0,
+    explain: "FIFO serves requests in arrival order, which causes the elevator to bounce back and forth between far-apart floors. SCAN processes stops en route, bounding the worst-case travel time."
+  },
+  {
+    q: "In modeling the system requests, why is it critical to distinguish between a HallCall and a CabinCall?",
+    options: [
+      "A HallCall (floor, direction) is assigned dynamically by the system to the best available elevator; a CabinCall (target floor) is locked to a specific elevator once inside the cabin",
+      "HallCalls must be stored in databases, while CabinCalls live only in RAM",
+      "Because HallCalls do not use Java interfaces",
+      "Because CabinCalls have high priority and override other stops immediately"
+    ],
+    answer: 0,
+    explain: "A HallCall represents demand from a floor where the user is outside. The system dispatch logic coordinates which elevator picks them up. A CabinCall represents a button pressed *inside* a specific elevator, so it must be added to that specific elevator's stop sets immediately."
+  },
+  {
+    q: "What does the step() method pattern (explicit time ticking) buy you in an LLD interview?",
+    options: [
+      "It makes the system deterministically testable and mockable in a single thread, bypassing the complexity of multi-threaded race conditions on whiteboards",
+      "It makes the elevator move faster",
+      "It forces the compiler to build the code as a state machine",
+      "It automatically resolves lock contentions"
+    ],
+    answer: 0,
+    explain: "Trying to write real-time, multi-threaded code with timers during a 45-minute whiteboard session is highly error-prone. A `step()` tick method simulates time increments deterministically, which is easy to trace and test."
+  }
+]} />
 
 ## Where the patterns live
 

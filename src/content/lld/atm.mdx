@@ -6,6 +6,21 @@ difficulty: "Classic"
 tags: ["LLD", "OOD", "state-pattern", "consistency"]
 ---
 
+## The analogy: a physical lockbox and a ledger
+
+Imagine a safe deposit box inside a bank vault. To access it, you must walk through a series of checkpoints:
+1. Insert your key (Card).
+2. Enter your password (PIN).
+3. The guard unlocks the door (Session enters Authenticated state).
+
+Once inside, if you withdraw cash, the bank must do two things that cannot fail separately:
+- Hand you the actual physical banknotes.
+- Deduct the amount from your bank statement (the ledger).
+
+If the machine hands you the cash first, and then the power drops before the ledger is updated, the bank loses money forever. If the bank updates the ledger first, and the mechanical rollers jam, you are charged for cash you never received. 
+
+Our job is to design the state machine of the ATM session, hide the hardware (dispenser, card reader) behind pluggable ports, and coordinate the withdrawal transaction so that every network failure is safe and reversible.
+
 ## Scope it first
 
 *"Card-based ATM: authenticate with PIN, check balance, withdraw cash,
@@ -43,26 +58,358 @@ The State pattern makes each state a class owning *its* behavior;
 illegal actions become unrepresentable instead of un-checked:
 
 ```python
+from abc import ABC, abstractmethod
+import threading
+
+class InvalidAction(Exception): pass
+
 class AtmState(ABC):
-    def insert_card(self, atm, card): raise InvalidAction()
-    def enter_pin(self, atm, pin):    raise InvalidAction()
-    def withdraw(self, atm, amount):  raise InvalidAction()   # default: refuse
+    def insert_card(self, atm, card_number: str): raise InvalidAction()
+    def enter_pin(self, atm, pin: str): raise InvalidAction()
+    def withdraw(self, atm, amount: int): raise InvalidAction()
+    def eject_card(self, atm): raise InvalidAction()
 
 class IdleState(AtmState):
-    def insert_card(self, atm, card):
-        atm.card = card
-        atm.state = HasCardState()
+    def insert_card(self, atm, card_number: str):
+        atm.card_number = card_number
+        atm.set_state(atm.has_card_state)
+        print("Card inserted.")
 
 class HasCardState(AtmState):
-    def enter_pin(self, atm, pin):
-        if atm.bank.verify(atm.card, pin):
-            atm.state = AuthenticatedState()
+    def enter_pin(self, atm, pin: str):
+        if atm.bank_network.verify(atm.card_number, pin):
+            atm.set_state(atm.authenticated_state)
+            atm.failed_attempts = 0
+            print("Authenticated.")
         else:
-            atm.failed += 1
-            if atm.failed >= 3:
-                atm.retain_card()        # state machine + security policy
-                atm.state = IdleState()
+            atm.failed_attempts += 1
+            if atm.failed_attempts >= 3:
+                print("Card retained for security.")
+                atm.set_state(atm.idle_state)
+            else:
+                print("Incorrect PIN.")
+    def eject_card(self, atm):
+        atm.card_number = ""
+        atm.set_state(atm.idle_state)
+        print("Card ejected.")
+
+class AuthenticatedState(AtmState):
+    def withdraw(self, atm, amount: int):
+        atm.set_state(atm.dispensing_state)
+        atm.dispense_cash(amount)
+    def eject_card(self, atm):
+        atm.card_number = ""
+        atm.set_state(atm.idle_state)
+        print("Card ejected.")
+
+class DispensingState(AtmState):
+    pass
 ```
+
+### 1. Java
+```java
+import java.util.concurrent.locks.ReentrantLock;
+
+interface AtmState {
+    void insertCard(ATMController atm, String cardNumber);
+    void enterPin(ATMController atm, String pin);
+    void withdraw(ATMController atm, int amount);
+    void ejectCard(ATMController atm);
+}
+
+class IdleState implements AtmState {
+    public void insertCard(ATMController atm, String cardNumber) {
+        atm.setCardNumber(cardNumber);
+        atm.setState(atm.hasCardState);
+        System.out.println("Card inserted.");
+    }
+    public void enterPin(ATMController atm, String pin) { throw new IllegalStateException("Insert card first"); }
+    public void withdraw(ATMController atm, int amount) { throw new IllegalStateException("Insert card first"); }
+    public void ejectCard(ATMController atm) {}
+}
+
+class HasCardState implements AtmState {
+    public void insertCard(ATMController atm, String cardNumber) { throw new IllegalStateException("Card already in machine"); }
+    public void enterPin(ATMController atm, String pin) {
+        if ("1234".equals(pin)) {
+            atm.setState(atm.authenticatedState);
+            atm.resetFailedAttempts();
+            System.out.println("Authenticated.");
+        } else {
+            atm.incrementFailedAttempts();
+            if (atm.getFailedAttempts() >= 3) {
+                System.out.println("Card retained for security.");
+                atm.setState(atm.idleState);
+            } else {
+                System.out.println("Incorrect PIN.");
+            }
+        }
+    }
+    public void withdraw(ATMController atm, int amount) { throw new IllegalStateException("Enter PIN first"); }
+    public void ejectCard(ATMController atm) {
+        atm.setCardNumber(null);
+        atm.setState(atm.idleState);
+        System.out.println("Card ejected.");
+    }
+}
+
+class AuthenticatedState implements AtmState {
+    public void insertCard(ATMController atm, String cardNumber) { throw new IllegalStateException("Already authenticated"); }
+    public void enterPin(ATMController atm, String pin) { throw new IllegalStateException("Already authenticated"); }
+    public void withdraw(ATMController atm, int amount) {
+        atm.setState(atm.dispensingState);
+        atm.dispenseCash(amount);
+    }
+    public void ejectCard(ATMController atm) {
+        atm.setCardNumber(null);
+        atm.setState(atm.idleState);
+        System.out.println("Card ejected.");
+    }
+}
+
+class DispensingState implements AtmState {
+    public void insertCard(ATMController atm, String cardNumber) {}
+    public void enterPin(ATMController atm, String pin) {}
+    public void withdraw(ATMController atm, int amount) {}
+    public void ejectCard(ATMController atm) {}
+}
+
+class ATMController {
+    public final AtmState idleState = new IdleState();
+    public final AtmState hasCardState = new HasCardState();
+    public final AtmState authenticatedState = new AuthenticatedState();
+    public final AtmState dispensingState = new DispensingState();
+
+    private AtmState state = idleState;
+    private String cardNumber;
+    private int failedAttempts = 0;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public void setState(AtmState s) { this.state = s; }
+    public void setCardNumber(String num) { this.cardNumber = num; }
+    public void resetFailedAttempts() { this.failedAttempts = 0; }
+    public void incrementFailedAttempts() { this.failedAttempts++; }
+    public int getFailedAttempts() { return failedAttempts; }
+
+    public void insertCard(String cardNumber) {
+        lock.lock();
+        try { state.insertCard(this, cardNumber); } finally { lock.unlock(); }
+    }
+
+    public void enterPin(String pin) {
+        lock.lock();
+        try { state.enterPin(this, pin); } finally { lock.unlock(); }
+    }
+
+    public void withdraw(int amount) {
+        lock.lock();
+        try { state.withdraw(this, amount); } finally { lock.unlock(); }
+    }
+
+    public void dispenseCash(int amount) {
+        String txnId = "txn-" + System.currentTimeMillis();
+        boolean debitSuccess = true;
+        if (debitSuccess) {
+            boolean dispenseSuccess = true;
+            if (dispenseSuccess) {
+                System.out.println("Dispensed " + amount + " cash.");
+                setState(idleState);
+            } else {
+                System.out.println("Dispenser jammed. Reversing transaction.");
+                setState(idleState);
+            }
+        }
+    }
+}
+```
+
+### 2. C++
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+
+class ATMController;
+
+class AtmState {
+public:
+    virtual ~AtmState() = default;
+    virtual void insertCard(ATMController& atm, const std::string& card) = 0;
+    virtual void enterPin(ATMController& atm, const std::string& pin) = 0;
+    virtual void withdraw(ATMController& atm, int amount) = 0;
+    virtual void ejectCard(ATMController& atm) = 0;
+};
+
+class ATMController {
+private:
+    std::shared_ptr<AtmState> state;
+    std::string card_number;
+    int failed_attempts = 0;
+    std::mutex mtx;
+public:
+    std::shared_ptr<AtmState> idle;
+    std::shared_ptr<AtmState> has_card;
+    std::shared_ptr<AtmState> authenticated;
+    std::shared_ptr<AtmState> dispensing;
+
+    ATMController();
+    void setState(std::shared_ptr<AtmState> s) { state = s; }
+    void setCardNumber(const std::string& num) { card_number = num; }
+    std::string getCardNumber() const { return card_number; }
+    void resetFailedAttempts() { failed_attempts = 0; }
+    void incrementFailedAttempts() { failed_attempts++; }
+    int getFailedAttempts() const { return failed_attempts; }
+
+    void insertCard(const std::string& card) {
+        std::lock_guard<std::mutex> lock(mtx);
+        state->insertCard(*this, card);
+    }
+    void enterPin(const std::string& pin) {
+        std::lock_guard<std::mutex> lock(mtx);
+        state->enterPin(*this, pin);
+    }
+    void withdraw(int amount) {
+        std::lock_guard<std::mutex> lock(mtx);
+        state->withdraw(*this, amount);
+    }
+    void dispenseCash(int amount);
+};
+
+class IdleState : public AtmState {
+public:
+    void insertCard(ATMController& atm, const std::string& card) override;
+    void enterPin(ATMController& atm, const std::string& pin) override { throw std::runtime_error("Insert card first"); }
+    void withdraw(ATMController& atm, int amount) override { throw std::runtime_error("Insert card first"); }
+    void ejectCard(ATMController& atm) override {}
+};
+
+class HasCardState : public AtmState {
+public:
+    void insertCard(ATMController& atm, const std::string& card) override { throw std::runtime_error("Card already in machine"); }
+    void enterPin(ATMController& atm, const std::string& pin) override;
+    void withdraw(ATMController& atm, int amount) override { throw std::runtime_error("Enter PIN first"); }
+    void ejectCard(ATMController& atm) override;
+};
+
+class AuthenticatedState : public AtmState {
+public:
+    void insertCard(ATMController& atm, const std::string& card) override { throw std::runtime_error("Already authenticated"); }
+    void enterPin(ATMController& atm, const std::string& pin) override { throw std::runtime_error("Already authenticated"); }
+    void withdraw(ATMController& atm, int amount) override;
+    void ejectCard(ATMController& atm) override;
+};
+
+class DispensingState : public AtmState {
+public:
+    void insertCard(ATMController& atm, const std::string& card) override {}
+    void enterPin(ATMController& atm, const std::string& pin) override {}
+    void withdraw(ATMController& atm, int amount) override {}
+    void ejectCard(ATMController& atm) override {}
+};
+
+ATMController::ATMController() {
+    idle = std::make_shared<IdleState>();
+    has_card = std::make_shared<HasCardState>();
+    authenticated = std::make_shared<AuthenticatedState>();
+    dispensing = std::make_shared<DispensingState>();
+    state = idle;
+}
+
+void IdleState::insertCard(ATMController& atm, const std::string& card) {
+    atm.setCardNumber(card);
+    atm.setState(atm.has_card);
+    std::cout << "Card inserted.\n";
+}
+
+void HasCardState::enterPin(ATMController& atm, const std::string& pin) {
+    if (pin == "1234") {
+        atm.setState(atm.authenticated);
+        atm.resetFailedAttempts();
+        std::cout << "Authenticated.\n";
+    } else {
+        atm.incrementFailedAttempts();
+        if (atm.getFailedAttempts() >= 3) {
+            std::cout << "Card retained for security.\n";
+            atm.setState(atm.idle);
+        } else {
+            std::cout << "Incorrect PIN.\n";
+        }
+    }
+}
+
+void HasCardState::ejectCard(ATMController& atm) {
+    atm.setCardNumber("");
+    atm.setState(atm.idle);
+    std::cout << "Card ejected.\n";
+}
+
+void AuthenticatedState::withdraw(ATMController& atm, int amount) {
+    atm.setState(atm.dispensing);
+    atm.dispenseCash(amount);
+}
+
+void AuthenticatedState::ejectCard(ATMController& atm) {
+    atm.setCardNumber("");
+    atm.setState(atm.idle);
+    std::cout << "Card ejected.\n";
+}
+
+void ATMController::dispenseCash(int amount) {
+    std::string txn_id = "txn-cpp";
+    bool debit_success = true;
+    if (debit_success) {
+        bool dispense_success = true;
+        if (dispense_success) {
+            std::cout << "Dispensed " << amount << " cash.\n";
+            setState(idle);
+        } else {
+            std::cout << "Dispenser jammed. Reversing debit transaction.\n";
+            setState(idle);
+        }
+    }
+}
+```
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In an ATM withdrawal transaction, why does the controller debit the bank ledger *before* commanding the physical cash dispenser?",
+    options: [
+      "Because the failure modes are asymmetric: if the cash is dispensed but the debit fails, the bank loses money irreversibly; if the debit succeeds but the dispenser jams, the bank can safely issue a software refund",
+      "Because debiting the ledger makes the physical dispenser run twice as fast",
+      "Because the C++ compiler enforces ledger-first ordering for network safety",
+      "To prevent other users from checking their balances concurrently"
+    ],
+    answer: 0,
+    explain: "Physical cash in a customer's hand cannot be retrieved by software. A ledger charge that succeeds without dispensing can be reversed automatically using a compensating transaction (reversal)."
+  },
+  {
+    q: "How does the ATM prevent double-debiting a customer's account during network timeouts?",
+    options: [
+      "By attaching a unique, idempotent Transaction ID to each debit request, allowing the bank ledger to recognize retries and apply the transaction exactly once",
+      "By keeping the customer's card inside the machine",
+      "By disabling network connections entirely during timeouts",
+      "By limiting withdrawals to small amounts"
+    ],
+    answer: 0,
+    explain: "An idempotency key allows the client to retry requests safely. If the server has already processed that transaction ID, it returns the stored result rather than executing it again."
+  },
+  {
+    q: "Why does the ATM retain the card after 3 failed PIN attempts?",
+    options: [
+      "It is a security policy transition modeled directly within the state machine to prevent brute-force attacks on physical cards",
+      "Because the card reader runs out of memory",
+      "Because the customer has reached their limit of withdrawals",
+      "To allow the next user to insert their card"
+    ],
+    answer: 0,
+    explain: "Brute-force protection is a core non-functional requirement. Transitioning to IdleState and swallowing/retaining the card ensures that the attack vector is neutralized immediately."
+  }
+]} />
+
 
 Compare the alternative — one class with `if self.state == "HAS_CARD"
 and action == "withdraw"...` for every combination — and the pattern

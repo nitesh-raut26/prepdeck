@@ -5,6 +5,17 @@ order: 1
 tags: ["OOP", "SOLID", "design-principles"]
 ---
 
+## The blueprint for scale: LEGO city analogy
+
+Imagine you are asked to build a physical LEGO city. 
+If you dump all the bricks into one giant container, you will struggle to find parts, change the design, or collaborate with others. 
+
+In software engineering, **Low-Level Design (LLD)** (also called Object-Oriented Design) is the craft of organizing your code like modular LEGO sets:
+- **Classes/Objects** are the bricks. Each brick has a specific color, shape, and connection interface.
+- **Interfaces** are the standard connector shapes (studs and tubes). Any brick with 2x4 studs fits onto any 2x4 slot, regardless of what that brick is made of.
+- **UML Diagrams** are the instruction manuals showing how bricks snap together.
+- **SOLID Principles** are the rules of architectural durability, ensuring you can swap a building's roof without collapsing the entire structure.
+
 ## The four pillars
 
 - **Encapsulation** — hide internal state; expose behavior. Invariants are
@@ -126,6 +137,248 @@ independently — more flexible and less fragile. Inheritance is right for a tru
 varying behavior (Strategy, Decorator).
 
 </QA>
+
+## The SDE LLD Interview Protocol
+
+LLD interviews are not about jumping straight into typing code; they are about structured problem-solving. Follow this 6-step whiteboard recipe:
+
+1. **Clarify Scope & Constraints** (5 mins):
+   - Ask functional questions: "Single or multiple levels? Which vehicle sizes?"
+   - Define non-functional constraints: "Do we need thread safety? Are we persist-to-database or in-memory?"
+   - Establish invariants: "A parking spot holds at most one vehicle."
+2. **Noun/Verb Extraction** (5 mins):
+   - **Nouns (Classes/Attributes)**: Read the requirements and extract the key actors (e.g., `ParkingLot`, `Level`, `ParkingSpot`, `Vehicle`, `Ticket`).
+   - **Verbs (Methods)**: Map actions to responsibilities (e.g., `parkVehicle(v)`, `findSpot(v)`, `canFit(v)`). Avoid creating a "God Class" that holds all logic.
+3. **Draft the Class Diagram (UML)** (10 mins):
+   - Map entities and their relationships (Association, Aggregation, Composition, Generalization, Realization).
+   - Cardinalities: "One ParkingLot has many Levels (1 to *)."
+4. **Identify What Varies (Design Patterns)** (5 mins):
+   - "Fee calculation varies → Strategy pattern."
+   - "Elevator behavior changes per state → State pattern."
+5. **Confront Concurrency** (5 mins):
+   - Ask: "What happens if two users request the same resource simultaneously?"
+   - Identify critical sections (find-and-reserve) and explain lock choices (mutexes, concurrent data structures).
+6. **Code the Core Interfaces & Flow** (15 mins):
+   - Write clean, modular, typed code. Define interfaces first, then implement the key flow.
+
+## UML Relationship Guide (with multi-language code)
+
+UML (Unified Modeling Language) is the whiteboard language of LLD. To read and draw class diagrams, you must understand the five primary relationships, how they are drawn in Mermaid, and how they translate to code:
+
+### 1. Generalization / Inheritance (`<|--` or `is-a`)
+- **Meaning**: A child class inherits state and behavior from a parent class.
+- **Mermaid**: `Parent <|-- Child`
+- **Code**:
+```python
+# Python
+class Vehicle: pass
+class Car(Vehicle): pass
+```
+```java
+// Java
+class Vehicle {}
+class Car extends Vehicle {}
+```
+```cpp
+// C++
+class Vehicle {};
+class Car : public Vehicle {};
+```
+
+### 2. Realization / Implementation (`..|>` or `is-a`)
+- **Meaning**: A concrete class implements the contract defined by an interface or abstract class.
+- **Mermaid**: `Interface <.. Concrete`
+- **Code**:
+```python
+# Python (using Abstract Base Class - ABC)
+from abc import ABC, abstractmethod
+class Notifier(ABC):
+    @abstractmethod
+    def send(self, msg): pass
+class EmailNotifier(Notifier):
+    def send(self, msg): print(msg)
+```
+```java
+// Java
+interface Notifier { void send(String msg); }
+class EmailNotifier implements Notifier {
+    public void send(String msg) { System.out.println(msg); }
+}
+```
+```cpp
+// C++ (Pure Virtual functions)
+class Notifier {
+public:
+    virtual void send(std::string msg) = 0;
+};
+class EmailNotifier : public Notifier {
+public:
+    void send(std::string msg) override { std::cout << msg; }
+};
+```
+
+### 3. Association (`-->` or `has-a`)
+- **Meaning**: An independent relationship where one class references another, but they have independent lifecycles.
+- **Mermaid**: `A --> B`
+- **Code**:
+```python
+# Python
+class Passenger: pass
+class Car:
+    def __init__(self, passenger):
+        self.passenger = passenger # holds reference, but passenger lives independently
+```
+```java
+// Java
+class Passenger {}
+class Car {
+    private Passenger passenger;
+    public Car(Passenger p) { this.passenger = p; }
+}
+```
+```cpp
+// C++
+class Passenger {};
+class Car {
+private:
+    Passenger* passenger; // raw or smart pointer
+public:
+    Car(Passenger* p) : passenger(p) {}
+};
+```
+
+### 4. Aggregation (`o--` or `part-of`)
+- **Meaning**: A loose ownership relationship ("whole/part"). The child is part of the parent, but can survive if the parent is destroyed.
+- **Mermaid**: `Parent o-- Child`
+- **Code**:
+```python
+# Python
+class Wheel: pass
+class Car:
+    def __init__(self, wheels):
+        self.wheels = wheels # wheels can exist outside the car (passed in)
+```
+```java
+// Java
+class Wheel {}
+class Car {
+    private List<Wheel> wheels;
+    public Car(List<Wheel> wheels) { this.wheels = wheels; }
+}
+```
+```cpp
+// C++
+class Wheel {};
+class Car {
+private:
+    std::vector<Wheel*> wheels;
+public:
+    Car(std::vector<Wheel*> w) : wheels(w) {}
+};
+```
+
+### 5. Composition (`*--` or `part-of` with lifespans bound)
+- **Meaning**: A strong ownership relationship. The child is created inside the parent and **cannot exist** without it; if the parent is destroyed, the child is destroyed too.
+- **Mermaid**: `Parent *-- Child`
+- **Code**:
+```python
+# Python
+class Engine: pass
+class Car:
+    def __init__(self):
+        self.engine = Engine() # Engine created inside Car, bound to its lifespan
+```
+```java
+// Java
+class Engine {}
+class Car {
+    private Engine engine;
+    public Car() {
+        this.engine = new Engine(); // bound lifecycle
+    }
+}
+```
+```cpp
+// C++
+class Engine {};
+class Car {
+private:
+    Engine engine; // instanced directly inside Car object
+public:
+    Car() : engine() {}
+};
+```
+
+## Think it through
+
+Reason through how to map raw requirement text into clean classes and relationships before revealing each stage.
+
+<ThinkThrough
+  title="OOD Noun/Verb Extraction & UML Mapping"
+  difficulty="Beginner — design a coffee machine"
+  problem="Design the classes for a coffee machine: users choose a beverage, insert coins, and the machine dispenses the coffee. If ingredients are low, the machine alerts the user."
+  stages={[
+    {
+      label: "Extract the nouns (Classes)",
+      prompt: "Find the candidate nouns in the prompt, and filter them into core classes vs attributes.",
+      reveal: "Candidate nouns: CoffeeMachine, User, Beverage (Coffee/Espresso), Coin, Ingredient (Water/Beans). User can be omitted because the machine doesn't track user state (it just receives coins). Beverage is a base class or interface. Ingredient is a class. Coin can be represented as a primitive number (cents) or a Value Object. Core classes: CoffeeMachine, Ingredient, Beverage."
+    },
+    {
+      label: "Extract the verbs (Methods)",
+      prompt: "Map the actions to their responsible classes. Who owns dispense()? Who tracks ingredient levels?",
+      reveal: "CoffeeMachine.dispense(beverage) coordinates the action. Beverage.getRecipe() returns required ingredients. Ingredient.use(amount) updates levels and returns false if insufficient. Avoid putting all logic inside CoffeeMachine (which would make it a god class) — delegate recipe checking to Beverage and level tracking to Ingredient."
+    },
+    {
+      label: "Determine the relationships",
+      prompt: "What is the relationship between: (1) CoffeeMachine and Ingredient, (2) CoffeeMachine and Beverage, (3) Beverage and Espresso?",
+      reveal: "(1) CoffeeMachine and Ingredient is COMPOSITION (*--): the ingredients live inside the machine and die with it. (2) CoffeeMachine and Beverage is ASSOCIATION (-->): the machine uses a Beverage recipe dynamically. (3) Espresso and Beverage is GENERALIZATION (<|--): Espresso is-a Beverage."
+    },
+    {
+      label: "Mermaid Class Diagram",
+      prompt: "Express these classes and relationships in Mermaid format.",
+      reveal: "Here is the resulting UML design:",
+      code: "classDiagram\n  class CoffeeMachine {\n    -ingredients: List~Ingredient~\n    +selectBeverage(b): void\n    +dispense(b): void\n  }\n  class Ingredient {\n    -name: String\n    -qty: int\n    +use(amount): bool\n  }\n  class Beverage {\n    <<abstract>>\n    +getRecipe(): Map~String, int~\n  }\n  class Espresso {\n  }\n  CoffeeMachine *-- Ingredient\n  CoffeeMachine --> Beverage\n  Beverage <|-- Espresso"
+    }
+  ]}
+/>
+
+## Check yourself
+
+<Quiz questions={[
+  {
+    q: "In UML, what is the difference between Aggregation (o--) and Composition (*--)?",
+    options: [
+      "Aggregation represents loose ownership where the child can exist independently of the parent; Composition represents strong ownership where the child's lifespan is strictly bound to the parent's",
+      "Composition is for classes, Aggregation is for interfaces",
+      "Aggregation is drawn with a solid diamond, Composition with an open diamond",
+      "There is no difference in code implementation"
+    ],
+    answer: 0,
+    explain: "A Wheel can exist without a Car (Aggregation). An Engine created inside a Car is destroyed with the Car (Composition). Composition is solid diamond; Aggregation is hollow diamond."
+  },
+  {
+    q: "The Open/Closed Principle (OCP) is best satisfied by using which of the following OOP techniques?",
+    options: [
+      "Polymorphism and Interfaces — encapsulating varying behavior behind an abstraction so new variants can be added without modifying the caller",
+      "Class inheritance with deep hierarchies",
+      "Writing public variables so they are accessible from anywhere",
+      "Putting all conditional logic into a single central switch statement"
+    ],
+    answer: 0,
+    explain: "By programming to an interface, you can add new implementations (Open for extension) without changing the existing client code (Closed for modification). Giant switches violate OCP."
+  },
+  {
+    q: "Why does the Dependency Inversion Principle (DIP) advocate depending on abstractions rather than concretions?",
+    options: [
+      "It decouples high-level policy from low-level implementation details, making components pluggable and testable in isolation",
+      "It makes the compiled binary size smaller",
+      "It allows you to avoid creating classes entirely",
+      "It makes CPU execution faster"
+    ],
+    answer: 0,
+    explain: "DIP flips the dependency arrows: high-level classes and low-level details both point at shared interfaces. This is what enables mock injections during testing and swappable plugins."
+  }
+]} />
 
 ## Practice — level up
 
