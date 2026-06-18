@@ -292,24 +292,6 @@ sort extends the trick digit by digit.
 
 </QA>
 
-## Practice
-
-1. **Implement from memory:** merge sort, then quicksort with random pivot.
-   Time both on 10⁵ random ints, then on 10⁵ *already-sorted* ints with a
-   fixed last-element pivot — watch the O(n²) happen.
-2. **Comparator reps:** sort a list of `(name, dept, salary)` by dept asc,
-   salary desc, name asc — one sort call. Then: why does doing it as three
-   separate stable sorts (in reverse priority order) also work?
-3. **The canon:** k-th largest (all three ways); merge intervals (sort by
-   start — see [heaps & intervals](/dsa/heaps-and-intervals)); "sort
-   colors" (Dutch national flag — partition with
-   [three pointers](/dsa/two-pointers), no counting allowed).
-4. **Judgment:** 10⁹ 32-bit integers on disk, 4 GB RAM — sketch the
-   external merge sort. (Chunks that fit, sort each, k-way merge with a
-   heap. You just designed a database primitive.)
-
-Next pattern: [Greedy](/dsa/greedy) — when taking the locally best choice
-is provably globally optimal.
 
 ## Practice — climb the ladder
 
